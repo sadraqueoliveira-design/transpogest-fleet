@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText } from "lucide-react";
+import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
   id: string;
@@ -66,6 +67,7 @@ export default function FuelManagement() {
   const [clientFilter, setClientFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("telemetry");
   const [form, setForm] = useState({
     vehicle_id: "",
     fuel_type: "Diesel",
@@ -154,6 +156,62 @@ export default function FuelManagement() {
     if (pct < 15) return "text-destructive font-bold";
     if (pct < 30) return "text-warning font-semibold";
     return "text-foreground";
+  };
+
+  // Export data
+  const telemetryExportData = telemetryVehicles.map(v => ({
+    Matrícula: v.plate,
+    "Marca/Modelo": [v.brand, v.model].filter(Boolean).join(" ") || "",
+    Cliente: v.client_id ? getClient(v.client_id)?.name || "" : "",
+    "Combustível (%)": v.fuel != null ? Math.round(v.fuel) : "",
+    "AdBlue (%)": v.adblue != null ? Math.round(v.adblue) : "",
+    "Consumo Total (L)": v.tfl != null ? Math.round(v.tfl) : "",
+    Km: v.odometer_km != null ? Math.round(v.odometer_km) : "",
+    "H. Motor": v.engine_hours != null ? Math.round(v.engine_hours) : "",
+  }));
+
+  const manualExportData = filteredLogs.map(l => {
+    const v = getVehicle(l.vehicle_id);
+    const p = getProfile(l.driver_id);
+    const total = l.liters * (l.price_per_liter || 0);
+    return {
+      Data: format(new Date(l.created_at), "dd/MM/yyyy HH:mm", { locale: pt }),
+      Matrícula: v?.plate || "",
+      Motorista: p?.full_name || "",
+      Tipo: fuelTypeLabels[l.fuel_type] || l.fuel_type,
+      Litros: l.liters,
+      "Preço/L (€)": l.price_per_liter || "",
+      "Total (€)": total > 0 ? total.toFixed(2) : "",
+      Km: l.odometer_at_fillup || "",
+    };
+  });
+
+  const exportPDF = (title: string, data: Record<string, any>[]) => {
+    if (data.length === 0) { toast.error("Sem dados para exportar"); return; }
+    const headers = Object.keys(data[0]);
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) { toast.error("Popup bloqueado"); return; }
+    printWindow.document.write(`
+      <html><head><title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: 11px; }
+        h1 { font-size: 16px; margin-bottom: 4px; }
+        p { color: #666; font-size: 10px; margin-bottom: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 4px 8px; text-align: left; }
+        th { background: #f5f5f5; font-weight: 600; }
+        tr:nth-child(even) { background: #fafafa; }
+        @media print { body { margin: 10px; } }
+      </style></head><body>
+      <h1>${title}</h1>
+      <p>Gerado em ${format(new Date(), "dd/MM/yyyy HH:mm", { locale: pt })} · ${data.length} registos</p>
+      <table>
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+        <tbody>${data.map(r => `<tr>${headers.map(h => `<td>${r[h] ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></body></html>
+    `);
+    printWindow.document.close();
+    printWindow.onload = () => printWindow.print();
   };
 
   return (
@@ -267,11 +325,27 @@ export default function FuelManagement() {
         </Select>
       </div>
 
-      <Tabs defaultValue="telemetry">
-        <TabsList>
-          <TabsTrigger value="telemetry">📡 Automático (GPS)</TabsTrigger>
-          <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="telemetry" onValueChange={setActiveTab}>
+        <div className="flex items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="telemetry">📡 Automático (GPS)</TabsTrigger>
+            <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
+          </TabsList>
+          <div className="flex items-center gap-2">
+            <ExportButton
+              data={activeTab === "telemetry" ? telemetryExportData : manualExportData}
+              filenameBase={activeTab === "telemetry" ? "combustivel_telemetria" : "abastecimentos_manuais"}
+              sheetName="Abastecimento"
+            />
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => {
+              const data = activeTab === "telemetry" ? telemetryExportData : manualExportData;
+              const title = activeTab === "telemetry" ? "Relatório de Combustível - Telemetria" : "Registos de Abastecimento Manual";
+              exportPDF(title, data);
+            }}>
+              <FileText className="h-4 w-4" /> PDF
+            </Button>
+          </div>
+        </div>
 
         {/* Automatic / Telemetry tab */}
         <TabsContent value="telemetry">
