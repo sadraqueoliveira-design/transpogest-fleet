@@ -3,7 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
-  FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu, Building2, MapPin
+  FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
+  Building2, MapPin, CreditCard, Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,8 @@ const navItems = [
   { to: "/admin/formularios", icon: ClipboardList, label: "Formulários" },
   { to: "/admin/solicitacoes", icon: FileText, label: "Solicitações" },
   { to: "/admin/motoristas", icon: Users, label: "Motoristas" },
+  { to: "/admin/tacografo", icon: CreditCard, label: "Tacógrafo" },
+  { to: "/admin/antram", icon: Settings, label: "ANTRAM" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
