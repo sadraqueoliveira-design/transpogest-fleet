@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { Home, Fuel, FileText, AlertTriangle, User } from "lucide-react";
+import { Home, Fuel, FileText, AlertTriangle, User, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: "/motorista/abastecer", icon: Fuel, label: "Abastecer" },
   { to: "/motorista/solicitacoes", icon: FileText, label: "Pedidos" },
   { to: "/motorista/ocorrencia", icon: AlertTriangle, label: "Ocorrência" },
+  { to: "/motorista/documentos", icon: FolderOpen, label: "Docs" },
   { to: "/motorista/perfil", icon: User, label: "Perfil" },
 ];
 
