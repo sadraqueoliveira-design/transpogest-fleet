@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.trackit-events]
 verify_jwt = false
+
+[functions.check-fuel-alerts]
+verify_jwt = false

@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck } from "lucide-react";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
@@ -52,6 +54,22 @@ interface ClientOption {
   name: string;
 }
 
+interface FuelAlert {
+  id: string;
+  vehicle_id: string;
+  alert_type: string;
+  level_percent: number | null;
+  threshold_percent: number;
+  acknowledged: boolean;
+  created_at: string;
+}
+
+const alertTypeLabels: Record<string, string> = {
+  low_fuel: "⛽ Combustível Baixo",
+  low_adblue: "💧 AdBlue Baixo",
+  low_reefer_fuel: "❄️ Comb. Motor Frio Baixo",
+};
+
 const fuelTypeLabels: Record<string, string> = {
   Diesel: "Diesel",
   AdBlue: "AdBlue",
@@ -69,6 +87,7 @@ export default function FuelManagement() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("telemetry");
+  const [alerts, setAlerts] = useState<FuelAlert[]>([]);
   const [form, setForm] = useState({
     vehicle_id: "",
     fuel_type: "Diesel",
@@ -77,6 +96,38 @@ export default function FuelManagement() {
     odometer_at_fillup: "",
     reefer_engine_hours: "",
   });
+
+  const fetchAlerts = async () => {
+    const { data } = await supabase
+      .from("fuel_alerts")
+      .select("*")
+      .eq("acknowledged", false)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data) setAlerts(data as FuelAlert[]);
+  };
+
+  const acknowledgeAlert = async (id: string) => {
+    await supabase.from("fuel_alerts").update({
+      acknowledged: true,
+      acknowledged_by: user?.id,
+      acknowledged_at: new Date().toISOString(),
+    } as any).eq("id", id);
+    setAlerts(prev => prev.filter(a => a.id !== id));
+    toast.success("Alerta reconhecido");
+  };
+
+  const acknowledgeAll = async () => {
+    if (alerts.length === 0) return;
+    const ids = alerts.map(a => a.id);
+    await supabase.from("fuel_alerts").update({
+      acknowledged: true,
+      acknowledged_by: user?.id,
+      acknowledged_at: new Date().toISOString(),
+    } as any).in("id", ids);
+    setAlerts([]);
+    toast.success("Todos os alertas reconhecidos");
+  };
 
   const fetchData = async () => {
     const [{ data: logsData }, { data: vData }, { data: pData }, { data: cData }] = await Promise.all([
@@ -92,7 +143,18 @@ export default function FuelManagement() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    fetchData();
+    fetchAlerts();
+    const channel = supabase
+      .channel("fuel-alerts-realtime")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "fuel_alerts" }, () => {
+        fetchAlerts();
+        toast.warning("⚠️ Novo alerta de combustível!");
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const getVehicle = (id: string) => vehicles.find(v => v.id === id);
   const getProfile = (id: string) => profiles.find(p => p.id === id);
@@ -258,10 +320,62 @@ export default function FuelManagement() {
           <h1 className="page-header">Gestão de Abastecimento</h1>
           <p className="page-subtitle">Monitorização automática e registos manuais</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="mr-2 h-4 w-4" />Registar Abastecimento</Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-2">
+          {/* Alerts bell */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon" className="relative">
+                <Bell className="h-4 w-4" />
+                {alerts.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                    {alerts.length}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96 p-0" align="end">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <h4 className="font-semibold text-sm">Alertas Ativos</h4>
+                {alerts.length > 0 && (
+                  <Button variant="ghost" size="sm" className="gap-1 text-xs h-7" onClick={acknowledgeAll}>
+                    <CheckCheck className="h-3 w-3" /> Reconhecer Todos
+                  </Button>
+                )}
+              </div>
+              <ScrollArea className="max-h-80">
+                {alerts.length === 0 ? (
+                  <p className="text-center text-sm text-muted-foreground py-8">Sem alertas ativos</p>
+                ) : (
+                  <div className="divide-y">
+                    {alerts.map(a => {
+                      const v = getVehicle(a.vehicle_id);
+                      return (
+                        <div key={a.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium">{alertTypeLabels[a.alert_type] || a.alert_type}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {v?.plate || "—"} · {a.level_percent != null ? `${Math.round(a.level_percent)}%` : "—"} (limiar: {a.threshold_percent}%)
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {format(new Date(a.created_at), "dd/MM HH:mm", { locale: pt })}
+                            </p>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-7 text-xs shrink-0" onClick={() => acknowledgeAlert(a.id)}>
+                            OK
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </ScrollArea>
+            </PopoverContent>
+          </Popover>
+
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button><Plus className="mr-2 h-4 w-4" />Registar Abastecimento</Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader><DialogTitle>Registar Abastecimento Manual</DialogTitle></DialogHeader>
             <form onSubmit={handleCreate} className="space-y-4">
@@ -310,7 +424,8 @@ export default function FuelManagement() {
               <Button type="submit" className="w-full">Registar</Button>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {/* Stats */}
