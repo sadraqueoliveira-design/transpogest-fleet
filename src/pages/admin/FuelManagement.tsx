@@ -1,0 +1,384 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { pt } from "date-fns/locale";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown } from "lucide-react";
+
+interface FuelLog {
+  id: string;
+  created_at: string;
+  fuel_type: string;
+  liters: number;
+  price_per_liter: number | null;
+  odometer_at_fillup: number | null;
+  reefer_engine_hours: number | null;
+  receipt_photo_url: string | null;
+  vehicle_id: string;
+  driver_id: string;
+}
+
+interface Vehicle {
+  id: string;
+  plate: string;
+  brand: string | null;
+  model: string | null;
+  fuel_level_percent: number | null;
+  odometer_km: number | null;
+  engine_hours: number | null;
+  tachograph_status: string | null;
+  client_id: string | null;
+}
+
+interface Profile {
+  id: string;
+  full_name: string | null;
+}
+
+interface ClientOption {
+  id: string;
+  name: string;
+}
+
+const fuelTypeLabels: Record<string, string> = {
+  Diesel: "Diesel",
+  AdBlue: "AdBlue",
+  Reefer_Diesel: "Thermo King",
+};
+
+export default function FuelManagement() {
+  const { user } = useAuth();
+  const [logs, setLogs] = useState<FuelLog[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({
+    vehicle_id: "",
+    fuel_type: "Diesel",
+    liters: "",
+    price_per_liter: "",
+    odometer_at_fillup: "",
+    reefer_engine_hours: "",
+  });
+
+  const fetchData = async () => {
+    const [{ data: logsData }, { data: vData }, { data: pData }, { data: cData }] = await Promise.all([
+      supabase.from("fuel_logs").select("*").order("created_at", { ascending: false }),
+      supabase.from("vehicles").select("*").order("plate"),
+      supabase.from("profiles").select("id, full_name"),
+      supabase.from("clients").select("id, name").order("name"),
+    ]);
+    if (logsData) setLogs(logsData);
+    if (vData) setVehicles(vData);
+    if (pData) setProfiles(pData);
+    if (cData) setClients(cData);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const getVehicle = (id: string) => vehicles.find(v => v.id === id);
+  const getProfile = (id: string) => profiles.find(p => p.id === id);
+  const getClient = (id: string) => clients.find(c => c.id === id);
+
+  // Automatic fuel data from telemetry
+  const telemetryVehicles = vehicles
+    .filter(v => {
+      if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
+      if (search && !v.plate.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .map(v => {
+      let tacho: any = {};
+      if (v.tachograph_status) {
+        try { tacho = JSON.parse(v.tachograph_status); } catch {}
+      }
+      const fuel = v.fuel_level_percent ?? tacho.flv ?? null;
+      const adblue = tacho.adbl ?? null;
+      const tfl = tacho.tfl ?? null; // total fuel consumed
+      return { ...v, fuel, adblue, tfl };
+    })
+    .sort((a, b) => (a.fuel ?? 999) - (b.fuel ?? 999)); // low fuel first
+
+  // Filtered manual logs
+  const filteredLogs = logs.filter(l => {
+    const v = getVehicle(l.vehicle_id);
+    if (clientFilter && clientFilter !== "all" && v?.client_id !== clientFilter) return false;
+    if (search && v && !v.plate.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  // Stats
+  const totalLiters = logs.reduce((sum, l) => sum + l.liters, 0);
+  const totalCost = logs.reduce((sum, l) => sum + (l.liters * (l.price_per_liter || 0)), 0);
+  const lowFuelCount = telemetryVehicles.filter(v => v.fuel != null && v.fuel < 15).length;
+  const lowAdblueCount = telemetryVehicles.filter(v => v.adblue != null && v.adblue < 10).length;
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.vehicle_id || !form.liters) return;
+    const { error } = await supabase.from("fuel_logs").insert({
+      vehicle_id: form.vehicle_id,
+      driver_id: user?.id,
+      fuel_type: form.fuel_type as any,
+      liters: parseFloat(form.liters),
+      price_per_liter: form.price_per_liter ? parseFloat(form.price_per_liter) : null,
+      odometer_at_fillup: form.odometer_at_fillup ? parseFloat(form.odometer_at_fillup) : null,
+      reefer_engine_hours: form.fuel_type === "Reefer_Diesel" && form.reefer_engine_hours ? parseFloat(form.reefer_engine_hours) : null,
+    });
+    if (error) { toast.error("Erro: " + error.message); }
+    else {
+      toast.success("Abastecimento registado");
+      setDialogOpen(false);
+      setForm({ vehicle_id: "", fuel_type: "Diesel", liters: "", price_per_liter: "", odometer_at_fillup: "", reefer_engine_hours: "" });
+      fetchData();
+    }
+  };
+
+  const fuelColor = (pct: number | null) => {
+    if (pct == null) return "text-muted-foreground";
+    if (pct < 15) return "text-destructive font-bold";
+    if (pct < 30) return "text-warning font-semibold";
+    return "text-foreground";
+  };
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="page-header">Gestão de Abastecimento</h1>
+          <p className="page-subtitle">Monitorização automática e registos manuais</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button><Plus className="mr-2 h-4 w-4" />Registar Abastecimento</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Registar Abastecimento Manual</DialogTitle></DialogHeader>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Veículo *</Label>
+                <Select value={form.vehicle_id} onValueChange={v => setForm({ ...form, vehicle_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar veículo" /></SelectTrigger>
+                  <SelectContent>
+                    {vehicles.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.plate} {v.brand ? `- ${v.brand} ${v.model || ""}` : ""}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo *</Label>
+                <Select value={form.fuel_type} onValueChange={v => setForm({ ...form, fuel_type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Diesel">Diesel</SelectItem>
+                    <SelectItem value="AdBlue">AdBlue</SelectItem>
+                    <SelectItem value="Reefer_Diesel">Thermo King (Reefer)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Litros *</Label>
+                  <Input type="number" step="0.01" value={form.liters} onChange={e => setForm({ ...form, liters: e.target.value })} required placeholder="0.00" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Preço/L (€)</Label>
+                  <Input type="number" step="0.001" value={form.price_per_liter} onChange={e => setForm({ ...form, price_per_liter: e.target.value })} placeholder="0.000" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Quilometragem</Label>
+                <Input type="number" value={form.odometer_at_fillup} onChange={e => setForm({ ...form, odometer_at_fillup: e.target.value })} placeholder="km" />
+              </div>
+              {form.fuel_type === "Reefer_Diesel" && (
+                <div className="space-y-2">
+                  <Label>Horímetro (Horas Motor)</Label>
+                  <Input type="number" step="0.1" value={form.reefer_engine_hours} onChange={e => setForm({ ...form, reefer_engine_hours: e.target.value })} placeholder="Horas" />
+                </div>
+              )}
+              <Button type="submit" className="w-full">Registar</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+          <Fuel className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <p className="text-lg font-bold">{totalLiters.toLocaleString("pt-PT", { maximumFractionDigits: 0 })} L</p>
+            <p className="text-[11px] text-muted-foreground">Total Abastecido</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+          <TrendingDown className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <p className="text-lg font-bold">{totalCost.toLocaleString("pt-PT", { style: "currency", currency: "EUR" })}</p>
+            <p className="text-[11px] text-muted-foreground">Custo Total</p>
+          </div>
+        </div>
+        <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${lowFuelCount > 0 ? "border-destructive/40" : ""}`}>
+          <Gauge className={`h-5 w-5 ${lowFuelCount > 0 ? "text-destructive" : "text-muted-foreground"}`} />
+          <div>
+            <p className={`text-lg font-bold ${lowFuelCount > 0 ? "text-destructive" : ""}`}>{lowFuelCount}</p>
+            <p className="text-[11px] text-muted-foreground">Comb. Baixo (&lt;15%)</p>
+          </div>
+        </div>
+        <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${lowAdblueCount > 0 ? "border-warning/40" : ""}`}>
+          <Droplets className={`h-5 w-5 ${lowAdblueCount > 0 ? "text-warning" : "text-muted-foreground"}`} />
+          <div>
+            <p className={`text-lg font-bold ${lowAdblueCount > 0 ? "text-warning" : ""}`}>{lowAdblueCount}</p>
+            <p className="text-[11px] text-muted-foreground">AdBlue Baixo (&lt;10%)</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pesquisar matrícula..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+        </div>
+        <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="Cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Tabs defaultValue="telemetry">
+        <TabsList>
+          <TabsTrigger value="telemetry">📡 Automático (GPS)</TabsTrigger>
+          <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
+        </TabsList>
+
+        {/* Automatic / Telemetry tab */}
+        <TabsContent value="telemetry">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Marca/Modelo</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="text-right">⛽ Combustível</TableHead>
+                    <TableHead className="text-right">💧 AdBlue</TableHead>
+                    <TableHead className="text-right">Consumo Total (L)</TableHead>
+                    <TableHead className="text-right">Km</TableHead>
+                    <TableHead className="text-right">H. Motor</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {telemetryVehicles.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+                  ) : (
+                    telemetryVehicles.map(v => (
+                      <TableRow key={v.id}>
+                        <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
+                        <TableCell className="text-sm">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v.client_id ? getClient(v.client_id)?.name || "—" : "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={fuelColor(v.fuel)}>
+                            {v.fuel != null ? `${Math.round(v.fuel)}%` : "—"}
+                          </span>
+                          {v.fuel != null && v.fuel < 15 && (
+                            <Badge variant="destructive" className="ml-2 text-[9px] h-4">Baixo</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={v.adblue != null && v.adblue < 10 ? "text-warning font-semibold" : ""}>
+                            {v.adblue != null ? `${Math.round(v.adblue)}%` : "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{v.tfl != null ? Math.round(v.tfl).toLocaleString("pt-PT") : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{v.odometer_km != null ? Math.round(v.odometer_km).toLocaleString("pt-PT") : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Manual logs tab */}
+        <TabsContent value="manual">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Motorista</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Litros</TableHead>
+                    <TableHead className="text-right">Preço/L</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Km</TableHead>
+                    <TableHead>Recibo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredLogs.length === 0 ? (
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum registo de abastecimento</TableCell></TableRow>
+                  ) : (
+                    filteredLogs.map(l => {
+                      const v = getVehicle(l.vehicle_id);
+                      const p = getProfile(l.driver_id);
+                      const total = l.liters * (l.price_per_liter || 0);
+                      return (
+                        <TableRow key={l.id}>
+                          <TableCell className="text-sm">{format(new Date(l.created_at), "dd/MM/yy HH:mm", { locale: pt })}</TableCell>
+                          <TableCell className="font-mono font-semibold">{v?.plate || "—"}</TableCell>
+                          <TableCell className="text-sm">{p?.full_name || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{fuelTypeLabels[l.fuel_type] || l.fuel_type}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold">{l.liters.toLocaleString("pt-PT", { maximumFractionDigits: 1 })}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.price_per_liter ? `${l.price_per_liter.toFixed(3)} €` : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold">{total > 0 ? `${total.toFixed(2)} €` : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{l.odometer_at_fillup ? `${l.odometer_at_fillup.toLocaleString("pt-PT")}` : "—"}</TableCell>
+                          <TableCell>
+                            {l.receipt_photo_url ? (
+                              <a href={l.receipt_photo_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">Ver</a>
+                            ) : "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <p className="text-xs text-center text-muted-foreground">{telemetryVehicles.length} veículo(s) monitorizados</p>
+    </div>
+  );
+}
