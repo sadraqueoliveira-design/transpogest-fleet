@@ -25,6 +25,12 @@ interface Vehicle {
   tachograph_calibration_date: string | null;
   fuel_level_percent: number | null;
   odometer_km: number | null;
+  client_id: string | null;
+}
+
+interface ClientOption {
+  id: string;
+  name: string;
 }
 
 interface VehicleDoc {
@@ -52,6 +58,8 @@ const FLEET_ALIASES: Record<string, string[]> = {
 export default function Fleet() {
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [clientFilter, setClientFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ plate: "", brand: "", model: "", vin: "", insurance_expiry: "", inspection_expiry: "", tachograph_calibration_date: "" });
@@ -65,12 +73,20 @@ export default function Fleet() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchVehicles = async () => {
-    const { data } = await supabase.from("vehicles").select("*").order("plate");
-    if (data) setVehicles(data);
+    const [{ data: vData }, { data: cData }] = await Promise.all([
+      supabase.from("vehicles").select("*").order("plate"),
+      supabase.from("clients").select("id, name").order("name"),
+    ]);
+    if (vData) setVehicles(vData);
+    if (cData) setClients(cData);
     setLoading(false);
   };
 
   useEffect(() => { fetchVehicles(); }, []);
+
+  const filtered = vehicles.filter(v =>
+    !clientFilter || clientFilter === "all" || v.client_id === clientFilter
+  );
 
   const fetchDocs = async (vehicleId: string) => {
     const { data } = await supabase.from("vehicle_documents").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
@@ -117,9 +133,10 @@ export default function Fleet() {
     return <Badge variant="secondary">{format(parseISO(date), "dd/MM/yyyy")}</Badge>;
   };
 
-  const exportData = vehicles.map(v => ({
+  const exportData = filtered.map(v => ({
     Matrícula: v.plate, Marca: v.brand || "", Modelo: v.model || "", VIN: v.vin || "",
     Seguro: v.insurance_expiry || "", Inspeção: v.inspection_expiry || "", Tacógrafo: v.tachograph_calibration_date || "",
+    Cliente: clients.find(c => c.id === v.client_id)?.name || "",
   }));
 
   const handleBulkImport = async (rows: Record<string, string>[]) => {
@@ -176,6 +193,20 @@ export default function Fleet() {
         </div>
       </div>
 
+      {/* Client Filter */}
+      <div className="flex items-center gap-2">
+        <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-64">
+            <SelectValue placeholder="Filtrar por cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <span className="text-sm text-muted-foreground">{filtered.length} veículo(s)</span>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -183,6 +214,7 @@ export default function Fleet() {
               <TableRow>
                 <TableHead>Matrícula</TableHead>
                 <TableHead>Marca/Modelo</TableHead>
+                <TableHead>Cliente</TableHead>
                 <TableHead>Seguro</TableHead>
                 <TableHead>Inspeção</TableHead>
                 <TableHead>Tacógrafo</TableHead>
@@ -193,14 +225,15 @@ export default function Fleet() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
-              ) : vehicles.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
               ) : (
-                vehicles.map((v) => (
+                filtered.map((v) => (
                   <TableRow key={v.id}>
                     <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
                     <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
                     <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
                     <TableCell>{expiryBadge(v.inspection_expiry)}</TableCell>
                     <TableCell>{expiryBadge(v.tachograph_calibration_date)}</TableCell>
