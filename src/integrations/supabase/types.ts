@@ -548,6 +548,7 @@ export type Database = {
           tachograph_calibration_date: string | null
           tachograph_status: string | null
           temperature_data: Json | null
+          trackit_id: string | null
           updated_at: string
           vin: string | null
         }
@@ -571,6 +572,7 @@ export type Database = {
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null
+          trackit_id?: string | null
           updated_at?: string
           vin?: string | null
         }
@@ -594,6 +596,7 @@ export type Database = {
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null
+          trackit_id?: string | null
           updated_at?: string
           vin?: string | null
         }
