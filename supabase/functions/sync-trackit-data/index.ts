@@ -84,32 +84,48 @@ Deno.serve(async (req) => {
 
         // 5. Mapeamento e Upsert (Salvar no Banco)
         if (vehiclesData.length > 0) {
+          // Log first vehicle structure for debugging
+          console.log(`${client.name}: ${vehiclesData.length} veículos encontrados`);
+          
           const vehiclesToUpsert = vehiclesData
             .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name)
             .map((v: any) => {
-              // Mapeamento baseado no Manual Trackit (Pág 9 e 10)
-              const plate = v.plate || v.info?.plate || v.registration || v.name || "SEM-PLACA";
+              // The API nests telemetry inside v.data
+              const d = v.data || {};
+              const pos = d.pos || {};
+              const loc = pos.loc || {}; // lat/lon inside pos.loc
+              const can = d.can || {};
+              const fue = d.fue || {};
+              const posExd = pos.exd || {};
+              const dataExd = d.exd || {};
+              
+              const plate = v.info?.plate || v.plate || v.name || "SEM-PLACA";
+              const brand = v.info?.brand || null;
+              const model = v.info?.model || null;
+              
               return {
-                client_id: client.id, // VÍNCULO CRUCIAL
-                trackit_id: String(v.mid || v.id || plate), // ID único do Trackit
+                client_id: client.id,
+                trackit_id: String(v.mid || v.id || plate),
                 plate: plate.replace(/[\s]/g, "").toUpperCase(),
+                brand: brand,
+                model: model,
 
-                // Posição e Estado
-                last_lat: v.pos?.lat ?? null,
-                last_lng: v.pos?.lon ?? null,
-                last_speed: v.pos?.spd ? Math.round(v.pos.spd) : 0,
+                // Position from pos.loc
+                last_lat: loc.lat ?? null,
+                last_lng: loc.lon ?? null,
+                last_speed: pos.gsp != null ? Math.round(pos.gsp) : 0,
 
-                // Telemetria Avançada
-                fuel_level_percent: v.eco?.exd?.flv ?? null, // Nível Combustível %
-                rpm: v.can?.rpm ? Math.round(v.can.rpm) : (v.eco?.exd?.rpm ? Math.round(v.eco.exd.rpm) : null),
-                odometer_km: v.pos?.odo ?? v.eco?.exd?.odo ?? v.odo ?? null,
-                engine_hours: v.eco?.exd?.egh ?? null,
+                // Telemetry
+                fuel_level_percent: fue.flv ?? dataExd.flv ?? null,
+                rpm: can.rpm ? Math.round(can.rpm) : null,
+                odometer_km: pos.gkm ?? dataExd.odo ?? null,
+                engine_hours: dataExd.egh ?? can.egh ?? null,
 
-                // Dados de Temperatura (Reefer)
-                temperature_data: v.tmp || null,
+                // Temperature (Reefer)
+                temperature_data: d.tmp || null,
 
-                // Dados de Tacógrafo (Motorista Atual)
-                tachograph_status: v.drs ? JSON.stringify(v.drs) : null,
+                // Tachograph
+                tachograph_status: d.drs ? JSON.stringify(d.drs) : null,
 
                 updated_at: new Date().toISOString(),
               };

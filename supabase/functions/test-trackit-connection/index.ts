@@ -35,10 +35,11 @@ Deno.serve(async (req) => {
     }
 
     const data = await trackitRes.json();
-    const vehicles = Array.isArray(data) ? data : data.vehicles || [];
+    const vehicles = Array.isArray(data) ? data : data.data || data.vehicles || data.result || [];
+    const vehicleList = Array.isArray(vehicles) ? vehicles : [];
 
     return new Response(
-      JSON.stringify({ success: true, vehicle_count: vehicles.length }),
+      JSON.stringify({ success: true, vehicle_count: vehicleList.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
