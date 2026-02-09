@@ -30,6 +30,12 @@ interface Vehicle {
   model: string | null;
   updated_at: string;
   tachograph_calibration_date: string | null;
+  client_id: string | null;
+}
+
+interface ClientOption {
+  id: string;
+  name: string;
 }
 
 interface Notification {
@@ -44,6 +50,7 @@ type FilterTab = "all" | "moving" | "stopped" | "alerts";
 
 export default function Dashboard() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [search, setSearch] = useState("");
@@ -54,8 +61,12 @@ export default function Dashboard() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
 
   const fetchVehicles = async () => {
-    const { data } = await supabase.from("vehicles").select("*");
-    if (data) setVehicles(data);
+    const [{ data: vData }, { data: cData }] = await Promise.all([
+      supabase.from("vehicles").select("*"),
+      supabase.from("clients").select("id, name").order("name"),
+    ]);
+    if (vData) setVehicles(vData);
+    if (cData) setClients(cData);
   };
 
   useEffect(() => {
@@ -199,9 +210,10 @@ export default function Dashboard() {
             </div>`,
             className: "", iconSize: [28, 28], iconAnchor: [14, 14],
           });
+          const clientName = clients.find(c => c.id === v.client_id)?.name;
           const marker = L.marker([v.last_lat, v.last_lng], { icon })
             .bindPopup(`<div style="font-family:Inter,sans-serif;min-width:160px">
-              <strong>${v.plate}</strong><br/>
+              <strong>${v.plate}</strong>${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}<br/>
               <span style="color:#666">${speed} km/h · ${v.fuel_level_percent ?? "—"}% fuel</span>
             </div>`);
           clusterGroup.addLayer(marker);
@@ -349,7 +361,7 @@ export default function Dashboard() {
           {filtered.length === 0 ? (
             <Card className="py-12 text-center text-muted-foreground">Nenhum veículo encontrado</Card>
           ) : (
-            filtered.map((v) => <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} onClick={() => setSelectedVehicle(v)} />)
+            filtered.map((v) => <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} clientName={clients.find(c => c.id === v.client_id)?.name} onClick={() => setSelectedVehicle(v)} />)
           )}
         </div>
       )}
