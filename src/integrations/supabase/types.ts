@@ -198,6 +198,7 @@ export type Database = {
           lng: number | null
           name: string
           status: string
+          type: string | null
           updated_at: string
         }
         Insert: {
@@ -210,6 +211,7 @@ export type Database = {
           lng?: number | null
           name: string
           status?: string
+          type?: string | null
           updated_at?: string
         }
         Update: {
@@ -222,6 +224,7 @@ export type Database = {
           lng?: number | null
           name?: string
           status?: string
+          type?: string | null
           updated_at?: string
         }
         Relationships: [
