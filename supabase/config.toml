@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.test-trackit-connection]
 verify_jwt = false
+
+[functions.trackit-events]
+verify_jwt = false
