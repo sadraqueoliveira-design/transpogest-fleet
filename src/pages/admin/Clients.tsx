@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Plus, Search, Building2, MapPin, Users, MoreVertical, Trash2, Edit, Wifi, WifiOff, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Plus, Search, Building2, MapPin, Users, MoreVertical, Trash2, Edit, Wifi, WifiOff, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 interface Client {
@@ -35,7 +35,22 @@ export default function Clients() {
     trackit_username: "", trackit_password: "", api_enabled: false,
   });
   const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-trackit-data");
+      if (error) throw error;
+      const results = data?.results || [];
+      const totalCount = results.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+      toast.success(`${totalCount} veículos sincronizados`);
+      fetchClients();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Desconhecido"));
+    }
+    setSyncing(false);
+  };
   const fetchClients = async () => {
     const { data: clientsData } = await supabase
       .from("clients")
@@ -155,12 +170,17 @@ export default function Clients() {
         <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between">
             <span className="font-semibold text-lg">Clientes ({filtered.length})</span>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={openNew} className="bg-success hover:bg-success/90">
-                  <Plus className="h-4 w-4 mr-1" /> Novo Cliente
-                </Button>
-              </DialogTrigger>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing} className="gap-1.5">
+                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                {syncing ? "A sincronizar..." : "Sincronizar Agora"}
+              </Button>
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button onClick={openNew} className="bg-success hover:bg-success/90">
+                    <Plus className="h-4 w-4 mr-1" /> Novo Cliente
+                  </Button>
+                </DialogTrigger>
               <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{editingClient ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
@@ -229,6 +249,7 @@ export default function Clients() {
                 </div>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           <div className="relative">
