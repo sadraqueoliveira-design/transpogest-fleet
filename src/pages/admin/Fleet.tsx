@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X } from "lucide-react";
+import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
@@ -61,6 +61,7 @@ export default function Fleet() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientFilter, setClientFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ plate: "", brand: "", model: "", vin: "", insurance_expiry: "", inspection_expiry: "", tachograph_calibration_date: "" });
@@ -88,9 +89,11 @@ export default function Fleet() {
 
   useEffect(() => { fetchVehicles(); }, []);
 
-  const filtered = vehicles.filter(v =>
-    !clientFilter || clientFilter === "all" || v.client_id === clientFilter
-  );
+  const filtered = vehicles.filter(v => {
+    if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
+    if (search && !v.plate.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   const fetchDocs = async (vehicleId: string) => {
     const { data } = await supabase.from("vehicle_documents").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
@@ -231,8 +234,12 @@ export default function Fleet() {
 
       {/* Client Filter */}
       <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pesquisar matrícula..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        </div>
         <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
-          <SelectTrigger className="w-64">
+          <SelectTrigger className="w-52">
             <SelectValue placeholder="Filtrar por cliente" />
           </SelectTrigger>
           <SelectContent>
@@ -240,7 +247,7 @@ export default function Fleet() {
             {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground">{filtered.length} veículo(s)</span>
+        <span className="text-sm text-muted-foreground whitespace-nowrap">{filtered.length} veículo(s)</span>
       </div>
 
       <Card>
