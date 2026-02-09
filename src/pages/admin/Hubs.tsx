@@ -130,7 +130,7 @@ export default function Hubs() {
       h.name.toLowerCase().includes(search.toLowerCase()) ||
       h.code.toLowerCase().includes(search.toLowerCase()) ||
       (h.address && h.address.toLowerCase().includes(search.toLowerCase()));
-    const matchClient = !clientFilter || h.client_id === clientFilter;
+    const matchClient = !clientFilter || clientFilter === "all_clients_placeholder" || h.client_id === clientFilter;
     return matchSearch && matchClient;
   });
 
