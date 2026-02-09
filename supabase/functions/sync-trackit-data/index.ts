@@ -90,22 +90,23 @@ Deno.serve(async (req) => {
           const vehiclesToUpsert = vehiclesData
             .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name)
             .map((v: any) => {
-              // Actual API response: { mid, info, data: { pos, drs, can, fue, tmp, tac, exd, tlm, ... } }
-              // "data" wrapper contains all telemetry objects
+              // Actual API: { mid, info, data: { pos, drs, can, fue, tmp, tac, exd, tlm, ... } }
               const d = v.data || {};
               const pos = d.pos || {};
               const loc = pos.loc || {};
-              const can = d.can || {};
-              const fue = d.fue || {};        // Fuel data
-              const drs = d.drs || {};        // Tachograph
+              const drs = d.drs || {};        // Contains BOTH tachograph AND ecodrive data
               const tmp = d.tmp || {};        // Temperature probes
-              const tac = d.tac || {};        // Tachograph extended (eco equivalent)
-              const exd = d.exd || {};        // Extended data at data level
-              const posExd = pos.exd || {};   // Extended position data
               
               const plate = v.info?.plate || v.plate || v.name || "SEM-PLACA";
               const brand = v.info?.brand || null;
               const model = v.info?.model || null;
+              
+              // drs contains ecodrive fields: flv (fuel%), adbl (adblue%), ehr (engine hours),
+              // ckm (odometer), rpm, ds1/ds2 (driver status), dc1 (driver card), tfl (total fuel)
+              const fuelLevel = drs.flv ?? d.fue?.flv ?? null;
+              const rpmVal = drs.rpm ?? d.can?.rpm ?? null;
+              const odometerVal = drs.ckm ?? pos.gkm ?? null;
+              const engineHoursVal = drs.ehr ?? null;
               
               return {
                 client_id: client.id,
@@ -114,34 +115,24 @@ Deno.serve(async (req) => {
                 brand: brand,
                 model: model,
 
-                // Position from data.pos.loc
+                // Position
                 last_lat: loc.lat ?? null,
                 last_lng: loc.lon ?? null,
                 last_speed: pos.gsp != null ? Math.round(pos.gsp) : 0,
 
-                // Fuel: fue.flv or tac.flv or exd.flv (Manual: eco.flv)
-                fuel_level_percent: fue.flv ?? tac.flv ?? exd.flv ?? null,
-                // RPM: tac.rpm or can.rpm (Manual: eco.rpm)
-                rpm: tac.rpm != null ? Math.round(tac.rpm) : (can.rpm != null ? Math.round(can.rpm) : null),
-                // Odometer: tac.ckm or pos.gkm (Manual: eco.ckm or gkm)
-                odometer_km: tac.ckm ?? pos.gkm ?? exd.odo ?? null,
-                // Engine hours: tac.ehr (Manual: eco.ehr)
-                engine_hours: tac.ehr ?? exd.egh ?? null,
+                // Telemetry extracted from drs (ecodrive)
+                fuel_level_percent: fuelLevel,
+                rpm: rpmVal != null ? Math.round(rpmVal) : null,
+                odometer_km: odometerVal,
+                engine_hours: engineHoursVal,
 
                 // Temperature probes
                 temperature_data: Object.keys(tmp).length > 0 ? tmp : null,
 
-                // Tachograph: drs object + tac.ds1/ds2/idc (eco equivalent fields)
+                // Full tachograph/ecodrive JSON for detail panel
                 tachograph_status: Object.keys(drs).length > 0
-                  ? JSON.stringify({
-                      ...drs,
-                      driver1_status: tac.ds1 ?? null,
-                      driver2_status: tac.ds2 ?? null,
-                      driver_card: tac.idc ?? null,
-                    })
-                  : (tac.ds1 != null || tac.idc
-                    ? JSON.stringify({ driver1_status: tac.ds1, driver2_status: tac.ds2 ?? null, driver_card: tac.idc ?? null })
-                    : null),
+                  ? JSON.stringify(drs)
+                  : null,
 
                 updated_at: new Date().toISOString(),
               };

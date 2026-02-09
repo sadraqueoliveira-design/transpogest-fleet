@@ -354,63 +354,102 @@ export default function Dashboard() {
               const speed = v.last_speed || 0;
               const isMoving = speed > 5;
               const alert = hasAlert(v);
-              const fuel = v.fuel_level_percent;
               const td = v.temperature_data as any;
               const t1 = td?.t1 ?? td?.T1 ?? td?.tp1;
               const t2 = td?.t2 ?? td?.T2 ?? td?.tp2;
+
+              // Parse tachograph_status JSON for extra data
+              let tacho: any = {};
+              if (v.tachograph_status) {
+                try { tacho = JSON.parse(v.tachograph_status); } catch {}
+              }
+
+              // Use DB columns first, fallback to tachograph JSON
+              const fuel = v.fuel_level_percent ?? tacho.flv ?? null;
+              const adblue = tacho.adbl ?? null;
+              const engineH = v.engine_hours ?? tacho.ehr ?? null;
+              const odo = v.odometer_km ?? tacho.ckm ?? null;
+              const rpm = v.rpm ?? tacho.rpm ?? null;
+              const driverCard = tacho.dc1 || null;
+              const cName = clients.find(c => c.id === v.client_id)?.name;
+
+              // Location from POI if available
+              const poi = (v as any).poi_name;
+              const hasCoords = v.last_lat != null && v.last_lng != null;
 
               return (
                 <div
                   key={v.id}
                   onClick={() => setSelectedVehicle(v)}
-                  className={`rounded-lg border p-3 cursor-pointer transition-all hover:shadow-md ${
-                    alert ? "border-destructive/50" : isMoving ? "border-success/40" : ""
+                  className={`rounded-lg border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 ${
+                    alert ? "border-destructive/50 bg-destructive/5" : isMoving ? "border-success/40" : "border-border"
                   }`}
                 >
-                  {/* Status + Plate */}
-                  <div className="flex items-center justify-between mb-2">
+                  {/* Header: status dot + plate + speed */}
+                  <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-1.5">
-                      <div className={`h-2.5 w-2.5 rounded-full ${isMoving ? "bg-success" : alert ? "bg-destructive" : "bg-muted-foreground"}`} />
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${isMoving ? "bg-success animate-pulse" : alert ? "bg-destructive" : "bg-muted-foreground"}`} />
                       <span className="font-bold text-sm tracking-wide">{v.plate}</span>
                     </div>
-                    <span className={`text-xs font-semibold ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
+                    <span className={`text-[11px] font-bold tabular-nums ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
                   </div>
 
-                  {clients.find(c => c.id === v.client_id)?.name && (
-                    <p className="text-[10px] text-muted-foreground truncate mb-2">{clients.find(c => c.id === v.client_id)?.name}</p>
-                  )}
+                  {/* Brand/Client */}
+                  <p className="text-[10px] text-muted-foreground truncate mb-2">
+                    {v.brand && v.model ? `${v.brand} ${v.model}` : ""}
+                    {cName ? `${v.brand ? " · " : ""}${cName}` : ""}
+                  </p>
 
-                  {/* Data grid */}
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                  {/* Data rows */}
+                  <div className="space-y-0.5 text-[11px]">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">RPM</span>
-                      <span className="font-semibold">{v.rpm ?? "—"}</span>
+                      <span className="text-muted-foreground">⛽ Comb.</span>
+                      <span className={`font-semibold tabular-nums ${fuel != null && fuel < 15 ? "text-destructive" : fuel != null ? "text-foreground" : "text-muted-foreground"}`}>
+                        {fuel != null ? `${Math.round(fuel)}%` : "—"}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Comb.</span>
-                      <span className={`font-semibold ${fuel != null && fuel < 15 ? "text-destructive" : ""}`}>{fuel != null ? `${fuel}%` : "—"}</span>
+                      <span className="text-muted-foreground">💧 AdBlue</span>
+                      <span className={`font-semibold tabular-nums ${adblue != null && adblue < 10 ? "text-warning" : adblue != null ? "text-foreground" : "text-muted-foreground"}`}>
+                        {adblue != null ? `${Math.round(adblue)}%` : "—"}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Km</span>
-                      <span className="font-semibold">{v.odometer_km != null ? Math.round(v.odometer_km).toLocaleString("pt-PT") : "—"}</span>
+                      <span className="text-muted-foreground">🔧 H.Motor</span>
+                      <span className="font-semibold tabular-nums">{engineH != null ? Math.round(engineH).toLocaleString("pt-PT") : "—"}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">H.Mot</span>
-                      <span className="font-semibold">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</span>
+                      <span className="text-muted-foreground">📏 Km</span>
+                      <span className="font-semibold tabular-nums">{odo != null ? Math.round(odo).toLocaleString("pt-PT") : "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">⚙️ RPM</span>
+                      <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
                     {(typeof t1 === "number" || typeof t2 === "number") && (
-                      <>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">T1</span>
-                          <span className={`font-semibold ${typeof t1 === "number" && t1 > 8 ? "text-destructive" : ""}`}>{typeof t1 === "number" ? `${t1.toFixed(1)}°` : "—"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">T2</span>
-                          <span className={`font-semibold ${typeof t2 === "number" && t2 > 8 ? "text-destructive" : ""}`}>{typeof t2 === "number" ? `${t2.toFixed(1)}°` : "—"}</span>
-                        </div>
-                      </>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">🌡️ Temp</span>
+                        <span className={`font-semibold tabular-nums ${(typeof t1 === "number" && t1 > 8) || (typeof t2 === "number" && t2 > 8) ? "text-destructive" : ""}`}>
+                          {typeof t1 === "number" ? `${t1.toFixed(1)}°` : ""}
+                          {typeof t1 === "number" && typeof t2 === "number" ? " / " : ""}
+                          {typeof t2 === "number" ? `${t2.toFixed(1)}°` : ""}
+                        </span>
+                      </div>
+                    )}
+                    {hasCoords && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">📍 GPS</span>
+                        <span className="font-semibold tabular-nums text-[10px]">{v.last_lat!.toFixed(4)}, {v.last_lng!.toFixed(4)}</span>
+                      </div>
                     )}
                   </div>
+
+                  {/* Driver card */}
+                  {driverCard && (
+                    <div className="mt-2 pt-1.5 border-t text-[10px] text-muted-foreground truncate">
+                      🪪 {driverCard}
+                    </div>
+                  )}
                 </div>
               );
             })
