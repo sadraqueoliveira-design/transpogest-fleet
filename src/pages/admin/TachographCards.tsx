@@ -19,6 +19,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import TachographImport from "@/components/admin/TachographImport";
 
 interface TachCard {
   id: string;
@@ -192,6 +193,7 @@ export default function TachographCards() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Pesquisar por nome ou número..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
         </div>
+        <TachographImport onImportComplete={fetchCards} />
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openNew} className="bg-success hover:bg-success/90"><Plus className="h-4 w-4" /></Button>
