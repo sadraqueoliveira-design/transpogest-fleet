@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Search, LayoutGrid, Map as MapIcon, RefreshCw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, LayoutGrid, Map as MapIcon, RefreshCw, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
@@ -39,6 +40,7 @@ export default function LiveMap() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [search, setSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -74,6 +76,7 @@ export default function LiveMap() {
   };
 
   const filtered = vehicles.filter(v => {
+    if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
     const matchSearch = !search || v.plate.toLowerCase().includes(search.toLowerCase());
     if (!matchSearch) return false;
     if (filterTab === "moving") return getStatus(v) === "moving";
@@ -206,7 +209,6 @@ export default function LiveMap() {
         <p className="page-subtitle">Localização em tempo real da frota</p>
       </div>
 
-      {/* Search + view toggles */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -217,6 +219,16 @@ export default function LiveMap() {
             className="pl-9"
           />
         </div>
+        <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-48">
+            <Filter className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectValue placeholder="Cliente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Button
           variant={viewMode === "cards" ? "default" : "outline"}
           size="icon"

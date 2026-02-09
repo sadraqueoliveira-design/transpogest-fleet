@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink } from "lucide-react";
+import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
@@ -63,6 +63,8 @@ export default function Fleet() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ plate: "", brand: "", model: "", vin: "", insurance_expiry: "", inspection_expiry: "", tachograph_calibration_date: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Vehicle>>({});
   const [docsDialogOpen, setDocsDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [vehicleDocs, setVehicleDocs] = useState<VehicleDoc[]>([]);
@@ -94,6 +96,30 @@ export default function Fleet() {
   };
 
   const openDocsDialog = (vehicle: Vehicle) => { setSelectedVehicle(vehicle); setDocsDialogOpen(true); fetchDocs(vehicle.id); };
+
+  const startEdit = (v: Vehicle) => {
+    setEditingId(v.id);
+    setEditForm({
+      plate: v.plate, brand: v.brand, model: v.model, vin: v.vin,
+      insurance_expiry: v.insurance_expiry, inspection_expiry: v.inspection_expiry,
+      tachograph_calibration_date: v.tachograph_calibration_date, client_id: v.client_id,
+    });
+  };
+
+  const cancelEdit = () => { setEditingId(null); setEditForm({}); };
+
+  const saveEdit = async () => {
+    if (!editingId) return;
+    const { error } = await supabase.from("vehicles").update({
+      plate: editForm.plate, brand: editForm.brand || null, model: editForm.model || null,
+      vin: editForm.vin || null, insurance_expiry: editForm.insurance_expiry || null,
+      inspection_expiry: editForm.inspection_expiry || null,
+      tachograph_calibration_date: editForm.tachograph_calibration_date || null,
+      client_id: editForm.client_id || null,
+    }).eq("id", editingId);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Veículo atualizado"); cancelEdit(); fetchVehicles(); }
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,7 +246,7 @@ export default function Fleet() {
                 <TableHead>Tacógrafo</TableHead>
                 <TableHead>Combustível</TableHead>
                 <TableHead>Km</TableHead>
-                <TableHead>Docs</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -231,19 +257,58 @@ export default function Fleet() {
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id}>
-                    <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
-                    <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
-                    <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
-                    <TableCell>{expiryBadge(v.inspection_expiry)}</TableCell>
-                    <TableCell>{expiryBadge(v.tachograph_calibration_date)}</TableCell>
-                    <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
-                    <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openDocsDialog(v)}>
-                        <FileText className="mr-1 h-3 w-3" />Gerir
-                      </Button>
-                    </TableCell>
+                    {editingId === v.id ? (
+                      <>
+                        <TableCell><Input value={editForm.plate || ""} onChange={e => setEditForm({...editForm, plate: e.target.value})} className="h-7 text-xs w-24 font-mono" /></TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Input value={editForm.brand || ""} onChange={e => setEditForm({...editForm, brand: e.target.value})} placeholder="Marca" className="h-7 text-xs w-20" />
+                            <Input value={editForm.model || ""} onChange={e => setEditForm({...editForm, model: e.target.value})} placeholder="Modelo" className="h-7 text-xs w-20" />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Select value={editForm.client_id || "none"} onValueChange={val => setEditForm({...editForm, client_id: val === "none" ? null : val})}>
+                            <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Nenhum</SelectItem>
+                              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell><Input type="date" value={editForm.insurance_expiry || ""} onChange={e => setEditForm({...editForm, insurance_expiry: e.target.value})} className="h-7 text-xs w-32" /></TableCell>
+                        <TableCell><Input type="date" value={editForm.inspection_expiry || ""} onChange={e => setEditForm({...editForm, inspection_expiry: e.target.value})} className="h-7 text-xs w-32" /></TableCell>
+                        <TableCell><Input type="date" value={editForm.tachograph_calibration_date || ""} onChange={e => setEditForm({...editForm, tachograph_calibration_date: e.target.value})} className="h-7 text-xs w-32" /></TableCell>
+                        <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
+                        <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 justify-end">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={saveEdit}><Check className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={cancelEdit}><X className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        </TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
+                        <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
+                        <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
+                        <TableCell>{expiryBadge(v.inspection_expiry)}</TableCell>
+                        <TableCell>{expiryBadge(v.tachograph_calibration_date)}</TableCell>
+                        <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
+                        <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 justify-end">
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => startEdit(v)}>
+                              <Pencil className="mr-1 h-3 w-3" />Editar
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openDocsDialog(v)}>
+                              <FileText className="mr-1 h-3 w-3" />Docs
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </>
+                    )}
                   </TableRow>
                 ))
               )}
