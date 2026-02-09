@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer } from "lucide-react";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
@@ -38,6 +38,7 @@ interface Vehicle {
   odometer_km: number | null;
   engine_hours: number | null;
   tachograph_status: string | null;
+  temperature_data: any;
   client_id: string | null;
 }
 
@@ -109,12 +110,18 @@ export default function FuelManagement() {
       if (v.tachograph_status) {
         try { tacho = JSON.parse(v.tachograph_status); } catch {}
       }
+      const td = v.temperature_data as any;
       const fuel = v.fuel_level_percent ?? tacho.flv ?? null;
       const adblue = tacho.adbl ?? null;
-      const tfl = tacho.tfl ?? null; // total fuel consumed
-      return { ...v, fuel, adblue, tfl };
+      const tfl = tacho.tfl ?? null;
+      const frt = tacho.frt ?? null; // reefer/fridge running status (1=on, 0=off)
+      const t1 = td?.tp1 ?? td?.t1 ?? td?.T1 ?? null;
+      const t2 = td?.tp2 ?? td?.t2 ?? td?.T2 ?? null;
+      const t3 = td?.tp3 ?? td?.t3 ?? td?.T3 ?? null;
+      const hasReefer = frt != null || (td && Object.keys(td).length > 0);
+      return { ...v, fuel, adblue, tfl, frt, t1, t2, t3, hasReefer };
     })
-    .sort((a, b) => (a.fuel ?? 999) - (b.fuel ?? 999)); // low fuel first
+    .sort((a, b) => (a.fuel ?? 999) - (b.fuel ?? 999));
 
   // Filtered manual logs
   const filteredLogs = logs.filter(l => {
@@ -129,6 +136,13 @@ export default function FuelManagement() {
   const totalCost = logs.reduce((sum, l) => sum + (l.liters * (l.price_per_liter || 0)), 0);
   const lowFuelCount = telemetryVehicles.filter(v => v.fuel != null && v.fuel < 15).length;
   const lowAdblueCount = telemetryVehicles.filter(v => v.adblue != null && v.adblue < 10).length;
+  const reeferActiveCount = telemetryVehicles.filter(v => v.frt === 1).length;
+  const reeferVehicles = telemetryVehicles.filter(v => v.hasReefer);
+
+  // AdBlue sorted view
+  const adblueVehicles = [...telemetryVehicles]
+    .filter(v => v.adblue != null)
+    .sort((a, b) => (a.adblue ?? 999) - (b.adblue ?? 999));
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +182,25 @@ export default function FuelManagement() {
     "Consumo Total (L)": v.tfl != null ? Math.round(v.tfl) : "",
     Km: v.odometer_km != null ? Math.round(v.odometer_km) : "",
     "H. Motor": v.engine_hours != null ? Math.round(v.engine_hours) : "",
+  }));
+
+  const adblueExportData = adblueVehicles.map(v => ({
+    Matrícula: v.plate,
+    "Marca/Modelo": [v.brand, v.model].filter(Boolean).join(" ") || "",
+    Cliente: v.client_id ? getClient(v.client_id)?.name || "" : "",
+    "AdBlue (%)": v.adblue != null ? Math.round(v.adblue) : "",
+    Km: v.odometer_km != null ? Math.round(v.odometer_km) : "",
+    "H. Motor": v.engine_hours != null ? Math.round(v.engine_hours) : "",
+  }));
+
+  const reeferExportData = reeferVehicles.map(v => ({
+    Matrícula: v.plate,
+    "Marca/Modelo": [v.brand, v.model].filter(Boolean).join(" ") || "",
+    Cliente: v.client_id ? getClient(v.client_id)?.name || "" : "",
+    "Motor Frio": v.frt === 1 ? "Ligado" : v.frt === 0 ? "Desligado" : "—",
+    "T1 (°C)": typeof v.t1 === "number" ? v.t1.toFixed(1) : "",
+    "T2 (°C)": typeof v.t2 === "number" ? v.t2.toFixed(1) : "",
+    "T3 (°C)": typeof v.t3 === "number" ? v.t3.toFixed(1) : "",
   }));
 
   const manualExportData = filteredLogs.map(l => {
@@ -277,7 +310,7 @@ export default function FuelManagement() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
           <Fuel className="h-5 w-5 text-muted-foreground" />
           <div>
@@ -306,6 +339,13 @@ export default function FuelManagement() {
             <p className="text-[11px] text-muted-foreground">AdBlue Baixo (&lt;10%)</p>
           </div>
         </div>
+        <div className="flex items-center gap-3 rounded-lg border px-4 py-3">
+          <Snowflake className={`h-5 w-5 ${reeferActiveCount > 0 ? "text-primary" : "text-muted-foreground"}`} />
+          <div>
+            <p className={`text-lg font-bold ${reeferActiveCount > 0 ? "text-primary" : ""}`}>{reeferActiveCount}/{reeferVehicles.length}</p>
+            <p className="text-[11px] text-muted-foreground">Motor Frio Ligado</p>
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -326,20 +366,27 @@ export default function FuelManagement() {
       </div>
 
       <Tabs defaultValue="telemetry" onValueChange={setActiveTab}>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <TabsList>
-            <TabsTrigger value="telemetry">📡 Automático (GPS)</TabsTrigger>
+            <TabsTrigger value="telemetry">⛽ Combustível</TabsTrigger>
+            <TabsTrigger value="adblue">💧 AdBlue ({adblueVehicles.length})</TabsTrigger>
+            <TabsTrigger value="reefer">❄️ Motor Frio ({reeferVehicles.length})</TabsTrigger>
             <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <ExportButton
-              data={activeTab === "telemetry" ? telemetryExportData : manualExportData}
-              filenameBase={activeTab === "telemetry" ? "combustivel_telemetria" : "abastecimentos_manuais"}
+              data={activeTab === "telemetry" ? telemetryExportData : activeTab === "adblue" ? adblueExportData : activeTab === "reefer" ? reeferExportData : manualExportData}
+              filenameBase={activeTab === "telemetry" ? "combustivel" : activeTab === "adblue" ? "adblue" : activeTab === "reefer" ? "motor_frio" : "abastecimentos_manuais"}
               sheetName="Abastecimento"
             />
             <Button variant="outline" size="sm" className="gap-2" onClick={() => {
-              const data = activeTab === "telemetry" ? telemetryExportData : manualExportData;
-              const title = activeTab === "telemetry" ? "Relatório de Combustível - Telemetria" : "Registos de Abastecimento Manual";
+              const map: Record<string, { data: any[]; title: string }> = {
+                telemetry: { data: telemetryExportData, title: "Relatório de Combustível" },
+                adblue: { data: adblueExportData, title: "Relatório de AdBlue" },
+                reefer: { data: reeferExportData, title: "Relatório Motor de Frio" },
+                manual: { data: manualExportData, title: "Registos de Abastecimento Manual" },
+              };
+              const { data, title } = map[activeTab] || map.telemetry;
               exportPDF(title, data);
             }}>
               <FileText className="h-4 w-4" /> PDF
@@ -389,6 +436,114 @@ export default function FuelManagement() {
                         <TableCell className="text-right tabular-nums">{v.tfl != null ? Math.round(v.tfl).toLocaleString("pt-PT") : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{v.odometer_km != null ? Math.round(v.odometer_km).toLocaleString("pt-PT") : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* AdBlue tab */}
+        <TabsContent value="adblue">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Marca/Modelo</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="text-right">💧 AdBlue (%)</TableHead>
+                    <TableHead className="text-right">Km</TableHead>
+                    <TableHead className="text-right">H. Motor</TableHead>
+                    <TableHead>Estado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {adblueVehicles.length === 0 ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum veículo com dados de AdBlue</TableCell></TableRow>
+                  ) : (
+                    adblueVehicles.map(v => (
+                      <TableRow key={v.id}>
+                        <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
+                        <TableCell className="text-sm">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v.client_id ? getClient(v.client_id)?.name || "—" : "—"}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={`font-semibold tabular-nums ${v.adblue != null && v.adblue < 10 ? "text-destructive" : v.adblue != null && v.adblue < 20 ? "text-warning" : ""}`}>
+                            {v.adblue != null ? `${Math.round(v.adblue)}%` : "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{v.odometer_km != null ? Math.round(v.odometer_km).toLocaleString("pt-PT") : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</TableCell>
+                        <TableCell>
+                          {v.adblue != null && v.adblue < 10 ? (
+                            <Badge variant="destructive">Crítico</Badge>
+                          ) : v.adblue != null && v.adblue < 20 ? (
+                            <Badge className="bg-warning text-warning-foreground">Baixo</Badge>
+                          ) : (
+                            <Badge variant="secondary">Normal</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Reefer / Motor de Frio tab */}
+        <TabsContent value="reefer">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Marca/Modelo</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="text-center">Motor Frio</TableHead>
+                    <TableHead className="text-right">T1 (°C)</TableHead>
+                    <TableHead className="text-right">T2 (°C)</TableHead>
+                    <TableHead className="text-right">T3 (°C)</TableHead>
+                    <TableHead className="text-right">⛽ Comb.</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reeferVehicles.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum veículo com motor de frio</TableCell></TableRow>
+                  ) : (
+                    reeferVehicles.map(v => (
+                      <TableRow key={v.id}>
+                        <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
+                        <TableCell className="text-sm">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{v.client_id ? getClient(v.client_id)?.name || "—" : "—"}</TableCell>
+                        <TableCell className="text-center">
+                          {v.frt === 1 ? (
+                            <Badge className="bg-success text-white">Ligado</Badge>
+                          ) : v.frt === 0 ? (
+                            <Badge variant="secondary">Desligado</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums font-semibold ${typeof v.t1 === "number" && v.t1 > 8 ? "text-destructive" : typeof v.t1 === "number" && v.t1 > 5 ? "text-warning" : ""}`}>
+                          {typeof v.t1 === "number" ? `${v.t1.toFixed(1)}°` : "—"}
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums font-semibold ${typeof v.t2 === "number" && v.t2 > 8 ? "text-destructive" : typeof v.t2 === "number" && v.t2 > 5 ? "text-warning" : ""}`}>
+                          {typeof v.t2 === "number" ? `${v.t2.toFixed(1)}°` : "—"}
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums font-semibold ${typeof v.t3 === "number" && v.t3 > 8 ? "text-destructive" : typeof v.t3 === "number" && v.t3 > 5 ? "text-warning" : ""}`}>
+                          {typeof v.t3 === "number" ? `${v.t3.toFixed(1)}°` : "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className={fuelColor(v.fuel)}>
+                            {v.fuel != null ? `${Math.round(v.fuel)}%` : "—"}
+                          </span>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
