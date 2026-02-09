@@ -84,59 +84,76 @@ Deno.serve(async (req) => {
 
         // 5. Mapeamento e Upsert (Salvar no Banco)
         if (vehiclesData.length > 0) {
-          // Log first vehicle structure for debugging
           console.log(`${client.name}: ${vehiclesData.length} veículos encontrados`);
+
+          // Helper: reverse geocode with Nominatim (rate limit: 1 req/sec)
+          const reverseGeocode = async (lat: number, lon: number): Promise<string | null> => {
+            try {
+              const resp = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=14&addressdetails=1`,
+                { headers: { "User-Agent": "FleetSync/1.0" } }
+              );
+              if (!resp.ok) return null;
+              const data = await resp.json();
+              const addr = data.address;
+              if (!addr) return data.display_name?.split(",").slice(0, 2).join(",") || null;
+              // Build short location: village/city, municipality
+              const place = addr.village || addr.town || addr.city || addr.suburb || addr.hamlet || "";
+              const region = addr.municipality || addr.county || addr.state || "";
+              return [place, region].filter(Boolean).join(", ") || data.display_name?.split(",").slice(0, 2).join(",") || null;
+            } catch { return null; }
+          };
           
-          const vehiclesToUpsert = vehiclesData
-            .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name)
-            .map((v: any) => {
-              // Actual API: { mid, info, data: { pos, drs, can, fue, tmp, tac, exd, tlm, ... } }
+          const filteredVehicles = vehiclesData
+            .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name);
+
+          // Build vehicle records first
+          const vehicleRecords = filteredVehicles.map((v: any) => {
               const d = v.data || {};
               const pos = d.pos || {};
               const loc = pos.loc || {};
-              const drs = d.drs || {};        // Contains BOTH tachograph AND ecodrive data
-              const tmp = d.tmp || {};        // Temperature probes
-              
+              const drs = d.drs || {};
+              const tmp = d.tmp || {};
               const plate = v.info?.plate || v.plate || v.name || "SEM-PLACA";
-              const brand = v.info?.brand || null;
-              const model = v.info?.model || null;
-              
-              // drs contains ecodrive fields: flv (fuel%), adbl (adblue%), ehr (engine hours),
-              // ckm (odometer), rpm, ds1/ds2 (driver status), dc1 (driver card), tfl (total fuel)
               const fuelLevel = drs.flv ?? d.fue?.flv ?? null;
               const rpmVal = drs.rpm ?? d.can?.rpm ?? null;
               const odometerVal = drs.ckm ?? pos.gkm ?? null;
               const engineHoursVal = drs.ehr ?? null;
-              
               return {
                 client_id: client.id,
                 trackit_id: String(v.mid || v.id || plate),
                 plate: plate.replace(/[\s]/g, "").toUpperCase(),
-                brand: brand,
-                model: model,
-
-                // Position
+                brand: v.info?.brand || null,
+                model: v.info?.model || null,
                 last_lat: loc.lat ?? null,
                 last_lng: loc.lon ?? null,
                 last_speed: pos.gsp != null ? Math.round(pos.gsp) : 0,
-
-                // Telemetry extracted from drs (ecodrive)
                 fuel_level_percent: fuelLevel,
                 rpm: rpmVal != null ? Math.round(rpmVal) : null,
                 odometer_km: odometerVal,
                 engine_hours: engineHoursVal,
-
-                // Temperature probes
                 temperature_data: Object.keys(tmp).length > 0 ? tmp : null,
-
-                // Full tachograph/ecodrive JSON for detail panel
-                tachograph_status: Object.keys(drs).length > 0
-                  ? JSON.stringify(drs)
-                  : null,
-
+                last_location_name: null as string | null,
+                tachograph_status: Object.keys(drs).length > 0 ? JSON.stringify(drs) : null,
                 updated_at: new Date().toISOString(),
               };
-            });
+          });
+
+          // Batch reverse geocode (5 at a time)
+          const BATCH = 5;
+          for (let i = 0; i < vehicleRecords.length; i += BATCH) {
+            const batch = vehicleRecords.slice(i, i + BATCH);
+            await Promise.all(batch.map(async (rec) => {
+              if (rec.last_lat != null && rec.last_lng != null) {
+                rec.last_location_name = await reverseGeocode(rec.last_lat, rec.last_lng);
+              }
+            }));
+            if (i + BATCH < vehicleRecords.length) {
+              await new Promise(r => setTimeout(r, 1100)); // respect 1 req/sec per batch
+            }
+          }
+
+          const vehiclesToUpsert = vehicleRecords;
 
           // Upsert no Supabase (Atualiza se existir, Cria se novo)
           const { error: upsertError } = await supabaseAdmin

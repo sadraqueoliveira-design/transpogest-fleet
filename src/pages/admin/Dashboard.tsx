@@ -372,9 +372,7 @@ export default function Dashboard() {
               const rpm = v.rpm ?? tacho.rpm ?? null;
               const driverCard = tacho.dc1 || null;
               const cName = clients.find(c => c.id === v.client_id)?.name;
-
-              // Location from POI if available
-              const poi = (v as any).poi_name;
+              const locationName = (v as any).last_location_name;
               const hasCoords = v.last_lat != null && v.last_lng != null;
 
               return (
@@ -436,10 +434,12 @@ export default function Dashboard() {
                         </span>
                       </div>
                     )}
-                    {hasCoords && (
+                    {(locationName || hasCoords) && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">📍 GPS</span>
-                        <span className="font-semibold tabular-nums text-[10px]">{v.last_lat!.toFixed(4)}, {v.last_lng!.toFixed(4)}</span>
+                        <span className="text-muted-foreground">📍 Local</span>
+                        <span className="font-semibold text-[10px] truncate max-w-[120px] text-right" title={locationName || `${v.last_lat!.toFixed(4)}, ${v.last_lng!.toFixed(4)}`}>
+                          {locationName || `${v.last_lat!.toFixed(4)}, ${v.last_lng!.toFixed(4)}`}
+                        </span>
                       </div>
                     )}
                   </div>
