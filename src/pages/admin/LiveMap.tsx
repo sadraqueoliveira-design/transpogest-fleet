@@ -45,6 +45,8 @@ export default function LiveMap() {
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [countdown, setCountdown] = useState(30);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
 
@@ -58,6 +60,21 @@ export default function LiveMap() {
   };
 
   useEffect(() => { fetchVehicles(); }, []);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    if (!autoRefresh) { setCountdown(30); return; }
+    const interval = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          fetchVehicles();
+          return 30;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   const getStatus = (v: Vehicle) => {
     if ((v.last_speed || 0) > 5) return "moving";
@@ -261,6 +278,14 @@ export default function LiveMap() {
         </Button>
         <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing}>
           <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+        </Button>
+        <Button
+          variant={autoRefresh ? "default" : "outline"}
+          size="sm"
+          onClick={() => setAutoRefresh(!autoRefresh)}
+          className="text-xs gap-1.5 min-w-[80px]"
+        >
+          {autoRefresh ? `Auto ${countdown}s` : "Auto OFF"}
         </Button>
       </div>
 
