@@ -560,6 +560,7 @@ export type Database = {
           insurance_expiry: string | null
           last_lat: number | null
           last_lng: number | null
+          last_location_name: string | null
           last_speed: number | null
           model: string | null
           odometer_km: number | null
@@ -584,6 +585,7 @@ export type Database = {
           insurance_expiry?: string | null
           last_lat?: number | null
           last_lng?: number | null
+          last_location_name?: string | null
           last_speed?: number | null
           model?: string | null
           odometer_km?: number | null
@@ -608,6 +610,7 @@ export type Database = {
           insurance_expiry?: string | null
           last_lat?: number | null
           last_lng?: number | null
+          last_location_name?: string | null
           last_speed?: number | null
           model?: string | null
           odometer_km?: number | null
