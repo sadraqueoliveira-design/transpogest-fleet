@@ -350,7 +350,11 @@ export default function Dashboard() {
           {filtered.length === 0 ? (
             <Card className="col-span-full py-12 text-center text-muted-foreground">Nenhum veículo encontrado</Card>
           ) : (
-            filtered.map((v) => {
+            [...filtered].sort((a, b) => {
+              const aMoving = (a.last_speed || 0) > 5 ? 1 : 0;
+              const bMoving = (b.last_speed || 0) > 5 ? 1 : 0;
+              return bMoving - aMoving;
+            }).map((v) => {
               const speed = v.last_speed || 0;
               const isMoving = speed > 5;
               const alert = hasAlert(v);
@@ -379,8 +383,12 @@ export default function Dashboard() {
                 <div
                   key={v.id}
                   onClick={() => setSelectedVehicle(v)}
-                  className={`rounded-lg border bg-card p-3 cursor-pointer transition-all hover:shadow-md hover:border-primary/30 ${
-                    alert ? "border-destructive/50 bg-destructive/5" : isMoving ? "border-success/40" : "border-border"
+                  className={`rounded-lg border p-3 cursor-pointer transition-all hover:shadow-md ${
+                    isMoving
+                      ? "bg-success/10 border-success/50 hover:border-success/70"
+                      : alert
+                        ? "border-destructive/50 bg-destructive/5 hover:border-destructive/70"
+                        : "bg-card border-border hover:border-primary/30"
                   }`}
                 >
                   {/* Header: status dot + plate + speed */}
