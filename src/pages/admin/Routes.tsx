@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, MapPin, Trash2, Navigation, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { ExportButton } from "@/components/admin/BulkImportExport";
 
 interface RouteRow {
   id: string;
@@ -299,6 +300,12 @@ export default function Routes() {
     return vehicles.find((v) => v.id === vehicleId)?.plate || "—";
   };
 
+  const routeExportData = routes.map(r => ({
+    Origem: r.start_location || "", Destino: r.end_location || "",
+    Motorista: getDriverName(r.driver_id), Veículo: getVehiclePlate(r.vehicle_id),
+    Estado: statusLabels[r.status] || r.status, Data: format(new Date(r.created_at), "dd/MM/yyyy"),
+  }));
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -306,9 +313,12 @@ export default function Routes() {
           <h1 className="page-header">Gestão de Rotas</h1>
           <p className="page-subtitle">Criar e atribuir rotas a motoristas</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />Nova Rota
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportButton data={routeExportData} filenameBase="rotas" sheetName="Rotas" />
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />Nova Rota
+          </Button>
+        </div>
       </div>
 
       <Card>
