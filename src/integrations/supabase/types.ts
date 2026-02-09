@@ -531,6 +531,7 @@ export type Database = {
           model: string | null
           odometer_km: number | null
           plate: string
+          rpm: number | null
           tachograph_calibration_date: string | null
           tachograph_status: string | null
           temperature_data: Json | null
@@ -552,6 +553,7 @@ export type Database = {
           model?: string | null
           odometer_km?: number | null
           plate: string
+          rpm?: number | null
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null
@@ -573,6 +575,7 @@ export type Database = {
           model?: string | null
           odometer_km?: number | null
           plate?: string
+          rpm?: number | null
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null

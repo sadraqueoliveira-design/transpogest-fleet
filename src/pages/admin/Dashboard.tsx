@@ -22,6 +22,8 @@ interface Vehicle {
   current_driver_id: string | null;
   fuel_level_percent: number | null;
   odometer_km: number | null;
+  engine_hours: number | null;
+  rpm: number | null;
   temperature_data: any;
   brand: string | null;
   model: string | null;
