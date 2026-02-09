@@ -26,6 +26,7 @@ interface Vehicle {
   tachograph_calibration_date: string | null;
   fuel_level_percent: number | null;
   odometer_km: number | null;
+  engine_hours: number | null;
   client_id: string | null;
 }
 
@@ -263,14 +264,15 @@ export default function Fleet() {
                 <TableHead>Tacógrafo</TableHead>
                 <TableHead>Combustível</TableHead>
                 <TableHead>Km</TableHead>
+                <TableHead>H. Motor</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id}>
@@ -297,6 +299,7 @@ export default function Fleet() {
                         <TableCell><Input type="date" value={editForm.tachograph_calibration_date || ""} onChange={e => setEditForm({...editForm, tachograph_calibration_date: e.target.value})} className="h-7 text-xs w-32" /></TableCell>
                         <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
                         <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
+                        <TableCell>{v.engine_hours != null ? `${Math.round(v.engine_hours).toLocaleString("pt-PT")} h` : "—"}</TableCell>
                         <TableCell>
                           <div className="flex gap-1 justify-end">
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-success" onClick={saveEdit}><Check className="h-3.5 w-3.5" /></Button>
@@ -314,6 +317,7 @@ export default function Fleet() {
                         <TableCell>{expiryBadge(v.tachograph_calibration_date)}</TableCell>
                         <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
                         <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
+                        <TableCell>{v.engine_hours != null ? `${Math.round(v.engine_hours).toLocaleString("pt-PT")} h` : "—"}</TableCell>
                         <TableCell>
                            <div className="flex gap-1 justify-end">
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => startEdit(v)}>
