@@ -6,6 +6,7 @@ import { Search, LayoutGrid, Map as MapIcon, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
+import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 
 interface Vehicle {
   id: string;
@@ -33,6 +34,7 @@ export default function LiveMap() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [syncing, setSyncing] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -267,7 +269,7 @@ export default function LiveMap() {
             </Card>
           ) : (
             filtered.map((v) => (
-              <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} />
+              <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} onClick={() => setSelectedVehicle(v)} />
             ))
           )}
         </div>
@@ -276,6 +278,12 @@ export default function LiveMap() {
       <p className="text-xs text-center text-muted-foreground">
         {filtered.length} de {vehicles.length} veículo(s)
       </p>
+
+      <VehicleDetailPanel
+        vehicle={selectedVehicle}
+        open={!!selectedVehicle}
+        onClose={() => setSelectedVehicle(null)}
+      />
     </div>
   );
 }

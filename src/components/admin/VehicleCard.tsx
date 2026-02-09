@@ -29,9 +29,10 @@ interface Vehicle {
 interface Props {
   vehicle: Vehicle;
   hasAlert: boolean;
+  onClick?: () => void;
 }
 
-export default function VehicleCard({ vehicle: v, hasAlert }: Props) {
+export default function VehicleCard({ vehicle: v, hasAlert, onClick }: Props) {
   const speed = v.last_speed || 0;
   const isMoving = speed > 5;
   const fuel = v.fuel_level_percent;
@@ -63,7 +64,7 @@ export default function VehicleCard({ vehicle: v, hasAlert }: Props) {
   const fuelColor = lowFuel ? "bg-destructive" : fuel != null && fuel < 30 ? "bg-warning" : "bg-success";
 
   return (
-    <Card className={`overflow-hidden transition-shadow hover:shadow-md ${hasAlert ? "border-destructive/50 shadow-destructive/10" : ""}`}>
+    <Card className={`overflow-hidden transition-shadow hover:shadow-md cursor-pointer ${hasAlert ? "border-destructive/50 shadow-destructive/10" : ""}`} onClick={onClick}>
       <CardContent className="p-0">
         {/* Top status bar */}
         <div className={`h-1 w-full ${isMoving ? "bg-success" : hasAlert ? "bg-destructive" : "bg-muted"}`} />

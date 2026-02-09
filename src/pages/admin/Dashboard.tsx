@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
+import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 
 interface Vehicle {
   id: string;
@@ -50,6 +51,7 @@ export default function Dashboard() {
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
 
   const fetchVehicles = async () => {
     const { data } = await supabase.from("vehicles").select("*");
@@ -347,7 +349,7 @@ export default function Dashboard() {
           {filtered.length === 0 ? (
             <Card className="py-12 text-center text-muted-foreground">Nenhum veículo encontrado</Card>
           ) : (
-            filtered.map((v) => <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} />)
+            filtered.map((v) => <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} onClick={() => setSelectedVehicle(v)} />)
           )}
         </div>
       )}
@@ -378,6 +380,12 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      <VehicleDetailPanel
+        vehicle={selectedVehicle}
+        open={!!selectedVehicle}
+        onClose={() => setSelectedVehicle(null)}
+      />
     </div>
   );
 }
