@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.create-admin]
 verify_jwt = false
+
+[functions.test-trackit-connection]
+verify_jwt = false
