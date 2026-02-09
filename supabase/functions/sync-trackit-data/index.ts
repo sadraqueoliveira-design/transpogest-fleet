@@ -80,6 +80,13 @@ Deno.serve(async (req) => {
         updateData.temperature_data = v.tmp;
       }
 
+      // RPM from CAN bus
+      if (v.can?.rpm != null) {
+        updateData.rpm = Math.round(v.can.rpm);
+      } else if (v.eco?.exd?.rpm != null) {
+        updateData.rpm = Math.round(v.eco.exd.rpm);
+      }
+
       if (Object.keys(updateData).length === 0) continue;
 
       updateData.updated_at = new Date().toISOString();
