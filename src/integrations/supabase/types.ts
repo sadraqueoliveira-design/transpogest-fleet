@@ -85,30 +85,42 @@ export type Database = {
       }
       clients: {
         Row: {
+          api_enabled: boolean
           code: string
           created_at: string
           id: string
+          last_sync_at: string | null
           name: string
           nif: string | null
           status: string
+          trackit_password: string | null
+          trackit_username: string | null
           updated_at: string
         }
         Insert: {
+          api_enabled?: boolean
           code: string
           created_at?: string
           id?: string
+          last_sync_at?: string | null
           name: string
           nif?: string | null
           status?: string
+          trackit_password?: string | null
+          trackit_username?: string | null
           updated_at?: string
         }
         Update: {
+          api_enabled?: boolean
           code?: string
           created_at?: string
           id?: string
+          last_sync_at?: string | null
           name?: string
           nif?: string | null
           status?: string
+          trackit_password?: string | null
+          trackit_username?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -518,6 +530,7 @@ export type Database = {
       vehicles: {
         Row: {
           brand: string | null
+          client_id: string | null
           created_at: string
           current_driver_id: string | null
           engine_hours: number | null
@@ -540,6 +553,7 @@ export type Database = {
         }
         Insert: {
           brand?: string | null
+          client_id?: string | null
           created_at?: string
           current_driver_id?: string | null
           engine_hours?: number | null
@@ -562,6 +576,7 @@ export type Database = {
         }
         Update: {
           brand?: string | null
+          client_id?: string | null
           created_at?: string
           current_driver_id?: string | null
           engine_hours?: number | null
@@ -582,7 +597,15 @@ export type Database = {
           updated_at?: string
           vin?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
