@@ -20,6 +20,8 @@ interface RouteRow {
   status: "planned" | "in_progress" | "completed" | "cancelled";
   driver_id: string | null;
   vehicle_id: string | null;
+  client_id: string | null;
+  hub_id: string | null;
   waypoints: any;
   created_at: string;
 }
@@ -32,6 +34,17 @@ interface DriverOption {
 interface VehicleOption {
   id: string;
   plate: string;
+}
+
+interface ClientOption {
+  id: string;
+  name: string;
+}
+
+interface HubOption {
+  id: string;
+  name: string;
+  client_id: string;
 }
 
 const statusLabels: Record<string, string> = {
@@ -59,6 +72,8 @@ export default function Routes() {
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [vehicles, setVehicles] = useState<VehicleOption[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [hubs, setHubs] = useState<HubOption[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Create dialog
@@ -68,6 +83,8 @@ export default function Routes() {
     end_location: "",
     driver_id: "",
     vehicle_id: "",
+    client_id: "",
+    hub_id: "",
   });
   const [waypoints, setWaypoints] = useState<[number, number][]>([]);
 
@@ -85,14 +102,18 @@ export default function Routes() {
   const viewMapInstance = useRef<any>(null);
 
   const fetchAll = async () => {
-    const [routeRes, driverRes, vehicleRes] = await Promise.all([
+    const [routeRes, driverRes, vehicleRes, clientRes, hubRes] = await Promise.all([
       supabase.from("routes").select("*").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("user_id").eq("role", "driver"),
       supabase.from("vehicles").select("id, plate").order("plate"),
+      supabase.from("clients").select("id, name").eq("status", "active").order("name"),
+      supabase.from("hubs").select("id, name, client_id").eq("status", "active").order("name"),
     ]);
 
     if (routeRes.data) setRoutes(routeRes.data as RouteRow[]);
     if (vehicleRes.data) setVehicles(vehicleRes.data);
+    if (clientRes.data) setClients(clientRes.data);
+    if (hubRes.data) setHubs(hubRes.data);
 
     // Fetch driver names
     if (driverRes.data && driverRes.data.length > 0) {
@@ -200,6 +221,8 @@ export default function Routes() {
       end_location: form.end_location.trim(),
       driver_id: form.driver_id || null,
       vehicle_id: form.vehicle_id || null,
+      client_id: form.client_id || null,
+      hub_id: form.hub_id || null,
       waypoints: waypoints.length > 0 ? waypoints.map(([lat, lng]) => ({ lat, lng })) : [],
       status: "planned" as const,
     });
@@ -208,7 +231,7 @@ export default function Routes() {
     } else {
       toast.success("Rota criada com sucesso");
       setCreateOpen(false);
-      setForm({ start_location: "", end_location: "", driver_id: "", vehicle_id: "" });
+      setForm({ start_location: "", end_location: "", driver_id: "", vehicle_id: "", client_id: "", hub_id: "" });
       clearWaypoints();
       fetchAll();
     }
@@ -307,6 +330,16 @@ export default function Routes() {
     return vehicles.find((v) => v.id === vehicleId)?.plate || "—";
   };
 
+  const getClientName = (clientId: string | null) => {
+    if (!clientId) return "—";
+    return clients.find((c) => c.id === clientId)?.name || "—";
+  };
+
+  const getHubName = (hubId: string | null) => {
+    if (!hubId) return "—";
+    return hubs.find((h) => h.id === hubId)?.name || "—";
+  };
+
   const handleRouteImport = async (rows: Record<string, string>[]) => {
     const driverMap: Record<string, string> = {};
     drivers.forEach(d => {
@@ -375,6 +408,8 @@ export default function Routes() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Hub</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead>Destino</TableHead>
                 <TableHead>Motorista</TableHead>
@@ -386,12 +421,14 @@ export default function Routes() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
               ) : routes.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhuma rota encontrada</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhuma rota encontrada</TableCell></TableRow>
               ) : (
                 routes.map((r) => (
                   <TableRow key={r.id}>
+                    <TableCell>{getClientName(r.client_id)}</TableCell>
+                    <TableCell>{getHubName(r.hub_id)}</TableCell>
                     <TableCell className="font-medium">{r.start_location || "—"}</TableCell>
                     <TableCell>{r.end_location || "—"}</TableCell>
                     <TableCell>{getDriverName(r.driver_id)}</TableCell>
@@ -445,12 +482,45 @@ export default function Routes() {
                 <Input value={form.end_location} onChange={(e) => setForm({ ...form, end_location: e.target.value })} placeholder="Ex: Porto" required />
               </div>
               <div className="space-y-2">
+                <Label>Cliente</Label>
+                <Select value={form.client_id} onValueChange={(v) => setForm({ ...form, client_id: v, hub_id: "" })}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Hub</Label>
+                <Select value={form.hub_id} onValueChange={(v) => setForm({ ...form, hub_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {hubs.filter(h => !form.client_id || h.client_id === form.client_id).map((h) => (
+                      <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label>Motorista</Label>
                 <Select value={form.driver_id} onValueChange={(v) => setForm({ ...form, driver_id: v })}>
                   <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                   <SelectContent>
                     {drivers.map((d) => (
                       <SelectItem key={d.user_id} value={d.user_id}>{d.full_name || "Sem nome"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Veículo</Label>
+                <Select value={form.vehicle_id} onValueChange={(v) => setForm({ ...form, vehicle_id: v })}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                  <SelectContent>
+                    {vehicles.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>{v.plate}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

@@ -369,9 +369,11 @@ export type Database = {
       }
       routes: {
         Row: {
+          client_id: string | null
           created_at: string
           driver_id: string | null
           end_location: string | null
+          hub_id: string | null
           id: string
           start_location: string | null
           status: Database["public"]["Enums"]["route_status"]
@@ -380,9 +382,11 @@ export type Database = {
           waypoints: Json | null
         }
         Insert: {
+          client_id?: string | null
           created_at?: string
           driver_id?: string | null
           end_location?: string | null
+          hub_id?: string | null
           id?: string
           start_location?: string | null
           status?: Database["public"]["Enums"]["route_status"]
@@ -391,9 +395,11 @@ export type Database = {
           waypoints?: Json | null
         }
         Update: {
+          client_id?: string | null
           created_at?: string
           driver_id?: string | null
           end_location?: string | null
+          hub_id?: string | null
           id?: string
           start_location?: string | null
           status?: Database["public"]["Enums"]["route_status"]
@@ -402,6 +408,20 @@ export type Database = {
           waypoints?: Json | null
         }
         Relationships: [
+          {
+            foreignKeyName: "routes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_hub_id_fkey"
+            columns: ["hub_id"]
+            isOneToOne: false
+            referencedRelation: "hubs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "routes_vehicle_id_fkey"
             columns: ["vehicle_id"]
