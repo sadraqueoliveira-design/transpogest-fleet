@@ -105,8 +105,8 @@ export default function LiveMap() {
     const initMap = async () => {
       const L = await import("leaflet");
       await import("leaflet/dist/leaflet.css");
-      // @ts-ignore
-      await import("leaflet.markercluster");
+      // Import markercluster and manually attach to L if needed
+      const mc = await import("leaflet.markercluster");
       await import("leaflet.markercluster/dist/MarkerCluster.css");
       await import("leaflet.markercluster/dist/MarkerCluster.Default.css");
 
@@ -117,19 +117,37 @@ export default function LiveMap() {
 
       mapInstance.current = map;
 
-      // @ts-ignore
-      const clusterGroup = L.markerClusterGroup({
-        iconCreateFunction: (cluster: any) => {
-          const count = cluster.getChildCount();
-          return L.divIcon({
-            html: `<div style="width:48px;height:48px;background:hsl(152 60% 42%);border-radius:50%;border:3px solid white;box-shadow:0 2px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;">${count}</div>`,
-            className: "",
-            iconSize: [48, 48],
-            iconAnchor: [24, 24],
-          });
-        },
-        maxClusterRadius: 60,
-      });
+      // markerClusterGroup may be on L or on the mc import
+      const createClusterGroup = (L as any).markerClusterGroup || (mc as any).markerClusterGroup || (mc as any).default?.markerClusterGroup;
+      
+      // Fallback: after importing the side-effect module, it should be on L
+      const clusterGroup = typeof createClusterGroup === 'function' 
+        ? createClusterGroup({
+            iconCreateFunction: (cluster: any) => {
+              const count = cluster.getChildCount();
+              return L.divIcon({
+                html: `<div style="width:48px;height:48px;background:hsl(152 60% 42%);border-radius:50%;border:3px solid white;box-shadow:0 2px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;">${count}</div>`,
+                className: "",
+                iconSize: [48, 48],
+                iconAnchor: [24, 24],
+              });
+            },
+            maxClusterRadius: 60,
+          })
+        : (L as any).MarkerClusterGroup 
+          ? new (L as any).MarkerClusterGroup({
+              iconCreateFunction: (cluster: any) => {
+                const count = cluster.getChildCount();
+                return L.divIcon({
+                  html: `<div style="width:48px;height:48px;background:hsl(152 60% 42%);border-radius:50%;border:3px solid white;box-shadow:0 2px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;">${count}</div>`,
+                  className: "",
+                  iconSize: [48, 48],
+                  iconAnchor: [24, 24],
+                });
+              },
+              maxClusterRadius: 60,
+            })
+          : L.layerGroup(); // Ultimate fallback: no clustering
 
       filtered.forEach((v) => {
         if (v.last_lat && v.last_lng) {
@@ -183,12 +201,10 @@ export default function LiveMap() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-trackit-data");
       if (error) throw error;
-      if (data?.success) {
-        toast.success(`${data.updated} veículos atualizados`);
-        fetchVehicles();
-      } else {
-        toast.error(data?.error || "Erro na sincronização");
-      }
+      const results = data?.results || [];
+      const totalCount = results.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+      toast.success(`${totalCount} veículos sincronizados`);
+      fetchVehicles();
     } catch (err: any) {
       toast.error("Erro: " + (err.message || "Desconhecido"));
     }
