@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store
+  Building2, MapPin, CreditCard, Settings, Store, Fuel
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
   { to: "/admin/frota", icon: Truck, label: "Frota" },
+  { to: "/admin/abastecimento", icon: Fuel, label: "Abastecimento" },
   { to: "/admin/clientes", icon: Building2, label: "Clientes" },
   { to: "/admin/hubs", icon: MapPin, label: "Hubs" },
   { to: "/admin/locais", icon: Store, label: "Locais da Rede" },
