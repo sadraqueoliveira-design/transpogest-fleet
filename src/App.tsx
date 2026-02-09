@@ -15,7 +15,8 @@ import NotFound from "./pages/NotFound";
 // Admin pages
 import Dashboard from "./pages/admin/Dashboard";
 import Fleet from "./pages/admin/Fleet";
-
+import Clients from "./pages/admin/Clients";
+import HubsPage from "./pages/admin/Hubs";
 import RoutesPage from "./pages/admin/Routes";
 import Maintenance from "./pages/admin/Maintenance";
 import FormBuilder from "./pages/admin/FormBuilder";
@@ -59,8 +60,9 @@ const App = () => (
             {/* Admin routes */}
             <Route path="/admin" element={<AdminRoute><Dashboard /></AdminRoute>} />
             <Route path="/admin/frota" element={<AdminRoute><Fleet /></AdminRoute>} />
+            <Route path="/admin/clientes" element={<AdminRoute><Clients /></AdminRoute>} />
+            <Route path="/admin/hubs" element={<AdminRoute><HubsPage /></AdminRoute>} />
             <Route path="/admin/rotas" element={<AdminRoute><RoutesPage /></AdminRoute>} />
-            
             <Route path="/admin/manutencao" element={<AdminRoute><Maintenance /></AdminRoute>} />
             <Route path="/admin/formularios" element={<AdminRoute><FormBuilder /></AdminRoute>} />
             <Route path="/admin/solicitacoes" element={<AdminRoute><ServiceRequests /></AdminRoute>} />

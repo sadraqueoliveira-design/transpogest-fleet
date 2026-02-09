@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
-  FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu
+  FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu, Building2, MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
   { to: "/admin/frota", icon: Truck, label: "Frota" },
+  { to: "/admin/clientes", icon: Building2, label: "Clientes" },
+  { to: "/admin/hubs", icon: MapPin, label: "Hubs" },
   { to: "/admin/rotas", icon: Route, label: "Rotas" },
-  
   { to: "/admin/manutencao", icon: Wrench, label: "Manutenção" },
   { to: "/admin/formularios", icon: ClipboardList, label: "Formulários" },
   { to: "/admin/solicitacoes", icon: FileText, label: "Solicitações" },
