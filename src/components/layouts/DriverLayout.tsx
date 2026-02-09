@@ -1,8 +1,10 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import { Home, Fuel, FileText, AlertTriangle, User, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const navItems = [
   { to: "/motorista", icon: Home, label: "Início" },
@@ -15,7 +17,35 @@ const navItems = [
 
 export default function DriverLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+
+  // Realtime: notify driver when a route is assigned to them
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("driver-route-notifications")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "routes", filter: `driver_id=eq.${user.id}` },
+        (payload) => {
+          const r = payload.new as any;
+          toast.info(`Nova rota atribuída: ${r.start_location || "?"} → ${r.end_location || "?"}`, { duration: 8000 });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "routes", filter: `driver_id=eq.${user.id}` },
+        (payload) => {
+          const r = payload.new as any;
+          if (r.status === "in_progress") {
+            toast.info(`Rota ativada: ${r.start_location || "?"} → ${r.end_location || "?"}`, { duration: 6000 });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
