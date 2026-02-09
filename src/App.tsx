@@ -3,10 +3,45 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/hooks/useAuth";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminLayout from "@/components/layouts/AdminLayout";
+import DriverLayout from "@/components/layouts/DriverLayout";
+
 import Index from "./pages/Index";
+import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
+// Admin pages
+import Dashboard from "./pages/admin/Dashboard";
+import Fleet from "./pages/admin/Fleet";
+import LiveMap from "./pages/admin/LiveMap";
+import Maintenance from "./pages/admin/Maintenance";
+import FormBuilder from "./pages/admin/FormBuilder";
+import ServiceRequests from "./pages/admin/ServiceRequests";
+import Drivers from "./pages/admin/Drivers";
+
+// Driver pages
+import DriverHome from "./pages/driver/DriverHome";
+import Checklist from "./pages/driver/Checklist";
+import FuelLog from "./pages/driver/FuelLog";
+import DriverRequests from "./pages/driver/DriverRequests";
+import Occurrence from "./pages/driver/Occurrence";
+import DriverProfile from "./pages/driver/DriverProfile";
+
 const queryClient = new QueryClient();
+
+const AdminRoute = ({ children }: { children: React.ReactNode }) => (
+  <ProtectedRoute allowedRoles={["admin", "manager", "mechanic"]}>
+    <AdminLayout>{children}</AdminLayout>
+  </ProtectedRoute>
+);
+
+const DriverRoute = ({ children }: { children: React.ReactNode }) => (
+  <ProtectedRoute allowedRoles={["driver"]}>
+    <DriverLayout>{children}</DriverLayout>
+  </ProtectedRoute>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -14,11 +49,31 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+
+            {/* Admin routes */}
+            <Route path="/admin" element={<AdminRoute><Dashboard /></AdminRoute>} />
+            <Route path="/admin/frota" element={<AdminRoute><Fleet /></AdminRoute>} />
+            <Route path="/admin/mapa" element={<AdminRoute><LiveMap /></AdminRoute>} />
+            <Route path="/admin/manutencao" element={<AdminRoute><Maintenance /></AdminRoute>} />
+            <Route path="/admin/formularios" element={<AdminRoute><FormBuilder /></AdminRoute>} />
+            <Route path="/admin/solicitacoes" element={<AdminRoute><ServiceRequests /></AdminRoute>} />
+            <Route path="/admin/motoristas" element={<AdminRoute><Drivers /></AdminRoute>} />
+
+            {/* Driver routes */}
+            <Route path="/motorista" element={<DriverRoute><DriverHome /></DriverRoute>} />
+            <Route path="/motorista/checklist" element={<DriverRoute><Checklist /></DriverRoute>} />
+            <Route path="/motorista/abastecer" element={<DriverRoute><FuelLog /></DriverRoute>} />
+            <Route path="/motorista/solicitacoes" element={<DriverRoute><DriverRequests /></DriverRoute>} />
+            <Route path="/motorista/ocorrencia" element={<DriverRoute><Occurrence /></DriverRoute>} />
+            <Route path="/motorista/perfil" element={<DriverRoute><DriverProfile /></DriverRoute>} />
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
