@@ -9,13 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import {
-  Plus, Search, MapPin, MoreVertical, Trash2, Edit,
+  Plus, Search, Store, MoreVertical, Trash2, Edit,
   Upload, Download, FileSpreadsheet
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import * as XLSX from "xlsx";
 
-interface Hub {
+interface Location {
   id: string;
   client_id: string;
   name: string;
@@ -33,8 +33,7 @@ interface Client {
   code: string;
 }
 
-const HUB_TYPES = ["hub", "armazém"];
-const HUB_TYPE_FILTER = ["hub", "armazém"];
+const LOCATION_TYPES = ["loja", "centro de distribuição", "escritório", "outro"];
 
 function downloadCSVTemplate() {
   const header = "código;nome;tipo;morada;latitude;longitude";
@@ -43,7 +42,7 @@ function downloadCSVTemplate() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "modelo_locais.csv";
+  a.download = "modelo_locais_rede.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -88,7 +87,7 @@ function parseImportRows(raw: string[][], headerMap: Record<string, number>): Im
   return raw.map(row => {
     const code = codeIdx !== undefined ? (row[codeIdx] || "").toString().trim() : "";
     const name = nameIdx !== undefined ? (row[nameIdx] || "").toString().trim() : "";
-    const type = headerMap.type !== undefined ? (row[headerMap.type] || "").toString().trim().toLowerCase() : "hub";
+    const type = headerMap.type !== undefined ? (row[headerMap.type] || "").toString().trim().toLowerCase() : "loja";
     const address = headerMap.address !== undefined ? (row[headerMap.address] || "").toString().trim() : "";
     const lat = headerMap.lat !== undefined ? (row[headerMap.lat] || "").toString().trim() : "";
     const lng = headerMap.lng !== undefined ? (row[headerMap.lng] || "").toString().trim() : "";
@@ -96,20 +95,22 @@ function parseImportRows(raw: string[][], headerMap: Record<string, number>): Im
     const valid = code.length > 0 && name.length > 0;
     const error = !code ? "Código em falta" : !name ? "Nome em falta" : undefined;
 
-    return { code, name, type: type || "hub", address, lat, lng, valid, error };
+    return { code, name, type: type || "loja", address, lat, lng, valid, error };
   }).filter(r => r.code.length > 0 || r.name.length > 0);
 }
 
-export default function Hubs() {
-  const [hubs, setHubs] = useState<Hub[]>([]);
+// Only show these types in this page
+const NETWORK_TYPE_FILTER = ["loja", "centro de distribuição", "escritório", "outro"];
+
+export default function NetworkLocations() {
+  const [locations, setLocations] = useState<Location[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingHub, setEditingHub] = useState<Hub | null>(null);
-  const [form, setForm] = useState({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "" });
+  const [editingLocation, setEditingLocation] = useState<Location | null>(null);
+  const [form, setForm] = useState({ name: "", code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
 
-  // Import state
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -117,16 +118,16 @@ export default function Hubs() {
 
   const fetchData = async () => {
     const [{ data: hubsData }, { data: clientsData }] = await Promise.all([
-      supabase.from("hubs").select("*").in("type", HUB_TYPE_FILTER).order("name"),
+      supabase.from("hubs").select("*").in("type", NETWORK_TYPE_FILTER).order("name"),
       supabase.from("clients").select("id, name, code").order("name"),
     ]);
     if (clientsData) setClients(clientsData);
-    if (hubsData) setHubs(hubsData as Hub[]);
+    if (hubsData) setLocations(hubsData as Location[]);
   };
 
   useEffect(() => { fetchData(); }, []);
 
-  const filtered = hubs.filter(h => {
+  const filtered = locations.filter(h => {
     const matchSearch = !search ||
       h.name.toLowerCase().includes(search.toLowerCase()) ||
       h.code.toLowerCase().includes(search.toLowerCase()) ||
@@ -148,8 +149,8 @@ export default function Hubs() {
       lat: form.lat ? parseFloat(form.lat) : null,
       lng: form.lng ? parseFloat(form.lng) : null,
     };
-    if (editingHub) {
-      const { error } = await supabase.from("hubs").update(payload).eq("id", editingHub.id);
+    if (editingLocation) {
+      const { error } = await supabase.from("hubs").update(payload).eq("id", editingLocation.id);
       if (error) { toast.error("Erro ao atualizar"); return; }
       toast.success("Local atualizado");
     } else {
@@ -158,8 +159,8 @@ export default function Hubs() {
       toast.success("Local criado");
     }
     setDialogOpen(false);
-    setEditingHub(null);
-    setForm({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "" });
+    setEditingLocation(null);
+    setForm({ name: "", code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
     fetchData();
   };
 
@@ -170,30 +171,25 @@ export default function Hubs() {
     fetchData();
   };
 
-  const openEdit = (h: Hub) => {
-    setEditingHub(h);
+  const openEdit = (h: Location) => {
+    setEditingLocation(h);
     setForm({
-      name: h.name, code: h.code, client_id: h.client_id, type: h.type || "hub",
+      name: h.name, code: h.code, client_id: h.client_id, type: h.type || "loja",
       address: h.address || "", lat: h.lat?.toString() || "", lng: h.lng?.toString() || "",
     });
     setDialogOpen(true);
   };
 
   const openNew = () => {
-    setEditingHub(null);
-    setForm({ name: "", code: "", client_id: clientFilter || clients[0]?.id || "", type: "hub", address: "", lat: "", lng: "" });
+    setEditingLocation(null);
+    setForm({ name: "", code: "", client_id: clientFilter || clients[0]?.id || "", type: "loja", address: "", lat: "", lng: "" });
     setDialogOpen(true);
   };
 
-  // === Export ===
   const handleExport = (format: "csv" | "xlsx") => {
     const data = filtered.map(h => ({
-      Código: h.code,
-      Nome: h.name,
-      Tipo: h.type || "hub",
-      Morada: h.address || "",
-      Latitude: h.lat ?? "",
-      Longitude: h.lng ?? "",
+      Código: h.code, Nome: h.name, Tipo: h.type || "loja",
+      Morada: h.address || "", Latitude: h.lat ?? "", Longitude: h.lng ?? "",
       Cliente: clientMap[h.client_id] || "",
     }));
     if (format === "csv") {
@@ -201,17 +197,16 @@ export default function Hubs() {
       const rows = data.map(r => Object.values(r).join(";"));
       const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "locais.csv"; a.click();
+      const a = document.createElement("a"); a.href = url; a.download = "locais_rede.csv"; a.click();
       URL.revokeObjectURL(url);
     } else {
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Locais");
-      XLSX.writeFile(wb, "locais.xlsx");
+      XLSX.writeFile(wb, "locais_rede.xlsx");
     }
   };
 
-  // === Import ===
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -245,7 +240,7 @@ export default function Hubs() {
     if (valid.length === 0) return;
     setImporting(true);
     const payload = valid.map(r => ({
-      code: r.code, name: r.name, type: r.type, address: r.address || null,
+      code: r.code, name: r.name, type: r.type || "loja", address: r.address || null,
       lat: r.lat ? parseFloat(r.lat) : null, lng: r.lng ? parseFloat(r.lng) : null,
       client_id: clientFilter,
     }));
@@ -261,9 +256,9 @@ export default function Hubs() {
     <div className="space-y-5 animate-fade-in">
       <div>
         <h1 className="page-header flex items-center gap-2">
-          <MapPin className="h-6 w-6" /> Hubs & Armazéns
+          <Store className="h-6 w-6" /> Locais da Rede
         </h1>
-        <p className="page-subtitle">Bases operacionais e armazéns</p>
+        <p className="page-subtitle">Lojas, centros de distribuição e escritórios</p>
       </div>
 
       <Card>
@@ -286,7 +281,7 @@ export default function Hubs() {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{editingHub ? "Editar Local" : "Novo Local"}</DialogTitle>
+                  <DialogTitle>{editingLocation ? "Editar Local" : "Novo Local"}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <div>
@@ -302,7 +297,7 @@ export default function Hubs() {
                     <Label>Tipo</Label>
                     <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>{HUB_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
+                      <SelectContent>{LOCATION_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div><Label>Morada</Label><Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Morada completa" /></div>
@@ -310,7 +305,7 @@ export default function Hubs() {
                     <div><Label>Latitude</Label><Input value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} placeholder="39.043168" /></div>
                     <div><Label>Longitude</Label><Input value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} placeholder="-8.918766" /></div>
                   </div>
-                  <Button onClick={handleSave} className="w-full">{editingHub ? "Guardar" : "Criar"}</Button>
+                  <Button onClick={handleSave} className="w-full">{editingLocation ? "Guardar" : "Criar"}</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -342,12 +337,6 @@ export default function Hubs() {
             </Select>
           </div>
 
-          {!clientFilter && (
-            <div className="bg-muted/50 rounded-md p-4 text-sm text-muted-foreground">
-              Selecione um cliente acima para ver e gerir os locais. A importação e criação de locais requerem um cliente selecionado.
-            </div>
-          )}
-
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -362,6 +351,7 @@ export default function Hubs() {
                   <TableHead>Código</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Cliente</TableHead>
                   <TableHead>Morada</TableHead>
                   <TableHead>Localização</TableHead>
                   <TableHead className="w-10"></TableHead>
@@ -372,7 +362,8 @@ export default function Hubs() {
                   <TableRow key={h.id}>
                     <TableCell className="font-mono text-sm">{h.code}</TableCell>
                     <TableCell className="font-medium">{h.name}</TableCell>
-                    <TableCell className="capitalize text-sm">{h.type || "hub"}</TableCell>
+                    <TableCell className="capitalize text-sm">{h.type || "loja"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{clientMap[h.client_id] || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{h.address || "—"}</TableCell>
                     <TableCell className="text-sm font-mono text-muted-foreground">
                       {h.lat && h.lng ? `${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}` : "—"}
@@ -392,48 +383,46 @@ export default function Hubs() {
                 ))}
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum local encontrado</TableCell>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nenhum local encontrado</TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
+          <p className="text-xs text-muted-foreground text-right">{filtered.length} local(is)</p>
         </CardContent>
       </Card>
 
-      {/* Import preview dialog */}
+      {/* Import Preview Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileSpreadsheet className="h-5 w-5" /> Pré-visualização da Importação
-            </DialogTitle>
+            <DialogTitle>Pré-visualização da Importação</DialogTitle>
           </DialogHeader>
-          <div className="overflow-auto flex-1 border rounded-md">
+          <p className="text-sm text-muted-foreground">{validImportCount} de {importRows.length} linha(s) válida(s)</p>
+          <div className="border rounded-md overflow-auto max-h-60">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Morada</TableHead>
                   <TableHead>Estado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {importRows.map((r, i) => (
-                  <TableRow key={i} className={!r.valid ? "bg-destructive/5" : ""}>
-                    <TableCell className="font-mono">{r.code || "—"}</TableCell>
+                  <TableRow key={i} className={r.valid ? "" : "bg-destructive/5"}>
+                    <TableCell className="font-mono text-sm">{r.code || "—"}</TableCell>
                     <TableCell>{r.name || "—"}</TableCell>
                     <TableCell className="capitalize">{r.type}</TableCell>
-                    <TableCell>{r.address || "—"}</TableCell>
-                    <TableCell>{r.valid ? <span className="text-success text-xs">✓</span> : <span className="text-destructive text-xs">{r.error}</span>}</TableCell>
+                    <TableCell className="text-sm">{r.valid ? "✓" : <span className="text-destructive">{r.error}</span>}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setImportDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleImport} disabled={importing || validImportCount === 0}>
               {importing ? "A importar..." : `Importar ${validImportCount} local(is)`}
