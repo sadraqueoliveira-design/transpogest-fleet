@@ -159,12 +159,10 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase.functions.invoke("sync-trackit-data");
       if (error) throw error;
-      if (data?.success) {
-        toast.success(`${data.updated} veículos atualizados`);
-        fetchVehicles();
-      } else {
-        toast.error(data?.error || "Erro na sincronização");
-      }
+      const results = data?.results || [];
+      const totalCount = results.reduce((sum: number, r: any) => sum + (r.count || 0), 0);
+      toast.success(`${totalCount} veículos sincronizados`);
+      fetchVehicles();
     } catch (err: any) {
       toast.error("Erro ao sincronizar: " + (err.message || "Erro desconhecido"));
     }
@@ -274,39 +272,17 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* Status Widget Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Compact Status Widgets */}
+      <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
         {widgetCards.map((card) => (
-          <Card key={card.label} className={`text-center py-4 px-3 ${variantBorder[card.variant]}`}>
-            <CardContent className="p-0 flex flex-col items-center gap-1">
-              <card.icon className={`h-6 w-6 ${variantStyles[card.variant] || "text-muted-foreground"}`} />
-              <span className={`text-3xl font-bold ${variantStyles[card.variant]}`}>{card.value}</span>
-              <span className="text-xs text-muted-foreground font-medium">{card.label}</span>
-            </CardContent>
-          </Card>
+          <div key={card.label} className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${variantBorder[card.variant]}`}>
+            <card.icon className={`h-4 w-4 shrink-0 ${variantStyles[card.variant] || "text-muted-foreground"}`} />
+            <div className="min-w-0">
+              <p className={`text-lg font-bold leading-none ${variantStyles[card.variant]}`}>{card.value}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{card.label}</p>
+            </div>
+          </div>
         ))}
-      </div>
-
-      {/* Location summary row */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="py-3 px-2">
-          <CardContent className="p-0 flex items-center gap-2 justify-center">
-            <Store className="h-5 w-5 text-primary" />
-            <div><span className="text-lg font-bold">0</span><p className="text-xs text-muted-foreground">Em Lojas</p></div>
-          </CardContent>
-        </Card>
-        <Card className="py-3 px-2">
-          <CardContent className="p-0 flex items-center gap-2 justify-center">
-            <Warehouse className="h-5 w-5 text-warning" />
-            <div><span className="text-lg font-bold">0</span><p className="text-xs text-muted-foreground">Armazém/CD</p></div>
-          </CardContent>
-        </Card>
-        <Card className="py-3 px-2">
-          <CardContent className="p-0 flex items-center gap-2 justify-center">
-            <Navigation className="h-5 w-5 text-success" />
-            <div><span className="text-lg font-bold">{stats.moving}</span><p className="text-xs text-muted-foreground">Em Trânsito</p></div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Search + view toggle + filter tabs */}
@@ -370,11 +346,74 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
           {filtered.length === 0 ? (
-            <Card className="py-12 text-center text-muted-foreground">Nenhum veículo encontrado</Card>
+            <Card className="col-span-full py-12 text-center text-muted-foreground">Nenhum veículo encontrado</Card>
           ) : (
-            filtered.map((v) => <VehicleCard key={v.id} vehicle={v} hasAlert={hasAlert(v)} clientName={clients.find(c => c.id === v.client_id)?.name} onClick={() => setSelectedVehicle(v)} />)
+            filtered.map((v) => {
+              const speed = v.last_speed || 0;
+              const isMoving = speed > 5;
+              const alert = hasAlert(v);
+              const fuel = v.fuel_level_percent;
+              const td = v.temperature_data as any;
+              const t1 = td?.t1 ?? td?.T1 ?? td?.tp1;
+              const t2 = td?.t2 ?? td?.T2 ?? td?.tp2;
+
+              return (
+                <div
+                  key={v.id}
+                  onClick={() => setSelectedVehicle(v)}
+                  className={`rounded-lg border p-3 cursor-pointer transition-all hover:shadow-md ${
+                    alert ? "border-destructive/50" : isMoving ? "border-success/40" : ""
+                  }`}
+                >
+                  {/* Status + Plate */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <div className={`h-2.5 w-2.5 rounded-full ${isMoving ? "bg-success" : alert ? "bg-destructive" : "bg-muted-foreground"}`} />
+                      <span className="font-bold text-sm tracking-wide">{v.plate}</span>
+                    </div>
+                    <span className={`text-xs font-semibold ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
+                  </div>
+
+                  {clients.find(c => c.id === v.client_id)?.name && (
+                    <p className="text-[10px] text-muted-foreground truncate mb-2">{clients.find(c => c.id === v.client_id)?.name}</p>
+                  )}
+
+                  {/* Data grid */}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">RPM</span>
+                      <span className="font-semibold">{v.rpm ?? "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Comb.</span>
+                      <span className={`font-semibold ${fuel != null && fuel < 15 ? "text-destructive" : ""}`}>{fuel != null ? `${fuel}%` : "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Km</span>
+                      <span className="font-semibold">{v.odometer_km != null ? Math.round(v.odometer_km).toLocaleString("pt-PT") : "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">H.Mot</span>
+                      <span className="font-semibold">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</span>
+                    </div>
+                    {(typeof t1 === "number" || typeof t2 === "number") && (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">T1</span>
+                          <span className={`font-semibold ${typeof t1 === "number" && t1 > 8 ? "text-destructive" : ""}`}>{typeof t1 === "number" ? `${t1.toFixed(1)}°` : "—"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">T2</span>
+                          <span className={`font-semibold ${typeof t2 === "number" && t2 > 8 ? "text-destructive" : ""}`}>{typeof t2 === "number" ? `${t2.toFixed(1)}°` : "—"}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}
