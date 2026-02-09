@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,6 +66,7 @@ export default function Fleet() {
   const [form, setForm] = useState({ plate: "", brand: "", model: "", vin: "", insurance_expiry: "", inspection_expiry: "", tachograph_calibration_date: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Vehicle>>({});
+  const [deleteVehicle, setDeleteVehicle] = useState<Vehicle | null>(null);
   const [docsDialogOpen, setDocsDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [vehicleDocs, setVehicleDocs] = useState<VehicleDoc[]>([]);
@@ -119,6 +121,14 @@ export default function Fleet() {
     }).eq("id", editingId);
     if (error) { toast.error("Erro: " + error.message); }
     else { toast.success("Veículo atualizado"); cancelEdit(); fetchVehicles(); }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteVehicle) return;
+    const { error } = await supabase.from("vehicles").delete().eq("id", deleteVehicle.id);
+    if (error) { toast.error("Erro ao eliminar: " + error.message); }
+    else { toast.success(`Veículo ${deleteVehicle.plate} eliminado`); fetchVehicles(); }
+    setDeleteVehicle(null);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -298,12 +308,15 @@ export default function Fleet() {
                         <TableCell>{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</TableCell>
                         <TableCell>{v.odometer_km != null ? `${v.odometer_km.toLocaleString()} km` : "—"}</TableCell>
                         <TableCell>
-                          <div className="flex gap-1 justify-end">
+                           <div className="flex gap-1 justify-end">
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => startEdit(v)}>
                               <Pencil className="mr-1 h-3 w-3" />Editar
                             </Button>
                             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openDocsDialog(v)}>
                               <FileText className="mr-1 h-3 w-3" />Docs
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeleteVehicle(v)}>
+                              <Trash2 className="h-3 w-3" />
                             </Button>
                           </div>
                         </TableCell>
@@ -367,6 +380,24 @@ export default function Fleet() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteVehicle} onOpenChange={(o) => !o && setDeleteVehicle(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar veículo {deleteVehicle?.plate}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação é irreversível. Todos os documentos e registos associados a este veículo serão perdidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
