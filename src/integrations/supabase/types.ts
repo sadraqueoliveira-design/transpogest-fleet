@@ -56,6 +56,36 @@ export type Database = {
           },
         ]
       }
+      clients: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          name: string
+          nif: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          nif?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          nif?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       dynamic_forms: {
         Row: {
           created_at: string
@@ -126,6 +156,53 @@ export type Database = {
             columns: ["vehicle_id"]
             isOneToOne: false
             referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hubs: {
+        Row: {
+          address: string | null
+          client_id: string
+          code: string
+          created_at: string
+          id: string
+          lat: number | null
+          lng: number | null
+          name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          client_id: string
+          code: string
+          created_at?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          client_id?: string
+          code?: string
+          created_at?: string
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hubs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
