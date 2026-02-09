@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      antram_settings: {
+        Row: {
+          alert_minutes: number
+          id: string
+          max_minutes: number
+          notify_on_alert: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          alert_minutes?: number
+          id?: string
+          max_minutes?: number
+          notify_on_alert?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          alert_minutes?: number
+          id?: string
+          max_minutes?: number
+          notify_on_alert?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       checklist_submissions: {
         Row: {
           created_at: string
@@ -395,6 +422,36 @@ export type Database = {
           id?: string
           status?: Database["public"]["Enums"]["request_status"]
           type?: Database["public"]["Enums"]["request_type"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tachograph_cards: {
+        Row: {
+          card_number: string
+          created_at: string
+          driver_id: string | null
+          driver_name: string | null
+          expiry_date: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          card_number: string
+          created_at?: string
+          driver_id?: string | null
+          driver_name?: string | null
+          expiry_date?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          card_number?: string
+          created_at?: string
+          driver_id?: string | null
+          driver_name?: string | null
+          expiry_date?: string | null
+          id?: string
           updated_at?: string
         }
         Relationships: []

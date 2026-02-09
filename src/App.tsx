@@ -22,6 +22,8 @@ import Maintenance from "./pages/admin/Maintenance";
 import FormBuilder from "./pages/admin/FormBuilder";
 import ServiceRequests from "./pages/admin/ServiceRequests";
 import Drivers from "./pages/admin/Drivers";
+import TachographCards from "./pages/admin/TachographCards";
+import AntramSettings from "./pages/admin/AntramSettings";
 
 // Driver pages
 import DriverHome from "./pages/driver/DriverHome";
@@ -67,6 +69,8 @@ const App = () => (
             <Route path="/admin/formularios" element={<AdminRoute><FormBuilder /></AdminRoute>} />
             <Route path="/admin/solicitacoes" element={<AdminRoute><ServiceRequests /></AdminRoute>} />
             <Route path="/admin/motoristas" element={<AdminRoute><Drivers /></AdminRoute>} />
+            <Route path="/admin/tacografo" element={<AdminRoute><TachographCards /></AdminRoute>} />
+            <Route path="/admin/antram" element={<AdminRoute><AntramSettings /></AdminRoute>} />
 
             {/* Driver routes */}
             <Route path="/motorista" element={<DriverRoute><DriverHome /></DriverRoute>} />
