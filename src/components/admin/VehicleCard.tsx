@@ -29,10 +29,11 @@ interface Vehicle {
 interface Props {
   vehicle: Vehicle;
   hasAlert: boolean;
+  clientName?: string;
   onClick?: () => void;
 }
 
-export default function VehicleCard({ vehicle: v, hasAlert, onClick }: Props) {
+export default function VehicleCard({ vehicle: v, hasAlert, clientName, onClick }: Props) {
   const speed = v.last_speed || 0;
   const isMoving = speed > 5;
   const fuel = v.fuel_level_percent;
@@ -80,6 +81,7 @@ export default function VehicleCard({ vehicle: v, hasAlert, onClick }: Props) {
                 <p className="font-bold text-base tracking-wide">{v.plate}</p>
                 <p className="text-xs text-muted-foreground">
                   {v.brand && v.model ? `${v.brand} ${v.model}` : "—"}
+                  {clientName && <span className="ml-1.5 text-primary/70">· {clientName}</span>}
                 </p>
               </div>
             </div>
