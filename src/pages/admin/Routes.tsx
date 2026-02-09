@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, MapPin, Trash2, Navigation, Eye } from "lucide-react";
+import { Plus, MapPin, Trash2, Navigation, Eye, Search } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ExportButton, ImportButton } from "@/components/admin/BulkImportExport";
@@ -75,7 +75,8 @@ export default function Routes() {
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [hubs, setHubs] = useState<HubOption[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const [filterClient, setFilterClient] = useState("");
+  const [filterHub, setFilterHub] = useState("");
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
@@ -403,6 +404,31 @@ export default function Routes() {
         </div>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap">
+        <Select value={filterClient} onValueChange={(v) => { setFilterClient(v); setFilterHub(""); }}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Todos os clientes" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os clientes</SelectItem>
+            {clients.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterHub} onValueChange={setFilterHub}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Todos os hubs" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os hubs</SelectItem>
+            {hubs.filter(h => !filterClient || filterClient === "all" || h.client_id === filterClient).map((h) => (
+              <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -425,7 +451,11 @@ export default function Routes() {
               ) : routes.length === 0 ? (
                 <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhuma rota encontrada</TableCell></TableRow>
               ) : (
-                routes.map((r) => (
+                routes.filter(r => {
+                  if (filterClient && filterClient !== "all" && r.client_id !== filterClient) return false;
+                  if (filterHub && filterHub !== "all" && r.hub_id !== filterHub) return false;
+                  return true;
+                }).map((r) => (
                   <TableRow key={r.id}>
                     <TableCell>{getClientName(r.client_id)}</TableCell>
                     <TableCell>{getHubName(r.hub_id)}</TableCell>
