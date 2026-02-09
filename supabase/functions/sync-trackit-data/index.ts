@@ -8,147 +8,149 @@ const corsHeaders = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    // 1. Iniciar o Cliente Supabase (Admin para poder ler senhas)
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
 
-    // Fetch all clients with API enabled
-    const { data: clients, error: clientsErr } = await supabase
+    // 2. Buscar Clientes com API Trackit ativa
+    const { data: clients, error: clientsError } = await supabaseAdmin
       .from("clients")
       .select("id, name, trackit_username, trackit_password")
       .eq("api_enabled", true);
 
-    if (clientsErr) throw new Error("Failed to fetch clients: " + clientsErr.message);
+    if (clientsError) throw clientsError;
     if (!clients || clients.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No clients with API enabled", results: [] }),
+        JSON.stringify({ message: "Nenhum cliente com API ativa." }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const results: Array<{ client_id: string; client_name: string; total: number; updated: number; created: number; errors?: string[] }> = [];
+    const results: Array<{
+      client: string;
+      status: string;
+      count?: number;
+      message?: string;
+    }> = [];
 
+    // 3. Loop por cada Cliente (Multi-Tenant)
     for (const client of clients) {
+      console.log(`Sincronizando cliente: ${client.name}...`);
+
       if (!client.trackit_username || !client.trackit_password) {
-        results.push({ client_id: client.id, client_name: client.name, total: 0, updated: 0, created: 0, errors: ["Missing credentials"] });
+        results.push({ client: client.name, status: "error", message: "Credenciais em falta" });
         continue;
       }
 
+      // Codificar credenciais em Base64 para Basic Auth
+      const credentials = btoa(`${client.trackit_username}:${client.trackit_password}`);
+
+      // 4. Chamada à API Trackit (Endpoint /vehiclesForUser)
+      // Fonte: Manual WebService v110 - Pág 9 (2.4.5)
       try {
-        const basicAuth = btoa(`${client.trackit_username}:${client.trackit_password}`);
-        const trackitRes = await fetch("https://i.trackit.pt/ws/vehiclesForUser", {
-          headers: { Authorization: `Basic ${basicAuth}` },
+        const trackitResponse = await fetch("https://i.trackit.pt/ws/vehiclesForUser", {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${credentials}`,
+            "Content-Type": "application/json",
+          },
         });
 
-        if (!trackitRes.ok) {
-          const body = await trackitRes.text();
-          results.push({ client_id: client.id, client_name: client.name, total: 0, updated: 0, created: 0, errors: [`API error [${trackitRes.status}]: ${body}`] });
+        if (!trackitResponse.ok) {
+          console.error(`Erro Trackit para ${client.name}: ${trackitResponse.statusText}`);
+          results.push({ client: client.name, status: "error", message: `Falha na API Trackit [${trackitResponse.status}]` });
           continue;
         }
 
-        const trackitData = await trackitRes.json();
-        const vehicles = Array.isArray(trackitData) ? trackitData : trackitData.vehicles || [];
+        const trackitJson = await trackitResponse.json();
 
-        let updated = 0;
-        let created = 0;
-        const errors: string[] = [];
-
-        for (const v of vehicles) {
-          const plate = v.plate || v.registration || v.name;
-          if (!plate) continue;
-
-          const updateData: Record<string, unknown> = {};
-
-          // Position
-          if (v.pos) {
-            if (v.pos.lat != null) updateData.last_lat = v.pos.lat;
-            if (v.pos.lon != null) updateData.last_lng = v.pos.lon;
-            if (v.pos.spd != null) updateData.last_speed = Math.round(v.pos.spd);
-          }
-
-          // Fuel
-          if (v.eco?.exd?.flv != null) updateData.fuel_level_percent = v.eco.exd.flv;
-
-          // Odometer
-          if (v.eco?.exd?.odo != null) updateData.odometer_km = v.eco.exd.odo;
-          if (v.odo != null) updateData.odometer_km = v.odo;
-
-          // Engine hours
-          if (v.eco?.exd?.egh != null) updateData.engine_hours = v.eco.exd.egh;
-
-          // Tachograph
-          if (v.drs != null) updateData.tachograph_status = JSON.stringify(v.drs);
-
-          // Temperature
-          if (v.tmp != null) updateData.temperature_data = v.tmp;
-
-          // RPM
-          if (v.can?.rpm != null) updateData.rpm = Math.round(v.can.rpm);
-          else if (v.eco?.exd?.rpm != null) updateData.rpm = Math.round(v.eco.exd.rpm);
-
-          if (Object.keys(updateData).length === 0) continue;
-
-          updateData.updated_at = new Date().toISOString();
-          updateData.client_id = client.id;
-
-          const normalizedPlate = plate.replace(/[\s-]/g, "").toUpperCase();
-
-          // Try update first
-          const { data: existing } = await supabase
-            .from("vehicles")
-            .select("id")
-            .ilike("plate", `%${normalizedPlate}%`)
-            .limit(1)
-            .maybeSingle();
-
-          if (existing) {
-            const { error } = await supabase
-              .from("vehicles")
-              .update(updateData)
-              .eq("id", existing.id);
-            if (error) errors.push(`${plate}: ${error.message}`);
-            else updated++;
-          } else {
-            // Create new vehicle for this client
-            const { error } = await supabase
-              .from("vehicles")
-              .insert({ plate: normalizedPlate, ...updateData });
-            if (error) errors.push(`${plate} (create): ${error.message}`);
-            else created++;
-          }
+        // Verificar erro no corpo da resposta JSON (Padrão Trackit)
+        // Fonte: Manual WebService v110 - Pág 4 (2.3)
+        if (trackitJson.error) {
+          results.push({ client: client.name, status: "error", message: trackitJson.message || "Erro Trackit" });
+          continue;
         }
 
-        // Update last_sync_at
-        await supabase.from("clients").update({ last_sync_at: new Date().toISOString() }).eq("id", client.id);
+        // A API pode retornar array direto ou {data: [...]}
+        const vehiclesData = Array.isArray(trackitJson)
+          ? trackitJson
+          : trackitJson.data || trackitJson.vehicles || [];
 
-        results.push({
-          client_id: client.id,
-          client_name: client.name,
-          total: vehicles.length,
-          updated,
-          created,
-          errors: errors.length > 0 ? errors : undefined,
-        });
+        // 5. Mapeamento e Upsert (Salvar no Banco)
+        if (vehiclesData.length > 0) {
+          const vehiclesToUpsert = vehiclesData
+            .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name)
+            .map((v: any) => {
+              // Mapeamento baseado no Manual Trackit (Pág 9 e 10)
+              const plate = v.plate || v.info?.plate || v.registration || v.name || "SEM-PLACA";
+              return {
+                client_id: client.id, // VÍNCULO CRUCIAL
+                trackit_id: String(v.mid || v.id || plate), // ID único do Trackit
+                plate: plate.replace(/[\s]/g, "").toUpperCase(),
+
+                // Posição e Estado
+                last_lat: v.pos?.lat ?? null,
+                last_lng: v.pos?.lon ?? null,
+                last_speed: v.pos?.spd ? Math.round(v.pos.spd) : 0,
+
+                // Telemetria Avançada
+                fuel_level_percent: v.eco?.exd?.flv ?? null, // Nível Combustível %
+                rpm: v.can?.rpm ? Math.round(v.can.rpm) : (v.eco?.exd?.rpm ? Math.round(v.eco.exd.rpm) : null),
+                odometer_km: v.pos?.odo ?? v.eco?.exd?.odo ?? v.odo ?? null,
+                engine_hours: v.eco?.exd?.egh ?? null,
+
+                // Dados de Temperatura (Reefer)
+                temperature_data: v.tmp || null,
+
+                // Dados de Tacógrafo (Motorista Atual)
+                tachograph_status: v.drs ? JSON.stringify(v.drs) : null,
+
+                updated_at: new Date().toISOString(),
+              };
+            });
+
+          // Upsert no Supabase (Atualiza se existir, Cria se novo)
+          const { error: upsertError } = await supabaseAdmin
+            .from("vehicles")
+            .upsert(vehiclesToUpsert, { onConflict: "trackit_id" });
+
+          if (upsertError) {
+            console.error(`Erro ao salvar veículos de ${client.name}:`, upsertError);
+            results.push({ client: client.name, status: "error", message: upsertError.message });
+          } else {
+            results.push({ client: client.name, status: "success", count: vehiclesData.length });
+          }
+        } else {
+          results.push({ client: client.name, status: "success", count: 0, message: "Nenhum veículo retornado" });
+        }
+
+        // Atualizar last_sync_at do cliente
+        await supabaseAdmin
+          .from("clients")
+          .update({ last_sync_at: new Date().toISOString() })
+          .eq("id", client.id);
+
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        results.push({ client_id: client.id, client_name: client.name, total: 0, updated: 0, created: 0, errors: [msg] });
+        const msg = err instanceof Error ? err.message : "Erro desconhecido";
+        console.error(`Erro ao processar ${client.name}:`, msg);
+        results.push({ client: client.name, status: "error", message: msg });
       }
     }
 
-    return new Response(
-      JSON.stringify({ success: true, clients_processed: results.length, results }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (error: unknown) {
-    console.error("sync-trackit-data error:", error);
-    const msg = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ success: false, error: msg }), {
-      status: 500,
+    return new Response(JSON.stringify({ results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Erro desconhecido";
+    return new Response(JSON.stringify({ error: msg }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
     });
   }
 });
