@@ -1,0 +1,1 @@
+ALTER TABLE public.hubs ADD COLUMN IF NOT EXISTS type text DEFAULT 'hub';
