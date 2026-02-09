@@ -1,13 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Fuel } from "lucide-react";
+import { Fuel, Camera } from "lucide-react";
 
 export default function FuelLog() {
   const { user } = useAuth();
@@ -21,6 +21,8 @@ export default function FuelLog() {
     reefer_engine_hours: "",
   });
   const [loading, setLoading] = useState(false);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabase.from("vehicles").select("id, plate").eq("current_driver_id", user?.id || "").then(({ data }) => {
@@ -31,9 +33,23 @@ export default function FuelLog() {
     });
   }, [user]);
 
+  const uploadReceipt = async (): Promise<string | null> => {
+    if (!receiptFile || !user) return null;
+    const ext = receiptFile.name.split(".").pop();
+    const path = `${user.id}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("fuel-receipts").upload(path, receiptFile);
+    if (error) {
+      toast.error("Erro ao enviar recibo: " + error.message);
+      return null;
+    }
+    const { data } = supabase.storage.from("fuel-receipts").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    const receiptUrl = await uploadReceipt();
     const { error } = await supabase.from("fuel_logs").insert({
       vehicle_id: form.vehicle_id,
       driver_id: user?.id,
@@ -42,11 +58,13 @@ export default function FuelLog() {
       price_per_liter: form.price_per_liter ? parseFloat(form.price_per_liter) : null,
       odometer_at_fillup: form.odometer_at_fillup ? parseFloat(form.odometer_at_fillup) : null,
       reefer_engine_hours: form.fuel_type === "Reefer_Diesel" && form.reefer_engine_hours ? parseFloat(form.reefer_engine_hours) : null,
+      receipt_photo_url: receiptUrl,
     });
     if (error) toast.error(error.message);
     else {
       toast.success("Abastecimento registado!");
       setForm({ ...form, liters: "", price_per_liter: "", odometer_at_fillup: "", reefer_engine_hours: "" });
+      setReceiptFile(null);
     }
     setLoading(false);
   };
@@ -104,6 +122,23 @@ export default function FuelLog() {
                 <Input type="number" step="0.1" value={form.reefer_engine_hours} onChange={(e) => setForm({ ...form, reefer_engine_hours: e.target.value })} placeholder="Horas" />
               </div>
             )}
+
+            {/* Receipt photo upload */}
+            <div className="space-y-2">
+              <Label>Foto do Recibo</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+              />
+              <Button type="button" variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()}>
+                <Camera className="mr-2 h-4 w-4" />
+                {receiptFile ? receiptFile.name : "Tirar Foto / Anexar Recibo"}
+              </Button>
+            </div>
 
             <Button type="submit" className="w-full" size="lg" disabled={loading || !form.vehicle_id}>
               {loading ? "A registar..." : "Registar Abastecimento"}

@@ -1,1 +1,4 @@
 project_id = "kplvmnjezsolmtkphmtq"
+
+[functions.sync-trackit-data]
+verify_jwt = false
