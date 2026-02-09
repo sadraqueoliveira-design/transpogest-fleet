@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, MapPin, Trash2, Navigation, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { ExportButton } from "@/components/admin/BulkImportExport";
+import { ExportButton, ImportButton } from "@/components/admin/BulkImportExport";
 
 interface RouteRow {
   id: string;
@@ -46,6 +46,13 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
   in_progress: "default",
   completed: "outline",
   cancelled: "destructive",
+};
+
+const ROUTE_ALIASES: Record<string, string[]> = {
+  start_location: ["start_location", "origem", "origin", "partida", "de"],
+  end_location: ["end_location", "destino", "destination", "chegada", "para"],
+  driver: ["driver", "motorista", "condutor", "driver_name"],
+  vehicle: ["vehicle", "veículo", "veiculo", "matrícula", "matricula", "plate"],
 };
 
 export default function Routes() {
@@ -300,6 +307,35 @@ export default function Routes() {
     return vehicles.find((v) => v.id === vehicleId)?.plate || "—";
   };
 
+  const handleRouteImport = async (rows: Record<string, string>[]) => {
+    const driverMap: Record<string, string> = {};
+    drivers.forEach(d => {
+      if (d.full_name) driverMap[d.full_name.toLowerCase().trim()] = d.user_id;
+    });
+    const vehicleMap: Record<string, string> = {};
+    vehicles.forEach(v => {
+      vehicleMap[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
+    });
+
+    const payload = rows.map(r => {
+      const driverName = (r.driver || "").toLowerCase().trim();
+      const vehiclePlate = (r.vehicle || "").replace(/[\s-]/g, "").toUpperCase();
+      return {
+        start_location: r.start_location || null,
+        end_location: r.end_location || null,
+        driver_id: driverMap[driverName] || null,
+        vehicle_id: vehicleMap[vehiclePlate] || null,
+        status: "planned" as const,
+        waypoints: [],
+      };
+    });
+
+    const { error } = await supabase.from("routes").insert(payload);
+    if (error) throw error;
+    toast.success(`${payload.length} rota(s) importada(s)`);
+    fetchAll();
+  };
+
   const routeExportData = routes.map(r => ({
     Origem: r.start_location || "", Destino: r.end_location || "",
     Motorista: getDriverName(r.driver_id), Veículo: getVehiclePlate(r.vehicle_id),
@@ -314,6 +350,19 @@ export default function Routes() {
           <p className="page-subtitle">Criar e atribuir rotas a motoristas</p>
         </div>
         <div className="flex items-center gap-2">
+          <ImportButton
+            columns={["start_location", "end_location", "driver", "vehicle"]}
+            aliases={ROUTE_ALIASES}
+            requiredColumns={["start_location", "end_location"]}
+            validate={(r) => ({
+              valid: !!r.start_location && !!r.end_location,
+              error: !r.start_location ? "Origem em falta" : !r.end_location ? "Destino em falta" : undefined,
+            })}
+            onImport={handleRouteImport}
+            templateHeader="origem;destino;motorista;veículo"
+            templateExample="Lisboa;Porto;João Silva;12-AB-34"
+            templateFilename="modelo_rotas.csv"
+          />
           <ExportButton data={routeExportData} filenameBase="rotas" sheetName="Rotas" />
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />Nova Rota
