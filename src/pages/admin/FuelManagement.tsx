@@ -139,10 +139,14 @@ export default function FuelManagement() {
   const reeferActiveCount = telemetryVehicles.filter(v => v.frt === 1).length;
   const reeferVehicles = telemetryVehicles.filter(v => v.hasReefer);
 
-  // AdBlue sorted view
+  // AdBlue sorted view — show all vehicles, those with data first sorted by level
   const adblueVehicles = [...telemetryVehicles]
-    .filter(v => v.adblue != null)
-    .sort((a, b) => (a.adblue ?? 999) - (b.adblue ?? 999));
+    .sort((a, b) => {
+      if (a.adblue != null && b.adblue != null) return a.adblue - b.adblue;
+      if (a.adblue != null) return -1;
+      if (b.adblue != null) return 1;
+      return 0;
+    });
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
