@@ -867,6 +867,7 @@ export type Database = {
           last_location_name: string | null
           last_speed: number | null
           last_vehicle_unit_download_at: string | null
+          mobile_number: string | null
           model: string | null
           next_vehicle_unit_download_due: string | null
           odometer_km: number | null
@@ -897,6 +898,7 @@ export type Database = {
           last_location_name?: string | null
           last_speed?: number | null
           last_vehicle_unit_download_at?: string | null
+          mobile_number?: string | null
           model?: string | null
           next_vehicle_unit_download_due?: string | null
           odometer_km?: number | null
@@ -927,6 +929,7 @@ export type Database = {
           last_location_name?: string | null
           last_speed?: number | null
           last_vehicle_unit_download_at?: string | null
+          mobile_number?: string | null
           model?: string | null
           next_vehicle_unit_download_due?: string | null
           odometer_km?: number | null
