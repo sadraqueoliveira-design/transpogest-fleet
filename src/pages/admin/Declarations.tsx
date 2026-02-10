@@ -8,9 +8,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive } from "lucide-react";
+import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
@@ -39,7 +41,7 @@ const REASON_LABELS: Record<string, string> = {
   rest: "Licença ou período de repouso",
   exempt_vehicle: "Condução de veículo isento (Art.º 3)",
   other_work: "Trabalho não relacionado com condução",
-  other: "Outro motivo",
+  other: "Disponível",
 };
 
 const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -56,6 +58,14 @@ export default function Declarations() {
   const [reasonCode, setReasonCode] = useState("vacation");
   const [reasonText, setReasonText] = useState("");
   const [signing, setSigning] = useState(false);
+  const [editFields, setEditFields] = useState({
+    companyAddress: "Rua, Vale Casal, 42, Edf. Florêncio e Silva. Vale Casal, 2665-379 Milharado, Portugal",
+    companyPhone: "+351 219667000",
+    companyFax: "+351 219667009",
+    companyEmail: "florencio.silva@tfs.pt",
+    managerPosition: "Responsável de Tráfego",
+    signingLocation: "Alverca",
+  });
   const { toast } = useToast();
   const { profile } = useAuth();
 
@@ -144,6 +154,7 @@ export default function Declarations() {
           reasonText: reasonText || undefined,
           managerName: profile?.full_name || "—",
           companyName: selectedDecl.company_name,
+          ...editFields,
         });
         const driverSlug = (selectedDecl.driver_name || "motorista").replace(/\s+/g, "_");
         const dateSlug = format(new Date(selectedDecl.gap_start_date), "yyyyMMdd");
@@ -351,6 +362,45 @@ export default function Declarations() {
                   <Textarea value={reasonText} onChange={(e) => setReasonText(e.target.value)} placeholder="Descreva o motivo..." />
                 </div>
               )}
+
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Pencil className="h-3 w-3" /> Editar dados da empresa</span>
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 pt-2">
+                  <div>
+                    <Label className="text-xs">Morada</Label>
+                    <Input value={editFields.companyAddress} onChange={(e) => setEditFields(f => ({ ...f, companyAddress: e.target.value }))} className="text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Telefone</Label>
+                      <Input value={editFields.companyPhone} onChange={(e) => setEditFields(f => ({ ...f, companyPhone: e.target.value }))} className="text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Fax</Label>
+                      <Input value={editFields.companyFax} onChange={(e) => setEditFields(f => ({ ...f, companyFax: e.target.value }))} className="text-xs" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Email</Label>
+                    <Input value={editFields.companyEmail} onChange={(e) => setEditFields(f => ({ ...f, companyEmail: e.target.value }))} className="text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Cargo do gestor</Label>
+                      <Input value={editFields.managerPosition} onChange={(e) => setEditFields(f => ({ ...f, managerPosition: e.target.value }))} className="text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Localidade (assinatura)</Label>
+                      <Input value={editFields.signingLocation} onChange={(e) => setEditFields(f => ({ ...f, signingLocation: e.target.value }))} className="text-xs" />
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             </div>
           )}
 
