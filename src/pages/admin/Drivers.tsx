@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ExportButton } from "@/components/admin/BulkImportExport";
-import { Search, Pencil, Save, X, Users, Truck, UserCheck } from "lucide-react";
+import { Search, Pencil, Save, X, Users, Truck, UserCheck, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+
+type SortKey = keyof Employee | null;
+type SortDir = "asc" | "desc";
 
 interface Employee {
   id: string;
@@ -34,6 +37,26 @@ export default function Drivers() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Employee>>({});
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("employee_number");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortableHead = ({ label, field, className }: { label: string; field: keyof Employee; className?: string }) => (
+    <TableHead className={`cursor-pointer select-none hover:text-foreground ${className || ""}`} onClick={() => toggleSort(field)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {sortKey === field ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />}
+      </span>
+    </TableHead>
+  );
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -49,14 +72,25 @@ export default function Drivers() {
   useEffect(() => { fetchEmployees(); }, []);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return employees;
-    const q = search.toLowerCase().trim();
-    return employees.filter(e =>
-      e.full_name.toLowerCase().includes(q) ||
-      e.employee_number.toString().includes(q) ||
-      (e.nif && e.nif.includes(q))
-    );
-  }, [employees, search]);
+    let list = employees;
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      list = list.filter(e =>
+        e.full_name.toLowerCase().includes(q) ||
+        e.employee_number.toString().includes(q) ||
+        (e.nif && e.nif.includes(q))
+      );
+    }
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        const av = a[sortKey] ?? "";
+        const bv = b[sortKey] ?? "";
+        if (typeof av === "number" && typeof bv === "number") return sortDir === "asc" ? av - bv : bv - av;
+        return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+      });
+    }
+    return list;
+  }, [employees, search, sortKey, sortDir]);
 
   const startEdit = (emp: Employee) => {
     setEditingId(emp.id);
@@ -175,17 +209,17 @@ export default function Drivers() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-20">Funcionário</TableHead>
-                  <TableHead>Nome</TableHead>
-                  <TableHead className="w-16">Encarregado</TableHead>
-                  <TableHead>Contribuinte</TableHead>
-                  <TableHead>Data Contratação</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Descrição Cat.</TableHead>
-                  <TableHead>Cartão Condutor</TableHead>
-                  <TableHead>Emissão</TableHead>
-                  <TableHead>Data Início</TableHead>
-                  <TableHead>Data Validade</TableHead>
+                  <SortableHead label="Funcionário" field="employee_number" className="w-20" />
+                  <SortableHead label="Nome" field="full_name" />
+                  <SortableHead label="Encarregado" field="company" className="w-16" />
+                  <SortableHead label="Contribuinte" field="nif" />
+                  <SortableHead label="Data Contratação" field="hire_date" />
+                  <SortableHead label="Categoria" field="category_code" />
+                  <SortableHead label="Descrição Cat." field="category_description" />
+                  <SortableHead label="Cartão Condutor" field="card_number" />
+                  <SortableHead label="Emissão" field="card_issue_date" />
+                  <SortableHead label="Data Início" field="card_start_date" />
+                  <SortableHead label="Data Validade" field="card_expiry_date" />
                   <TableHead className="w-20">Ações</TableHead>
                 </TableRow>
               </TableHeader>
