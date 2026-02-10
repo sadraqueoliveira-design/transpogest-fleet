@@ -51,6 +51,16 @@ interface TachoCard {
   driver_name: string | null;
 }
 
+interface HubLocation {
+  id: string;
+  name: string;
+  code: string;
+  lat: number | null;
+  lng: number | null;
+  type: string | null;
+  client_id: string;
+}
+
 interface Notification {
   id: string;
   type: "maintenance" | "request";
@@ -75,22 +85,25 @@ export default function Dashboard() {
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [employeeCards, setEmployeeCards] = useState<EmployeeCard[]>([]);
   const [tachoCards, setTachoCards] = useState<TachoCard[]>([]);
+  const [hubs, setHubs] = useState<HubLocation[]>([]);
 
   const [trailers, setTrailers] = useState<any[]>([]);
 
   const fetchVehicles = async () => {
-    const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }] = await Promise.all([
+    const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }, { data: hData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
       supabase.from("clients").select("id, name").order("name"),
       supabase.from("trailers").select("id, plate, internal_id, status, last_linked_vehicle_id"),
       supabase.from("employees").select("card_number, full_name").not("card_number", "is", null),
       supabase.from("tachograph_cards").select("card_number, driver_name"),
+      supabase.from("hubs").select("id, name, code, lat, lng, type, client_id").not("lat", "is", null),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
     if (tData) setTrailers(tData);
     if (eData) setEmployeeCards(eData as EmployeeCard[]);
     if (tcData) setTachoCards(tcData as TachoCard[]);
+    if (hData) setHubs(hData as HubLocation[]);
   };
 
   useEffect(() => {
@@ -192,6 +205,21 @@ export default function Dashboard() {
     try { return JSON.parse(v.tachograph_status)?.dc1 || null; } catch { return null; }
   };
 
+  // Find nearest hub within 2km
+  const getNearestHub = (v: Vehicle): HubLocation | null => {
+    if (v.last_lat == null || v.last_lng == null) return null;
+    let best: HubLocation | null = null;
+    let bestDist = 2; // max 2km
+    for (const h of hubs) {
+      if (h.lat == null || h.lng == null) continue;
+      const dlat = (v.last_lat - h.lat) * 111.32;
+      const dlng = (v.last_lng - h.lng!) * 111.32 * Math.cos(v.last_lat * Math.PI / 180);
+      const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+      if (dist < bestDist) { bestDist = dist; best = h; }
+    }
+    return best;
+  };
+
   const filtered = vehicles.filter(v => {
     if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
     if (search) {
@@ -200,7 +228,9 @@ export default function Dashboard() {
       const trackitMatch = v.trackit_id?.toLowerCase().includes(q);
       const cName = clients.find(c => c.id === v.client_id)?.name?.toLowerCase().includes(q);
       const driverName = resolveDriverName(getDc1(v))?.toLowerCase().includes(q);
-      if (!plate && !trackitMatch && !cName && !driverName) return false;
+      const nearHub = getNearestHub(v);
+      const hubMatch = nearHub && (nearHub.name.toLowerCase().includes(q) || nearHub.code.toLowerCase().includes(q));
+      if (!plate && !trackitMatch && !cName && !driverName && !hubMatch) return false;
     }
     if (filterTab === "moving") return getStatus(v) === "moving";
     if (filterTab === "stopped") return getStatus(v) === "stopped";
@@ -267,11 +297,13 @@ export default function Dashboard() {
           });
           const clientName = clients.find(c => c.id === v.client_id)?.name;
           const driverName = resolveDriverName(getDc1(v));
+          const nearHub = getNearestHub(v);
           const marker = L.marker([v.last_lat, v.last_lng], { icon })
             .bindPopup(`<div style="font-family:Inter,sans-serif;min-width:160px">
               <strong>${v.plate}</strong>${v.trackit_id ? ` <span style="color:#999;font-size:10px">#${v.trackit_id}</span>` : ''}
               ${driverName ? `<br/><span style="font-size:12px">👤 ${driverName}</span>` : ''}
-              ${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}<br/>
+              ${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}
+              ${nearHub ? `<br/><span style="font-size:11px">🏪 Loja ${nearHub.code} — ${nearHub.name}</span>` : ''}<br/>
               <span style="color:#666">${speed} km/h · ${v.fuel_level_percent ?? "—"}% fuel</span>
             </div>`);
           clusterGroup.addLayer(marker);
@@ -351,7 +383,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Pesquisar matrícula, motorista, nº móvel, cliente..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Pesquisar matrícula, motorista, nº móvel, cliente, loja..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
             <SelectTrigger className="w-48">
@@ -439,7 +471,8 @@ export default function Dashboard() {
               const driverName = resolveDriverName(driverCard);
               const cName = clients.find(c => c.id === v.client_id)?.name;
               const linkedTrailer = trailers.find(t => t.last_linked_vehicle_id === v.id && t.status === "coupled");
-              const locationName = (v as any).last_location_name;
+              const nearestHub = getNearestHub(v);
+              const locationName = nearestHub?.name || (v as any).last_location_name;
               const hasCoords = v.last_lat != null && v.last_lng != null;
 
               return (
@@ -522,7 +555,7 @@ export default function Dashboard() {
                     )}
                     {(locationName || hasCoords) && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">📍 Local</span>
+                        <span className="text-muted-foreground">{nearestHub ? "🏪" : "📍"} {nearestHub ? `Loja ${nearestHub.code}` : "Local"}</span>
                         <span className="font-semibold text-[10px] truncate max-w-[120px] text-right" title={locationName || `${v.last_lat!.toFixed(4)}, ${v.last_lng!.toFixed(4)}`}>
                           {locationName || `${v.last_lat!.toFixed(4)}, ${v.last_lng!.toFixed(4)}`}
                         </span>
