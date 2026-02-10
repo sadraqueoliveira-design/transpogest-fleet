@@ -246,42 +246,72 @@ export type Database = {
       hubs: {
         Row: {
           address: string | null
+          arp2_code: string | null
+          ativo: boolean
+          categoria: string | null
           client_id: string
           code: string
+          codigo_postal: string | null
+          concelho: string | null
           created_at: string
+          distrito: string | null
+          freguesia: string | null
           id: string
+          janelas_horarias: string | null
           lat: number | null
           lng: number | null
+          localidade: string | null
           name: string
           status: string
           type: string | null
           updated_at: string
+          zona_vida: string | null
         }
         Insert: {
           address?: string | null
+          arp2_code?: string | null
+          ativo?: boolean
+          categoria?: string | null
           client_id: string
           code: string
+          codigo_postal?: string | null
+          concelho?: string | null
           created_at?: string
+          distrito?: string | null
+          freguesia?: string | null
           id?: string
+          janelas_horarias?: string | null
           lat?: number | null
           lng?: number | null
+          localidade?: string | null
           name: string
           status?: string
           type?: string | null
           updated_at?: string
+          zona_vida?: string | null
         }
         Update: {
           address?: string | null
+          arp2_code?: string | null
+          ativo?: boolean
+          categoria?: string | null
           client_id?: string
           code?: string
+          codigo_postal?: string | null
+          concelho?: string | null
           created_at?: string
+          distrito?: string | null
+          freguesia?: string | null
           id?: string
+          janelas_horarias?: string | null
           lat?: number | null
           lng?: number | null
+          localidade?: string | null
           name?: string
           status?: string
           type?: string | null
           updated_at?: string
+          zona_vida?: string | null
         }
         Relationships: [
           {
