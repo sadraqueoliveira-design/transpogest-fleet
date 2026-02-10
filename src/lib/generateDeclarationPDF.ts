@@ -12,7 +12,13 @@ interface DeclarationPDFData {
   reasonCode: string;
   reasonText?: string;
   managerName: string;
+  managerPosition?: string;
   companyName: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyFax?: string;
+  companyEmail?: string;
+  signingLocation?: string;
 }
 
 const REASON_MAP: Record<string, number> = {
@@ -86,10 +92,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   };
 
   field("1", "Nome da empresa", data.companyName);
-  field("2", "Morada", "Rua, Vale Casal, 42, Edf. Florêncio e Silva. Vale Casal, 2665-379 Milharado, Portugal");
-  field("3", "Número de telefone", "+351 219667000");
-  field("4", "Número de fax", "+351 219667009");
-  field("5", "Endereço de correio electrónico", "florencio.silva@tfs.pt");
+  field("2", "Morada", data.companyAddress || "Rua, Vale Casal, 42, Edf. Florêncio e Silva. Vale Casal, 2665-379 Milharado, Portugal");
+  field("3", "Número de telefone", data.companyPhone || "+351 219667000");
+  field("4", "Número de fax", data.companyFax || "+351 219667009");
+  field("5", "Endereço de correio electrónico", data.companyEmail || "florencio.silva@tfs.pt");
 
   y += 4;
 
@@ -98,7 +104,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 6;
 
   field("6", "Apelido e nome", data.managerName);
-  field("7", "Funções na empresa", "Responsável de Tráfego");
+  field("7", "Funções na empresa", data.managerPosition || "Responsável de Tráfego");
 
   y += 3;
   doc.text("declaro que o condutor:", margin, y);
@@ -170,7 +176,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   // Signature section - Company
   doc.setFont("helvetica", "normal");
   const today = formatD(new Date().toISOString());
-  doc.text(`(17) Localidade: Alverca     Data: ${today}`, margin, y);
+  const loc = data.signingLocation || "Alverca";
+  doc.text(`(17) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
   doc.text("Assinatura: …………………………………………………………", margin, y);
   y += 10;
@@ -183,7 +190,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += declLines.length * 4 + 4;
 
   doc.setFontSize(9);
-  doc.text(`(19) Localidade: Alverca     Data: ${today}`, margin, y);
+  doc.text(`(19) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
   doc.text("Assinatura do condutor: …………………………………………………………", margin, y);
   y += 12;
