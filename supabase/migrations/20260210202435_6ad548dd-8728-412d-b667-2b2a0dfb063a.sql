@@ -1,0 +1,1 @@
+ALTER TABLE public.vehicles ADD COLUMN mobile_number text;
