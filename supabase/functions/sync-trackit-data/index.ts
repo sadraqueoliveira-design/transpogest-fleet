@@ -86,6 +86,16 @@ Deno.serve(async (req) => {
             } catch { return null; }
           };
 
+          // Pre-fetch tachograph cards for driver matching
+          const { data: tachCards } = await supabaseAdmin
+            .from("tachograph_cards")
+            .select("card_number, driver_id");
+          const cardToDriver = new Map(
+            (tachCards || [])
+              .filter((c: any) => c.driver_id)
+              .map((c: any) => [c.card_number, c.driver_id])
+          );
+
           const filteredVehicles = vehiclesData
             .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name);
 
@@ -138,6 +148,43 @@ Deno.serve(async (req) => {
             // Legal download dates
             const lastVehicleDownload = drs.last_download_at || d.tacho?.last_download_at || null;
 
+            // === TACHOGRAPH-FIRST DRIVER ASSIGNMENT ===
+            // Extract driver card number from exd.eco.idc (Trackit Manual v110)
+            const exd = d.exd || {};
+            const ecoBlock = exd.eco || eco;
+            const driverCardNumber = ecoBlock.idc ?? drs.idc ?? null;
+            const driverState1 = ecoBlock.ds1 ?? drs.ds1 ?? null;
+
+            // Determine if a valid card is inserted
+            const EMPTY_CARD = "0000000000000000";
+            const hasValidCard = driverCardNumber
+              && driverCardNumber !== ""
+              && driverCardNumber !== EMPTY_CARD
+              && driverCardNumber !== "0";
+
+            let resolvedDriverId: string | null = null;
+            if (hasValidCard) {
+              // Normalize card number: remove spaces, uppercase
+              const normalizedCard = driverCardNumber.replace(/[\s]/g, "").toUpperCase();
+              // Try exact match first, then try without leading zeros and last 2 digits
+              resolvedDriverId = cardToDriver.get(normalizedCard) || null;
+              if (!resolvedDriverId) {
+                // Try normalized matching (strip leading zeros & last 2 check digits)
+                const stripped = normalizedCard.replace(/^0+/, "").slice(0, -2);
+                for (const [cardNum, driverId] of cardToDriver.entries()) {
+                  const strippedCard = cardNum.replace(/^0+/, "").slice(0, -2);
+                  if (strippedCard === stripped) {
+                    resolvedDriverId = driverId as string;
+                    break;
+                  }
+                }
+              }
+              if (!resolvedDriverId) {
+                console.log(`${client.name}: Unknown card ${normalizedCard} on vehicle ${plate} — no matching driver found`);
+              }
+            }
+            // If no valid card → resolvedDriverId stays null (auto-logout)
+
             return {
               client_id: client.id,
               trackit_id: String(v.mid || v.id || plate),
@@ -163,6 +210,7 @@ Deno.serve(async (req) => {
                 : null,
               updated_at: new Date().toISOString(),
               mobile_number: mobileNumber,
+              current_driver_id: resolvedDriverId,
             };
           });
 
