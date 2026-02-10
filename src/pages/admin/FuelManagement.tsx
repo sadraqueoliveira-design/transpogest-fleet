@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,9 +15,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle, MessageSquare, AlertTriangle, Link2 } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle, MessageSquare, AlertTriangle, Link2, Upload } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
+import * as XLSX from "xlsx";
 
 interface FuelLog {
   id: string;
@@ -30,7 +31,14 @@ interface FuelLog {
   receipt_photo_url: string | null;
   vehicle_id: string;
   driver_id: string;
+  payment_method: string;
 }
+
+const paymentMethodLabels: Record<string, string> = {
+  fleet_card: "Cartão Frota",
+  credit_card: "Cartão Crédito",
+  cash: "Numerário",
+};
 
 interface Vehicle {
   id: string;
@@ -92,6 +100,163 @@ const fuelTypeLabels: Record<string, string> = {
   AdBlue: "AdBlue",
   Reefer_Diesel: "Thermo King",
 };
+// ──── Reconciliation Tab Component ────
+function ReconciliationTab({ logs, refuelingEvents, vehicles, profiles, clients, getVehicle, getProfile, getClient }: {
+  logs: FuelLog[];
+  refuelingEvents: RefuelingEvent[];
+  vehicles: Vehicle[];
+  profiles: Profile[];
+  clients: ClientOption[];
+  getVehicle: (id: string) => Vehicle | undefined;
+  getProfile: (id: string) => Profile | undefined;
+  getClient: (id: string) => ClientOption | undefined;
+}) {
+  const [invoiceData, setInvoiceData] = useState<any[]>([]);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const reconciliationRows = logs.map(log => {
+    const vehicle = getVehicle(log.vehicle_id);
+    const driver = getProfile(log.driver_id);
+    const logTime = new Date(log.created_at).getTime();
+
+    const matchedEvent = refuelingEvents
+      .filter(ev => ev.vehicle_id === log.vehicle_id)
+      .map(ev => ({ ...ev, timeDiff: Math.abs(new Date(ev.detected_at).getTime() - logTime) }))
+      .filter(ev => ev.timeDiff < 24 * 60 * 60 * 1000)
+      .sort((a, b) => a.timeDiff - b.timeDiff)[0] || null;
+
+    const sensorLiters = matchedEvent?.estimated_liters ?? null;
+    const driverLiters = log.liters;
+
+    let status: "verified" | "warning" | "no_data" = "no_data";
+    if (sensorLiters != null && driverLiters > 0) {
+      const diff = Math.abs(sensorLiters - driverLiters) / driverLiters;
+      status = diff <= 0.10 ? "verified" : "warning";
+    }
+
+    return {
+      id: log.id,
+      date: log.created_at,
+      plate: vehicle?.plate || "—",
+      driver: driver?.full_name || "—",
+      driverLiters,
+      sensorLiters,
+      status,
+      paymentMethod: log.payment_method,
+    };
+  });
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws);
+        setInvoiceData(data);
+        toast.success(`${data.length} linhas importadas da fatura`);
+      } catch {
+        toast.error("Erro ao ler ficheiro. Verifique o formato.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  };
+
+  const statusBadge = (s: "verified" | "warning" | "no_data") => {
+    if (s === "verified") return <Badge className="bg-success text-white text-[10px] gap-1"><CheckCircle2 className="h-3 w-3" /> Verificado</Badge>;
+    if (s === "warning") return <Badge variant="destructive" className="text-[10px] gap-1"><AlertTriangle className="h-3 w-3" /> Discrepância</Badge>;
+    return <Badge variant="secondary" className="text-[10px]">Sem sensor</Badge>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Cruzamento entre litros declarados pelo motorista e dados do sensor (tolerância ±10%)
+        </p>
+        <div className="flex items-center gap-2">
+          <input ref={csvInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImportCSV} />
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => csvInputRef.current?.click()}>
+            <Upload className="h-4 w-4" /> Importar Fatura (CSV/Excel)
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data/Hora</TableHead>
+                <TableHead>Veículo</TableHead>
+                <TableHead>Motorista</TableHead>
+                <TableHead>Pagamento</TableHead>
+                <TableHead className="text-right">Litros (Motorista)</TableHead>
+                <TableHead className="text-right">Litros (Sensor)</TableHead>
+                <TableHead>Estado</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {reconciliationRows.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum registo para reconciliar</TableCell></TableRow>
+              ) : (
+                reconciliationRows.map(r => (
+                  <TableRow key={r.id} className={r.status === "warning" ? "bg-destructive/5" : r.status === "verified" ? "bg-success/5" : ""}>
+                    <TableCell className="text-sm">{format(new Date(r.date), "dd/MM/yy HH:mm", { locale: pt })}</TableCell>
+                    <TableCell className="font-mono font-semibold">{r.plate}</TableCell>
+                    <TableCell className="text-sm">{r.driver}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px]">{paymentMethodLabels[r.paymentMethod] || r.paymentMethod || "—"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-semibold">{r.driverLiters.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} L</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.sensorLiters != null ? `${r.sensorLiters.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} L` : "—"}</TableCell>
+                    <TableCell>{statusBadge(r.status)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {invoiceData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4" /> Fatura Importada ({invoiceData.length} linhas)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  {Object.keys(invoiceData[0]).map(key => (
+                    <TableHead key={key}>{key}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {invoiceData.slice(0, 50).map((row, i) => (
+                  <TableRow key={i}>
+                    {Object.values(row).map((val, j) => (
+                      <TableCell key={j} className="text-sm">{String(val ?? "")}</TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {invoiceData.length > 50 && (
+              <p className="text-xs text-center text-muted-foreground py-2">A mostrar 50 de {invoiceData.length} linhas</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
 
 export default function FuelManagement() {
   const { user } = useAuth();
@@ -585,6 +750,7 @@ export default function FuelManagement() {
             <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
             <TabsTrigger value="detected">🔄 Detetados ({refuelingEvents.length})</TabsTrigger>
             <TabsTrigger value="analytics">📊 Análise</TabsTrigger>
+            <TabsTrigger value="reconciliation">🔍 Reconciliação</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <ExportButton
@@ -777,6 +943,7 @@ export default function FuelManagement() {
                     <TableHead>Matrícula</TableHead>
                     <TableHead>Motorista</TableHead>
                     <TableHead>Tipo</TableHead>
+                    <TableHead>Pagamento</TableHead>
                     <TableHead className="text-right">Litros</TableHead>
                     <TableHead className="text-right">Preço/L</TableHead>
                     <TableHead className="text-right">Total</TableHead>
@@ -786,7 +953,7 @@ export default function FuelManagement() {
                 </TableHeader>
                 <TableBody>
                   {filteredLogs.length === 0 ? (
-                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum registo de abastecimento</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhum registo de abastecimento</TableCell></TableRow>
                   ) : (
                     filteredLogs.map(l => {
                       const v = getVehicle(l.vehicle_id);
@@ -799,6 +966,9 @@ export default function FuelManagement() {
                           <TableCell className="text-sm">{p?.full_name || "—"}</TableCell>
                           <TableCell>
                             <Badge variant="secondary">{fuelTypeLabels[l.fuel_type] || l.fuel_type}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-[10px]">{paymentMethodLabels[l.payment_method] || l.payment_method || "—"}</Badge>
                           </TableCell>
                           <TableCell className="text-right tabular-nums font-semibold">{l.liters.toLocaleString("pt-PT", { maximumFractionDigits: 1 })}</TableCell>
                           <TableCell className="text-right tabular-nums">{l.price_per_liter ? `${l.price_per_liter.toFixed(3)} €` : "—"}</TableCell>
@@ -1038,6 +1208,11 @@ export default function FuelManagement() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Reconciliation tab */}
+        <TabsContent value="reconciliation">
+          <ReconciliationTab logs={logs} refuelingEvents={refuelingEvents} vehicles={vehicles} profiles={profiles} clients={clients} getVehicle={getVehicle} getProfile={getProfile} getClient={getClient} />
         </TabsContent>
       </Tabs>
 

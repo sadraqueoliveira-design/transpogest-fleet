@@ -204,6 +204,7 @@ export type Database = {
           id: string
           liters: number
           odometer_at_fillup: number | null
+          payment_method: string
           price_per_liter: number | null
           receipt_photo_url: string | null
           reefer_engine_hours: number | null
@@ -216,6 +217,7 @@ export type Database = {
           id?: string
           liters: number
           odometer_at_fillup?: number | null
+          payment_method?: string
           price_per_liter?: number | null
           receipt_photo_url?: string | null
           reefer_engine_hours?: number | null
@@ -228,6 +230,7 @@ export type Database = {
           id?: string
           liters?: number
           odometer_at_fillup?: number | null
+          payment_method?: string
           price_per_liter?: number | null
           receipt_photo_url?: string | null
           reefer_engine_hours?: number | null
