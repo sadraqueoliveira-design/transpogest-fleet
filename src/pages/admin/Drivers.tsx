@@ -24,6 +24,8 @@ interface Employee {
   company: string | null;
   nif: string | null;
   hire_date: string | null;
+  birth_date: string | null;
+  license_number: string | null;
   category_code: string | null;
   category_description: string | null;
   card_number: string | null;
@@ -116,9 +118,9 @@ export default function Drivers() {
     if (!editingId) return;
     const { error } = await supabase.from("employees").update({
       full_name: editData.full_name, company: editData.company, nif: editData.nif,
-      hire_date: editData.hire_date, category_code: editData.category_code,
-      category_description: editData.category_description, card_number: editData.card_number,
-      card_start_date: editData.card_start_date, card_expiry_date: editData.card_expiry_date,
+      hire_date: editData.hire_date, birth_date: editData.birth_date, license_number: editData.license_number,
+      category_code: editData.category_code, category_description: editData.category_description,
+      card_number: editData.card_number, card_start_date: editData.card_start_date, card_expiry_date: editData.card_expiry_date,
     }).eq("id", editingId);
     if (error) { toast.error("Erro ao guardar"); return; }
     toast.success("Dados atualizados");
@@ -131,6 +133,7 @@ export default function Drivers() {
     const { error } = await supabase.from("employees").insert({
       employee_number: Number(newData.employee_number), full_name: newData.full_name,
       company: newData.company || "ARV", nif: newData.nif, hire_date: newData.hire_date,
+      birth_date: newData.birth_date, license_number: newData.license_number,
       category_code: newData.category_code, category_description: newData.category_description,
       card_number: newData.card_number, card_start_date: newData.card_start_date, card_expiry_date: newData.card_expiry_date,
     });
@@ -366,7 +369,9 @@ export default function Drivers() {
               <div><Label className="text-muted-foreground">Nº Funcionário</Label><p className="font-mono">{detailEmployee.employee_number}</p></div>
               <div><Label className="text-muted-foreground">Empresa</Label><p>{detailEmployee.company || "—"}</p></div>
               <div><Label className="text-muted-foreground">NIF</Label><p>{detailEmployee.nif || "—"}</p></div>
+              <div><Label className="text-muted-foreground">Data Nascimento</Label><p>{formatDate(detailEmployee.birth_date)}</p></div>
               <div><Label className="text-muted-foreground">Data Contratação</Label><p>{formatDate(detailEmployee.hire_date)}</p></div>
+              <div><Label className="text-muted-foreground">Carta de Condução</Label><p>{detailEmployee.license_number || "—"}</p></div>
               <div><Label className="text-muted-foreground">Categoria</Label><p>{detailEmployee.category_description || "—"}</p></div>
               <div><Label className="text-muted-foreground">Cód. Categoria</Label><p>{detailEmployee.category_code || "—"}</p></div>
               <div className="col-span-2"><Label className="text-muted-foreground">Cartão Condutor</Label><p className="font-mono">{detailEmployee.card_number || "—"}</p></div>
@@ -391,8 +396,11 @@ export default function Drivers() {
             <div className="col-span-2"><Label>Nome</Label><Input value={editData.full_name || ""} onChange={e => setEditData(p => ({ ...p, full_name: e.target.value }))} /></div>
             <div><Label>Empresa</Label><Input value={editData.company || ""} onChange={e => setEditData(p => ({ ...p, company: e.target.value }))} /></div>
             <div><Label>NIF</Label><Input value={editData.nif || ""} onChange={e => setEditData(p => ({ ...p, nif: e.target.value }))} /></div>
+            <div><Label>Data Nascimento</Label><Input type="date" value={editData.birth_date || ""} onChange={e => setEditData(p => ({ ...p, birth_date: e.target.value }))} /></div>
             <div><Label>Data Contratação</Label><Input type="date" value={editData.hire_date || ""} onChange={e => setEditData(p => ({ ...p, hire_date: e.target.value }))} /></div>
+            <div className="col-span-2"><Label>N.º Carta de Condução</Label><Input value={editData.license_number || ""} onChange={e => setEditData(p => ({ ...p, license_number: e.target.value }))} /></div>
             <div><Label>Categoria</Label><Input value={editData.category_description || ""} onChange={e => setEditData(p => ({ ...p, category_description: e.target.value }))} /></div>
+            <div><Label>Cód. Categoria</Label><Input value={editData.category_code || ""} onChange={e => setEditData(p => ({ ...p, category_code: e.target.value }))} /></div>
             <div className="col-span-2"><Label>Cartão Condutor</Label><Input value={editData.card_number || ""} onChange={e => setEditData(p => ({ ...p, card_number: e.target.value }))} /></div>
             <div><Label>Início Cartão</Label><Input type="date" value={editData.card_start_date || ""} onChange={e => setEditData(p => ({ ...p, card_start_date: e.target.value }))} /></div>
             <div><Label>Validade Cartão</Label><Input type="date" value={editData.card_expiry_date || ""} onChange={e => setEditData(p => ({ ...p, card_expiry_date: e.target.value }))} /></div>
@@ -413,7 +421,9 @@ export default function Drivers() {
             <div><Label>Empresa</Label><Input value={newData.company || "ARV"} onChange={e => setNewData(p => ({ ...p, company: e.target.value }))} /></div>
             <div className="col-span-2"><Label>Nome *</Label><Input value={newData.full_name || ""} onChange={e => setNewData(p => ({ ...p, full_name: e.target.value }))} /></div>
             <div><Label>NIF</Label><Input value={newData.nif || ""} onChange={e => setNewData(p => ({ ...p, nif: e.target.value }))} /></div>
+            <div><Label>Data Nascimento</Label><Input type="date" value={newData.birth_date || ""} onChange={e => setNewData(p => ({ ...p, birth_date: e.target.value }))} /></div>
             <div><Label>Data Contratação</Label><Input type="date" value={newData.hire_date || ""} onChange={e => setNewData(p => ({ ...p, hire_date: e.target.value }))} /></div>
+            <div className="col-span-2"><Label>N.º Carta de Condução</Label><Input value={newData.license_number || ""} onChange={e => setNewData(p => ({ ...p, license_number: e.target.value }))} /></div>
             <div><Label>Cód. Categoria</Label><Input value={newData.category_code || ""} onChange={e => setNewData(p => ({ ...p, category_code: e.target.value }))} /></div>
             <div><Label>Descrição Categoria</Label><Input value={newData.category_description || ""} onChange={e => setNewData(p => ({ ...p, category_description: e.target.value }))} /></div>
             <div className="col-span-2"><Label>Cartão Condutor</Label><Input value={newData.card_number || ""} onChange={e => setNewData(p => ({ ...p, card_number: e.target.value }))} /></div>
