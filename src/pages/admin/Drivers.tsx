@@ -36,6 +36,8 @@ export default function Drivers() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [filterCompany, setFilterCompany] = useState<string>("all");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Employee>>({});
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
@@ -73,6 +75,16 @@ export default function Drivers() {
 
   const filtered = useMemo(() => {
     let list = employees;
+    if (filterCompany !== "all") {
+      list = list.filter(e => (e.company || "ARV") === filterCompany);
+    }
+    if (filterCategory === "motorista") {
+      list = list.filter(e => e.category_code === "83320");
+    } else if (filterCategory === "ajudante") {
+      list = list.filter(e => e.category_code === "51110");
+    } else if (filterCategory === "outros") {
+      list = list.filter(e => e.category_code !== "83320" && e.category_code !== "51110");
+    }
     if (search.trim()) {
       const q = search.toLowerCase().trim();
       list = list.filter(e =>
@@ -90,12 +102,12 @@ export default function Drivers() {
       });
     }
     return list;
-  }, [employees, search, sortKey, sortDir]);
+  }, [employees, search, sortKey, sortDir, filterCompany, filterCategory]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize]);
 
-  useEffect(() => { setPage(1); }, [search]);
+  useEffect(() => { setPage(1); }, [search, filterCompany, filterCategory]);
 
   const startEdit = (emp: Employee) => { setEditingId(emp.id); setEditData({ ...emp }); };
   const cancelEdit = () => { setEditingId(null); setEditData({}); };
@@ -229,16 +241,35 @@ export default function Drivers() {
         </CardContent></Card>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Pesquisar por nome, nº funcionário ou NIF..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative max-w-xs flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pesquisar por nome, nº ou NIF..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
+        </div>
+        <Select value={filterCompany} onValueChange={setFilterCompany}>
+          <SelectTrigger className="w-[130px]"><SelectValue placeholder="Empresa" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas Empresas</SelectItem>
+            <SelectItem value="ARV">ARV</SelectItem>
+            <SelectItem value="ART">ART</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Categoria" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas Categorias</SelectItem>
+            <SelectItem value="motorista">Motoristas</SelectItem>
+            <SelectItem value="ajudante">Ajudantes</SelectItem>
+            <SelectItem value="outros">Outros</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-auto">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
