@@ -106,6 +106,9 @@ Deno.serve(async (req) => {
             const tmp = d.tmp || {};
             const eco = d.eco || drs;
             const plate = v.info?.plate || v.plate || v.name || "SEM-PLACA";
+            // Extract mobile number from reference field (format: "1080 | 42-HX-81")
+            const refStr = v.info?.reference || "";
+            const mobileNumber = refStr.split("|")[0]?.trim() || null;
             const fuelLevel = drs.flv ?? d.fue?.flv ?? null;
             const rpmVal = drs.rpm ?? d.can?.rpm ?? null;
             const odometerVal = drs.ckm ?? pos.gkm ?? null;
@@ -159,6 +162,7 @@ Deno.serve(async (req) => {
                 ? new Date(new Date(lastVehicleDownload).getTime() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
                 : null,
               updated_at: new Date().toISOString(),
+              mobile_number: mobileNumber,
             };
           });
 
