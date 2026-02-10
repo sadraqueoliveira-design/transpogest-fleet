@@ -282,7 +282,8 @@ export default function Drivers() {
                   <SortableHead label="Contribuinte" field="nif" />
                   <SortableHead label="Data Contratação" field="hire_date" />
                   <SortableHead label="Categoria" field="category_code" />
-                  <SortableHead label="Descrição Cat." field="category_description" />
+                   <SortableHead label="Descrição Cat." field="category_description" />
+                   <SortableHead label="Carta Condução" field="license_number" />
                   <SortableHead label="Cartão Condutor" field="card_number" />
                   <SortableHead label="Emissão" field="card_issue_date" />
                   <SortableHead label="Data Início" field="card_start_date" />
@@ -305,6 +306,7 @@ export default function Drivers() {
                       <TableCell className="whitespace-nowrap">{formatDate(e.hire_date)}</TableCell>
                       <TableCell className="font-mono text-xs">{e.category_code || "—"}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{e.category_description || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{e.license_number || "—"}</TableCell>
                       <TableCell className="font-mono text-xs">{e.card_number || "—"}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatDate(e.card_issue_date)}</TableCell>
                       <TableCell className="whitespace-nowrap">{formatDate(e.card_start_date)}</TableCell>
