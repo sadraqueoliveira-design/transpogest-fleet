@@ -344,7 +344,7 @@ export default function Declarations() {
 
       {/* Sign Modal */}
       <Dialog open={!!selectedDecl} onOpenChange={(o) => !o && setSelectedDecl(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Gerar Declaração de Atividade</DialogTitle>
           </DialogHeader>
