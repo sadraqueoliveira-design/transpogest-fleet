@@ -15,7 +15,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle, RefreshCw } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle, MessageSquare, AlertTriangle, Link2 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
@@ -73,6 +74,11 @@ interface RefuelingEvent {
   estimated_liters: number | null;
   source: string;
   acknowledged: boolean;
+  status: string;
+  notes: string | null;
+  matched_fuel_log_id: string | null;
+  suspicious: boolean;
+  suspicious_reason: string | null;
 }
 
 const alertTypeLabels: Record<string, string> = {
@@ -339,6 +345,26 @@ export default function FuelManagement() {
     };
   });
 
+  // Validate/reject refueling events
+  const handleValidateEvent = async (id: string, status: "validated" | "rejected") => {
+    const { error } = await supabase.from("refueling_events").update({
+      status,
+      acknowledged: status === "validated",
+      acknowledged_by: user?.id,
+      acknowledged_at: new Date().toISOString(),
+    } as any).eq("id", id);
+    if (error) { toast.error("Erro: " + error.message); return; }
+    toast.success(status === "validated" ? "Abastecimento validado" : "Abastecimento rejeitado");
+    fetchRefuelingEvents();
+  };
+
+  const handleAddNote = async (id: string, notes: string) => {
+    const { error } = await supabase.from("refueling_events").update({ notes } as any).eq("id", id);
+    if (error) { toast.error("Erro: " + error.message); return; }
+    toast.success("Nota adicionada");
+    fetchRefuelingEvents();
+  };
+
   const exportPDF = (title: string, data: Record<string, any>[]) => {
     if (data.length === 0) { toast.error("Sem dados para exportar"); return; }
     const headers = Object.keys(data[0]);
@@ -558,6 +584,7 @@ export default function FuelManagement() {
             <TabsTrigger value="reefer">❄️ Motor Frio ({reeferVehicles.length})</TabsTrigger>
             <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
             <TabsTrigger value="detected">🔄 Detetados ({refuelingEvents.length})</TabsTrigger>
+            <TabsTrigger value="analytics">📊 Análise</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <ExportButton
@@ -806,26 +833,90 @@ export default function FuelManagement() {
                     <TableHead className="text-center">→</TableHead>
                     <TableHead className="text-right">Depois (%)</TableHead>
                     <TableHead className="text-right">Subida</TableHead>
-                    <TableHead>Fonte</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {refuelingEvents.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum abastecimento detetado automaticamente</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum abastecimento detetado automaticamente</TableCell></TableRow>
                   ) : (
                     refuelingEvents.map(ev => {
                       const v = getVehicle(ev.vehicle_id);
                       const increase = (ev.fuel_after ?? 0) - (ev.fuel_before ?? 0);
+                      const matchedLog = ev.matched_fuel_log_id ? logs.find(l => l.id === ev.matched_fuel_log_id) : null;
                       return (
-                        <TableRow key={ev.id}>
+                        <TableRow key={ev.id} className={ev.suspicious ? "bg-warning/5" : ""}>
                           <TableCell className="text-sm">{format(new Date(ev.detected_at), "dd/MM/yy HH:mm", { locale: pt })}</TableCell>
                           <TableCell className="font-mono font-semibold">{v?.plate || "—"}</TableCell>
                           <TableCell className="text-sm text-muted-foreground">{v?.client_id ? getClient(v.client_id)?.name || "—" : "—"}</TableCell>
                           <TableCell className="text-right tabular-nums text-muted-foreground">{ev.fuel_before != null ? `${Math.round(ev.fuel_before)}%` : "—"}</TableCell>
-                          <TableCell className="text-center"><ArrowUpCircle className="h-4 w-4 text-green-500 inline" /></TableCell>
+                          <TableCell className="text-center"><ArrowUpCircle className="h-4 w-4 text-success inline" /></TableCell>
                           <TableCell className="text-right tabular-nums font-semibold">{ev.fuel_after != null ? `${Math.round(ev.fuel_after)}%` : "—"}</TableCell>
-                          <TableCell className="text-right tabular-nums font-semibold text-green-600">+{Math.round(increase)}%</TableCell>
-                          <TableCell><Badge variant="secondary">{ev.source === "trackit" ? "Trackit" : ev.source}</Badge></TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold text-success">+{Math.round(increase)}%</TableCell>
+                          <TableCell>
+                            {ev.suspicious && (
+                              <Badge variant="outline" className="border-warning text-warning text-[10px] mr-1 gap-1">
+                                <AlertTriangle className="h-3 w-3" /> Suspeito
+                              </Badge>
+                            )}
+                            {ev.status === "validated" ? (
+                              <Badge className="bg-success text-white text-[10px] gap-1">
+                                <CheckCircle2 className="h-3 w-3" /> Validado
+                              </Badge>
+                            ) : ev.status === "rejected" ? (
+                              <Badge variant="destructive" className="text-[10px] gap-1">
+                                <XCircle className="h-3 w-3" /> Rejeitado
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">Pendente</Badge>
+                            )}
+                            {matchedLog && (
+                              <Badge variant="outline" className="ml-1 text-[10px] gap-1">
+                                <Link2 className="h-3 w-3" /> Manual
+                              </Badge>
+                            )}
+                            {ev.notes && (
+                              <span className="ml-1 text-muted-foreground" title={ev.notes}>
+                                <MessageSquare className="h-3 w-3 inline" />
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {ev.status === "pending" && (
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-success hover:text-success" title="Validar"
+                                  onClick={() => handleValidateEvent(ev.id, "validated")}>
+                                  <CheckCircle2 className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" title="Rejeitar"
+                                  onClick={() => handleValidateEvent(ev.id, "rejected")}>
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Nota">
+                                      <MessageSquare className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-72 p-3" align="end">
+                                    <div className="space-y-2">
+                                      <Label className="text-xs font-semibold">Adicionar nota</Label>
+                                      <Textarea
+                                        placeholder="Nota sobre este abastecimento..."
+                                        className="text-sm h-20"
+                                        id={`note-${ev.id}`}
+                                      />
+                                      <Button size="sm" className="w-full" onClick={() => {
+                                        const el = document.getElementById(`note-${ev.id}`) as HTMLTextAreaElement;
+                                        if (el?.value) handleAddNote(ev.id, el.value);
+                                      }}>Guardar Nota</Button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     })
@@ -834,6 +925,119 @@ export default function FuelManagement() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Analytics tab */}
+        <TabsContent value="analytics">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Abastecimentos Detetados por Estado</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {[
+                    { label: "Pendentes", count: refuelingEvents.filter(e => e.status === "pending").length, color: "bg-muted-foreground" },
+                    { label: "Validados", count: refuelingEvents.filter(e => e.status === "validated").length, color: "bg-success" },
+                    { label: "Rejeitados", count: refuelingEvents.filter(e => e.status === "rejected").length, color: "bg-destructive" },
+                    { label: "Suspeitos", count: refuelingEvents.filter(e => e.suspicious).length, color: "bg-warning" },
+                  ].map(item => (
+                    <div key={item.label} className="flex items-center gap-3">
+                      <div className={`h-3 w-3 rounded-full ${item.color}`} />
+                      <span className="text-sm flex-1">{item.label}</span>
+                      <span className="font-bold tabular-nums">{item.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Cruzamento Detetados vs Manuais</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Link2 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm flex-1">Detetados com registo manual</span>
+                    <span className="font-bold tabular-nums">{refuelingEvents.filter(e => e.matched_fuel_log_id).length}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <ArrowUpCircle className="h-4 w-4 text-success" />
+                    <span className="text-sm flex-1">Detetados sem registo manual</span>
+                    <span className="font-bold tabular-nums">{refuelingEvents.filter(e => !e.matched_fuel_log_id).length}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm flex-1">Registos manuais total</span>
+                    <span className="font-bold tabular-nums">{logs.length}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Top 5 Veículos — Mais Abastecimentos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {Object.entries(
+                    refuelingEvents.reduce((acc, ev) => {
+                      acc[ev.vehicle_id] = (acc[ev.vehicle_id] || 0) + 1;
+                      return acc;
+                    }, {} as Record<string, number>)
+                  )
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 5)
+                    .map(([vid, count]) => {
+                      const v = getVehicle(vid);
+                      return (
+                        <div key={vid} className="flex items-center gap-3">
+                          <span className="font-mono text-sm font-semibold w-20">{v?.plate || "—"}</span>
+                          <div className="flex-1 bg-muted rounded-full h-2">
+                            <div className="bg-primary rounded-full h-2" style={{ width: `${Math.min(100, (count / Math.max(...Object.values(refuelingEvents.reduce((acc, ev) => { acc[ev.vehicle_id] = (acc[ev.vehicle_id] || 0) + 1; return acc; }, {} as Record<string, number>)))) * 100)}%` }} />
+                          </div>
+                          <span className="font-bold tabular-nums text-sm">{count}</span>
+                        </div>
+                      );
+                    })}
+                  {refuelingEvents.length === 0 && <p className="text-sm text-muted-foreground">Sem dados</p>}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Resumo de Consumo (Registos Manuais)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {Object.entries(
+                    logs.reduce((acc, l) => {
+                      const key = l.fuel_type;
+                      if (!acc[key]) acc[key] = { liters: 0, cost: 0, count: 0 };
+                      acc[key].liters += l.liters;
+                      acc[key].cost += l.liters * (l.price_per_liter || 0);
+                      acc[key].count += 1;
+                      return acc;
+                    }, {} as Record<string, { liters: number; cost: number; count: number }>)
+                  ).map(([type, data]) => (
+                    <div key={type} className="flex items-center justify-between text-sm">
+                      <Badge variant="secondary">{fuelTypeLabels[type] || type}</Badge>
+                      <div className="text-right">
+                        <span className="font-semibold">{data.liters.toLocaleString("pt-PT", { maximumFractionDigits: 0 })} L</span>
+                        <span className="text-muted-foreground ml-2">({data.count}x)</span>
+                        {data.cost > 0 && <span className="ml-2 text-muted-foreground">{data.cost.toFixed(2)} €</span>}
+                      </div>
+                    </div>
+                  ))}
+                  {logs.length === 0 && <p className="text-sm text-muted-foreground">Sem registos manuais</p>}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 

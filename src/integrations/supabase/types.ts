@@ -451,7 +451,15 @@ export type Database = {
           fuel_after: number | null
           fuel_before: number | null
           id: string
+          lat: number | null
+          lng: number | null
+          location_name: string | null
+          matched_fuel_log_id: string | null
+          notes: string | null
           source: string
+          status: string
+          suspicious: boolean
+          suspicious_reason: string | null
           vehicle_id: string
         }
         Insert: {
@@ -463,7 +471,15 @@ export type Database = {
           fuel_after?: number | null
           fuel_before?: number | null
           id?: string
+          lat?: number | null
+          lng?: number | null
+          location_name?: string | null
+          matched_fuel_log_id?: string | null
+          notes?: string | null
           source?: string
+          status?: string
+          suspicious?: boolean
+          suspicious_reason?: string | null
           vehicle_id: string
         }
         Update: {
@@ -475,10 +491,25 @@ export type Database = {
           fuel_after?: number | null
           fuel_before?: number | null
           id?: string
+          lat?: number | null
+          lng?: number | null
+          location_name?: string | null
+          matched_fuel_log_id?: string | null
+          notes?: string | null
           source?: string
+          status?: string
+          suspicious?: boolean
+          suspicious_reason?: string | null
           vehicle_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "refueling_events_matched_fuel_log_id_fkey"
+            columns: ["matched_fuel_log_id"]
+            isOneToOne: false
+            referencedRelation: "fuel_logs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "refueling_events_vehicle_id_fkey"
             columns: ["vehicle_id"]
