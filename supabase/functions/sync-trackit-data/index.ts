@@ -155,10 +155,60 @@ Deno.serve(async (req) => {
 
           const vehiclesToUpsert = vehicleRecords;
 
+          // --- Detect refueling events (fuel level increase > 15%) ---
+          const trackitIds = vehiclesToUpsert.map((r) => r.trackit_id);
+          const { data: existingVehicles } = await supabaseAdmin
+            .from("vehicles")
+            .select("id, trackit_id, fuel_level_percent")
+            .in("trackit_id", trackitIds);
+
+          const existingMap = new Map(
+            (existingVehicles || []).map((v) => [v.trackit_id, v])
+          );
+
+          const refuelingEvents: Array<{
+            vehicle_id: string;
+            fuel_before: number;
+            fuel_after: number;
+            estimated_liters: number | null;
+            source: string;
+          }> = [];
+
+          for (const rec of vehiclesToUpsert) {
+            const existing = existingMap.get(rec.trackit_id);
+            if (!existing) continue;
+            const oldFuel = existing.fuel_level_percent;
+            const newFuel = rec.fuel_level_percent;
+            if (oldFuel == null || newFuel == null) continue;
+            // Detect significant fuel increase (>15 percentage points)
+            const increase = newFuel - oldFuel;
+            if (increase >= 15) {
+              refuelingEvents.push({
+                vehicle_id: existing.id,
+                fuel_before: oldFuel,
+                fuel_after: newFuel,
+                estimated_liters: null,
+                source: "trackit",
+              });
+            }
+          }
+
           // Upsert no Supabase (Atualiza se existir, Cria se novo)
           const { error: upsertError } = await supabaseAdmin
             .from("vehicles")
             .upsert(vehiclesToUpsert, { onConflict: "trackit_id" });
+
+          // Insert detected refueling events
+          if (refuelingEvents.length > 0) {
+            const { error: refuelErr } = await supabaseAdmin
+              .from("refueling_events")
+              .insert(refuelingEvents);
+            if (refuelErr) {
+              console.error("Error inserting refueling events:", refuelErr.message);
+            } else {
+              console.log(`${client.name}: ${refuelingEvents.length} refueling event(s) detected`);
+            }
+          }
 
           if (upsertError) {
             console.error(`Erro ao salvar veículos de ${client.name}:`, upsertError);

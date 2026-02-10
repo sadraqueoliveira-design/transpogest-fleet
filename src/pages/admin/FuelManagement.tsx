@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle } from "lucide-react";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
@@ -64,6 +64,17 @@ interface FuelAlert {
   created_at: string;
 }
 
+interface RefuelingEvent {
+  id: string;
+  vehicle_id: string;
+  detected_at: string;
+  fuel_before: number | null;
+  fuel_after: number | null;
+  estimated_liters: number | null;
+  source: string;
+  acknowledged: boolean;
+}
+
 const alertTypeLabels: Record<string, string> = {
   low_fuel: "⛽ Combustível Baixo",
   low_adblue: "💧 AdBlue Baixo",
@@ -88,6 +99,7 @@ export default function FuelManagement() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("telemetry");
   const [alerts, setAlerts] = useState<FuelAlert[]>([]);
+  const [refuelingEvents, setRefuelingEvents] = useState<RefuelingEvent[]>([]);
   const [form, setForm] = useState({
     vehicle_id: "",
     fuel_type: "Diesel",
@@ -129,6 +141,15 @@ export default function FuelManagement() {
     toast.success("Todos os alertas reconhecidos");
   };
 
+  const fetchRefuelingEvents = async () => {
+    const { data } = await supabase
+      .from("refueling_events")
+      .select("*")
+      .order("detected_at", { ascending: false })
+      .limit(100);
+    if (data) setRefuelingEvents(data as RefuelingEvent[]);
+  };
+
   const fetchData = async () => {
     const [{ data: logsData }, { data: vData }, { data: pData }, { data: cData }] = await Promise.all([
       supabase.from("fuel_logs").select("*").order("created_at", { ascending: false }),
@@ -146,11 +167,16 @@ export default function FuelManagement() {
   useEffect(() => {
     fetchData();
     fetchAlerts();
+    fetchRefuelingEvents();
     const channel = supabase
       .channel("fuel-alerts-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "fuel_alerts" }, () => {
         fetchAlerts();
         toast.warning("⚠️ Novo alerta de combustível!");
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "refueling_events" }, () => {
+        fetchRefuelingEvents();
+        toast.success("⛽ Abastecimento detetado automaticamente!");
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -491,6 +517,7 @@ export default function FuelManagement() {
             <TabsTrigger value="adblue">💧 AdBlue ({adblueVehicles.length})</TabsTrigger>
             <TabsTrigger value="reefer">❄️ Motor Frio ({reeferVehicles.length})</TabsTrigger>
             <TabsTrigger value="manual">📝 Manual ({filteredLogs.length})</TabsTrigger>
+            <TabsTrigger value="detected">🔄 Detetados ({refuelingEvents.length})</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2">
             <ExportButton
@@ -715,6 +742,50 @@ export default function FuelManagement() {
                               <a href={l.receipt_photo_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs">Ver</a>
                             ) : "—"}
                           </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Detected refueling events tab */}
+        <TabsContent value="detected">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data/Hora</TableHead>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="text-right">Antes (%)</TableHead>
+                    <TableHead className="text-center">→</TableHead>
+                    <TableHead className="text-right">Depois (%)</TableHead>
+                    <TableHead className="text-right">Subida</TableHead>
+                    <TableHead>Fonte</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {refuelingEvents.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum abastecimento detetado automaticamente</TableCell></TableRow>
+                  ) : (
+                    refuelingEvents.map(ev => {
+                      const v = getVehicle(ev.vehicle_id);
+                      const increase = (ev.fuel_after ?? 0) - (ev.fuel_before ?? 0);
+                      return (
+                        <TableRow key={ev.id}>
+                          <TableCell className="text-sm">{format(new Date(ev.detected_at), "dd/MM/yy HH:mm", { locale: pt })}</TableCell>
+                          <TableCell className="font-mono font-semibold">{v?.plate || "—"}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{v?.client_id ? getClient(v.client_id)?.name || "—" : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{ev.fuel_before != null ? `${Math.round(ev.fuel_before)}%` : "—"}</TableCell>
+                          <TableCell className="text-center"><ArrowUpCircle className="h-4 w-4 text-green-500 inline" /></TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold">{ev.fuel_after != null ? `${Math.round(ev.fuel_after)}%` : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold text-green-600">+{Math.round(increase)}%</TableCell>
+                          <TableCell><Badge variant="secondary">{ev.source === "trackit" ? "Trackit" : ev.source}</Badge></TableCell>
                         </TableRow>
                       );
                     })
