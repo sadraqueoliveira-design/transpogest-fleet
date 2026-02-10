@@ -11,12 +11,13 @@ import { toast } from "sonner";
 export default function DriverProfile() {
   const { user, profile, signOut } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || "");
+  const [licenseNumber, setLicenseNumber] = useState(profile?.license_number || "");
   const [loading, setLoading] = useState(false);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.from("profiles").update({ full_name: fullName }).eq("id", user?.id);
+    const { error } = await supabase.from("profiles").update({ full_name: fullName, license_number: licenseNumber }).eq("id", user?.id);
     if (error) toast.error(error.message);
     else toast.success("Perfil atualizado");
     setLoading(false);
@@ -36,6 +37,10 @@ export default function DriverProfile() {
             <div className="space-y-2">
               <Label>E-mail</Label>
               <Input value={user?.email || ""} disabled />
+            </div>
+            <div className="space-y-2">
+              <Label>Carta de Condução</Label>
+              <Input value={licenseNumber} onChange={(e) => setLicenseNumber(e.target.value)} placeholder="Nº da carta de condução" />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "A guardar..." : "Guardar Alterações"}
