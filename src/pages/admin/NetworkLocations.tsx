@@ -10,8 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import {
   Plus, Search, Store, MoreVertical, Trash2, Edit,
-  Upload, Download, FileSpreadsheet, Check, X
+  Upload, Download, FileSpreadsheet, Check, X,
+  Navigation, Copy, MessageCircle, Phone, ExternalLink
 } from "lucide-react";
+import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
@@ -440,9 +442,48 @@ export default function NetworkLocations() {
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8"><MoreVertical className="h-4 w-4" /></Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="w-56">
                           <DropdownMenuItem onClick={() => openEdit(h)}><Edit className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDelete(h.id)} className="text-destructive"><Trash2 className="h-4 w-4 mr-2" />Eliminar</DropdownMenuItem>
+
+                          {h.lat && h.lng && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`, "_blank")}>
+                                <ExternalLink className="h-4 w-4 mr-2" />Google Maps
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`https://waze.com/ul?ll=${h.lat},${h.lng}&navigate=yes`, "_blank")}>
+                                <Navigation className="h-4 w-4 mr-2" />Waze
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`https://share.here.com/l/${h.lat},${h.lng}`, "_blank")}>
+                                <ExternalLink className="h-4 w-4 mr-2" />HERE Go
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`, "_blank")}>
+                                <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
+                              </DropdownMenuItem>
+
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => {
+                                const text = `${h.name}\n${h.address || ""}\nhttps://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`;
+                                navigator.clipboard.writeText(text);
+                                toast.success("Copiado para a área de transferência");
+                              }}>
+                                <Copy className="h-4 w-4 mr-2" />Copiar morada + link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => {
+                                const text = encodeURIComponent(`${h.name}\n${h.address || ""}\nhttps://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`);
+                                window.open(`https://wa.me/?text=${text}`, "_blank");
+                              }}>
+                                <MessageCircle className="h-4 w-4 mr-2" />Enviar por WhatsApp
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => {
+                                const text = encodeURIComponent(`${h.name} - ${h.address || ""} https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`);
+                                window.open(`sms:?body=${text}`, "_blank");
+                              }}>
+                                <Phone className="h-4 w-4 mr-2" />Enviar por SMS
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
