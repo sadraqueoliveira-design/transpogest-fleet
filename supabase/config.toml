@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.check-fuel-alerts]
 verify_jwt = false
+
+[functions.check-tacho-gaps]
+verify_jwt = false

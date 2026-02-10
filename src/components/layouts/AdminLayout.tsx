@@ -1,13 +1,15 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store, Fuel
+  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
@@ -22,14 +24,29 @@ const navItems = [
   { to: "/admin/solicitacoes", icon: FileText, label: "Solicitações" },
   { to: "/admin/motoristas", icon: Users, label: "Motoristas" },
   { to: "/admin/tacografo", icon: CreditCard, label: "Tacógrafo" },
+  { to: "/admin/declaracoes", icon: ShieldAlert, label: "Declarações" },
   { to: "/admin/antram", icon: Settings, label: "ANTRAM" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingDeclarations, setPendingDeclarations] = useState(0);
   const { pathname } = useLocation();
   const { profile, signOut, role } = useAuth();
+
+  useEffect(() => {
+    const fetchPending = async () => {
+      const { count } = await supabase
+        .from("activity_declarations")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "draft");
+      setPendingDeclarations(count || 0);
+    };
+    fetchPending();
+    const interval = setInterval(fetchPending, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -71,7 +88,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 )}
               >
                 <item.icon className="h-5 w-5 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
+                {!collapsed && (
+                  <span className="flex-1">{item.label}</span>
+                )}
+                {!collapsed && item.to === "/admin/declaracoes" && pendingDeclarations > 0 && (
+                  <Badge variant="destructive" className="h-5 min-w-5 px-1.5 text-[10px]">
+                    {pendingDeclarations}
+                  </Badge>
+                )}
               </Link>
             );
           })}

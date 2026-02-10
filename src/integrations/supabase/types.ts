@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_declarations: {
+        Row: {
+          company_name: string
+          created_at: string
+          document_url: string | null
+          driver_id: string
+          gap_end_date: string
+          gap_start_date: string
+          id: string
+          manager_id: string | null
+          manager_name: string | null
+          reason_code: Database["public"]["Enums"]["declaration_reason"] | null
+          reason_text: string | null
+          status: Database["public"]["Enums"]["declaration_status"]
+          updated_at: string
+        }
+        Insert: {
+          company_name?: string
+          created_at?: string
+          document_url?: string | null
+          driver_id: string
+          gap_end_date?: string
+          gap_start_date: string
+          id?: string
+          manager_id?: string | null
+          manager_name?: string | null
+          reason_code?: Database["public"]["Enums"]["declaration_reason"] | null
+          reason_text?: string | null
+          status?: Database["public"]["Enums"]["declaration_status"]
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          document_url?: string | null
+          driver_id?: string
+          gap_end_date?: string
+          gap_start_date?: string
+          id?: string
+          manager_id?: string | null
+          manager_name?: string | null
+          reason_code?: Database["public"]["Enums"]["declaration_reason"] | null
+          reason_text?: string | null
+          status?: Database["public"]["Enums"]["declaration_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       antram_settings: {
         Row: {
           alert_minutes: number
@@ -973,6 +1021,14 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "manager" | "mechanic" | "driver"
+      declaration_reason:
+        | "sick_leave"
+        | "vacation"
+        | "rest"
+        | "other_work"
+        | "exempt_vehicle"
+        | "other"
+      declaration_status: "draft" | "signed" | "archived"
       fuel_type: "Diesel" | "AdBlue" | "Reefer_Diesel"
       maintenance_status: "pending" | "in_progress" | "completed"
       maintenance_type: "preventive" | "corrective"
@@ -1107,6 +1163,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "manager", "mechanic", "driver"],
+      declaration_reason: [
+        "sick_leave",
+        "vacation",
+        "rest",
+        "other_work",
+        "exempt_vehicle",
+        "other",
+      ],
+      declaration_status: ["draft", "signed", "archived"],
       fuel_type: ["Diesel", "AdBlue", "Reefer_Diesel"],
       maintenance_status: ["pending", "in_progress", "completed"],
       maintenance_type: ["preventive", "corrective"],

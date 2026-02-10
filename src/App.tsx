@@ -26,6 +26,7 @@ import Drivers from "./pages/admin/Drivers";
 import TachographCards from "./pages/admin/TachographCards";
 import AntramSettings from "./pages/admin/AntramSettings";
 import FuelManagement from "./pages/admin/FuelManagement";
+import Declarations from "./pages/admin/Declarations";
 
 // Driver pages
 import DriverHome from "./pages/driver/DriverHome";
@@ -74,6 +75,7 @@ const App = () => (
             <Route path="/admin/solicitacoes" element={<AdminRoute><ServiceRequests /></AdminRoute>} />
             <Route path="/admin/motoristas" element={<AdminRoute><Drivers /></AdminRoute>} />
             <Route path="/admin/tacografo" element={<AdminRoute><TachographCards /></AdminRoute>} />
+            <Route path="/admin/declaracoes" element={<AdminRoute><Declarations /></AdminRoute>} />
             <Route path="/admin/antram" element={<AdminRoute><AntramSettings /></AdminRoute>} />
 
             {/* Driver routes */}
