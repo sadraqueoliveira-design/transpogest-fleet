@@ -231,15 +231,15 @@ export default function Dashboard() {
     return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
   }, [viewMode, filtered.length, filterTab]);
 
-  const widgetCards = [
-    { label: "Total", value: stats.total, icon: Truck, variant: "default" as const },
-    { label: "Em Movimento", value: stats.moving, icon: Navigation, variant: "success" as const },
-    { label: "Parados", value: stats.stopped, icon: Truck, variant: "default" as const },
-    { label: "Alertas", value: stats.alerts, icon: AlertTriangle, variant: "destructive" as const },
-    { label: "Comb. Baixo", value: stats.lowFuel, icon: Fuel, variant: "warning" as const },
-    { label: "Temp. Alta", value: stats.highTemp, icon: Thermometer, variant: "destructive" as const },
-    { label: "Cart. a Vencer", value: stats.cardsExpiring, icon: CreditCard, variant: "default" as const },
-    { label: "Cart. Vencidos", value: stats.cardsExpired, icon: CreditCard, variant: "default" as const },
+  const widgetCards: { label: string; value: number; icon: any; variant: string; action: () => void }[] = [
+    { label: "Total", value: stats.total, icon: Truck, variant: "default", action: () => setFilterTab("all") },
+    { label: "Em Movimento", value: stats.moving, icon: Navigation, variant: "success", action: () => setFilterTab("moving") },
+    { label: "Parados", value: stats.stopped, icon: Truck, variant: "default", action: () => setFilterTab("stopped") },
+    { label: "Alertas", value: stats.alerts, icon: AlertTriangle, variant: "destructive", action: () => setFilterTab("alerts") },
+    { label: "Comb. Baixo", value: stats.lowFuel, icon: Fuel, variant: "warning", action: () => setFilterTab("alerts") },
+    { label: "Temp. Alta", value: stats.highTemp, icon: Thermometer, variant: "destructive", action: () => setFilterTab("alerts") },
+    { label: "Cart. a Vencer", value: stats.cardsExpiring, icon: CreditCard, variant: "default", action: () => setFilterTab("all") },
+    { label: "Cart. Vencidos", value: stats.cardsExpired, icon: CreditCard, variant: "default", action: () => setFilterTab("all") },
   ];
 
   const variantStyles: Record<string, string> = {
@@ -275,13 +275,17 @@ export default function Dashboard() {
       {/* Compact Status Widgets */}
       <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
         {widgetCards.map((card) => (
-          <div key={card.label} className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${variantBorder[card.variant]}`}>
+          <button
+            key={card.label}
+            onClick={card.action}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-all hover:shadow-md hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${variantBorder[card.variant]}`}
+          >
             <card.icon className={`h-4 w-4 shrink-0 ${variantStyles[card.variant] || "text-muted-foreground"}`} />
             <div className="min-w-0">
               <p className={`text-lg font-bold leading-none ${variantStyles[card.variant]}`}>{card.value}</p>
               <p className="text-[10px] text-muted-foreground truncate">{card.label}</p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
