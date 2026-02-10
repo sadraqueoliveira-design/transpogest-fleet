@@ -125,6 +125,50 @@ export type Database = {
         }
         Relationships: []
       }
+      driver_activities: {
+        Row: {
+          activity_type: string
+          created_at: string
+          driver_id: string
+          duration_minutes: number | null
+          end_time: string | null
+          id: string
+          source: string
+          start_time: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          activity_type: string
+          created_at?: string
+          driver_id: string
+          duration_minutes?: number | null
+          end_time?: string | null
+          id?: string
+          source?: string
+          start_time: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string
+          driver_id?: string
+          duration_minutes?: number | null
+          end_time?: string | null
+          id?: string
+          source?: string
+          start_time?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_activities_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dynamic_forms: {
         Row: {
           created_at: string
@@ -423,7 +467,9 @@ export type Database = {
           created_at: string
           full_name: string | null
           id: string
+          last_card_download_at: string | null
           license_number: string | null
+          next_card_download_due: string | null
           updated_at: string
         }
         Insert: {
@@ -431,7 +477,9 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id: string
+          last_card_download_at?: string | null
           license_number?: string | null
+          next_card_download_due?: string | null
           updated_at?: string
         }
         Update: {
@@ -439,7 +487,9 @@ export type Database = {
           created_at?: string
           full_name?: string | null
           id?: string
+          last_card_download_at?: string | null
           license_number?: string | null
+          next_card_download_due?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -646,6 +696,50 @@ export type Database = {
         }
         Relationships: []
       }
+      trailers: {
+        Row: {
+          created_at: string
+          id: string
+          internal_id: string | null
+          last_lat: number | null
+          last_linked_vehicle_id: string | null
+          last_lng: number | null
+          plate: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          internal_id?: string | null
+          last_lat?: number | null
+          last_linked_vehicle_id?: string | null
+          last_lng?: number | null
+          plate: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          internal_id?: string | null
+          last_lat?: number | null
+          last_linked_vehicle_id?: string | null
+          last_lng?: number | null
+          plate?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trailers_last_linked_vehicle_id_fkey"
+            columns: ["last_linked_vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -704,6 +798,7 @@ export type Database = {
       }
       vehicles: {
         Row: {
+          adblue_level_percent: number | null
           brand: string | null
           client_id: string | null
           created_at: string
@@ -717,9 +812,13 @@ export type Database = {
           last_lng: number | null
           last_location_name: string | null
           last_speed: number | null
+          last_vehicle_unit_download_at: string | null
           model: string | null
+          next_vehicle_unit_download_due: string | null
           odometer_km: number | null
           plate: string
+          reefer_set_point_1: number | null
+          reefer_set_point_2: number | null
           rpm: number | null
           tachograph_calibration_date: string | null
           tachograph_status: string | null
@@ -729,6 +828,7 @@ export type Database = {
           vin: string | null
         }
         Insert: {
+          adblue_level_percent?: number | null
           brand?: string | null
           client_id?: string | null
           created_at?: string
@@ -742,9 +842,13 @@ export type Database = {
           last_lng?: number | null
           last_location_name?: string | null
           last_speed?: number | null
+          last_vehicle_unit_download_at?: string | null
           model?: string | null
+          next_vehicle_unit_download_due?: string | null
           odometer_km?: number | null
           plate: string
+          reefer_set_point_1?: number | null
+          reefer_set_point_2?: number | null
           rpm?: number | null
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
@@ -754,6 +858,7 @@ export type Database = {
           vin?: string | null
         }
         Update: {
+          adblue_level_percent?: number | null
           brand?: string | null
           client_id?: string | null
           created_at?: string
@@ -767,9 +872,13 @@ export type Database = {
           last_lng?: number | null
           last_location_name?: string | null
           last_speed?: number | null
+          last_vehicle_unit_download_at?: string | null
           model?: string | null
+          next_vehicle_unit_download_due?: string | null
           odometer_km?: number | null
           plate?: string
+          reefer_set_point_1?: number | null
+          reefer_set_point_2?: number | null
           rpm?: number | null
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
