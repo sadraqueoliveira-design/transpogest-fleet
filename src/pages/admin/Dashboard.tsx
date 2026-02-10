@@ -33,11 +33,22 @@ interface Vehicle {
   updated_at: string;
   tachograph_calibration_date: string | null;
   client_id: string | null;
+  trackit_id: string | null;
 }
 
 interface ClientOption {
   id: string;
   name: string;
+}
+
+interface EmployeeCard {
+  card_number: string;
+  full_name: string;
+}
+
+interface TachoCard {
+  card_number: string;
+  driver_name: string | null;
 }
 
 interface Notification {
@@ -62,18 +73,24 @@ export default function Dashboard() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [employeeCards, setEmployeeCards] = useState<EmployeeCard[]>([]);
+  const [tachoCards, setTachoCards] = useState<TachoCard[]>([]);
 
   const [trailers, setTrailers] = useState<any[]>([]);
 
   const fetchVehicles = async () => {
-    const [{ data: vData }, { data: cData }, { data: tData }] = await Promise.all([
+    const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
       supabase.from("clients").select("id, name").order("name"),
       supabase.from("trailers").select("id, plate, internal_id, status, last_linked_vehicle_id"),
+      supabase.from("employees").select("card_number, full_name").not("card_number", "is", null),
+      supabase.from("tachograph_cards").select("card_number, driver_name"),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
     if (tData) setTrailers(tData);
+    if (eData) setEmployeeCards(eData as EmployeeCard[]);
+    if (tcData) setTachoCards(tcData as TachoCard[]);
   };
 
   useEffect(() => {
@@ -149,10 +166,42 @@ export default function Dashboard() {
     ).length,
   };
 
+  // Normalize card number: remove prefix "5B.", leading zeros, last 2 digits
+  const normalizeCard = (cn: string) => cn.replace(/^5B\.?/i, "").replace(/^0+/, "").slice(0, -2);
+
+  // Resolve driver name from dc1 card number
+  const resolveDriverName = (dc1: string | null): string | null => {
+    if (!dc1) return null;
+    const norm = dc1.replace(/^0+/, "");
+    // Try employees first
+    for (const e of employeeCards) {
+      const eNorm = normalizeCard(e.card_number);
+      if (eNorm === norm || norm.includes(eNorm) || eNorm.includes(norm)) return e.full_name;
+    }
+    // Try tachograph_cards
+    for (const tc of tachoCards) {
+      const tcNorm = tc.card_number.replace(/^0+/, "");
+      if (tcNorm === norm || norm.includes(tcNorm) || tcNorm.includes(norm)) return tc.driver_name;
+    }
+    return null;
+  };
+
+  // Extract dc1 from tachograph_status
+  const getDc1 = (v: Vehicle): string | null => {
+    if (!v.tachograph_status) return null;
+    try { return JSON.parse(v.tachograph_status)?.dc1 || null; } catch { return null; }
+  };
+
   const filtered = vehicles.filter(v => {
     if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
-    const matchSearch = !search || v.plate.toLowerCase().includes(search.toLowerCase());
-    if (!matchSearch) return false;
+    if (search) {
+      const q = search.toLowerCase().trim();
+      const plate = v.plate.toLowerCase().includes(q);
+      const trackitMatch = v.trackit_id?.toLowerCase().includes(q);
+      const cName = clients.find(c => c.id === v.client_id)?.name?.toLowerCase().includes(q);
+      const driverName = resolveDriverName(getDc1(v))?.toLowerCase().includes(q);
+      if (!plate && !trackitMatch && !cName && !driverName) return false;
+    }
     if (filterTab === "moving") return getStatus(v) === "moving";
     if (filterTab === "stopped") return getStatus(v) === "stopped";
     if (filterTab === "alerts") return hasAlert(v);
@@ -299,7 +348,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Pesquisar matrícula, motorista..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Pesquisar matrícula, motorista, nº móvel, cliente..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={clientFilter || "all"} onValueChange={v => setClientFilter(v === "all" ? "" : v)}>
             <SelectTrigger className="w-48">
@@ -384,6 +433,7 @@ export default function Dashboard() {
               const odo = v.odometer_km ?? tacho.ckm ?? null;
               const rpm = v.rpm ?? tacho.rpm ?? null;
               const driverCard = tacho.dc1 || null;
+              const driverName = resolveDriverName(driverCard);
               const cName = clients.find(c => c.id === v.client_id)?.name;
               const linkedTrailer = trailers.find(t => t.last_linked_vehicle_id === v.id && t.status === "coupled");
               const locationName = (v as any).last_location_name;
@@ -401,14 +451,22 @@ export default function Dashboard() {
                         : "bg-card border-border hover:border-primary/30"
                   }`}
                 >
-                  {/* Header: status dot + plate + speed */}
+                  {/* Header: status dot + plate + trackit_id + speed */}
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-1.5">
                       <div className={`h-2 w-2 rounded-full shrink-0 ${isMoving ? "bg-success animate-pulse" : alert ? "bg-destructive" : "bg-muted-foreground"}`} />
                       <span className="font-bold text-sm tracking-wide">{v.plate}</span>
+                      {v.trackit_id && <span className="text-[10px] text-muted-foreground font-mono">#{v.trackit_id}</span>}
                     </div>
                     <span className={`text-[11px] font-bold tabular-nums ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
                   </div>
+
+                  {/* Driver name */}
+                  {driverName && (
+                    <p className="text-[11px] font-medium text-foreground truncate mb-0.5">
+                      👤 {driverName}
+                    </p>
+                  )}
 
                   {/* Brand/Client */}
                   <p className="text-[10px] text-muted-foreground truncate mb-1">
@@ -469,8 +527,8 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* Driver card */}
-                  {driverCard && (
+                  {/* Driver card - show name if no driverName already shown */}
+                  {driverCard && !driverName && (
                     <div className="mt-2 pt-1.5 border-t text-[10px] text-muted-foreground truncate">
                       🪪 {driverCard}
                     </div>
