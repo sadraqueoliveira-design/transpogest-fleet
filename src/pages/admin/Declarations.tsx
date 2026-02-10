@@ -37,8 +37,8 @@ const REASON_LABELS: Record<string, string> = {
   sick_leave: "Baixa por doença ou lesão",
   vacation: "Férias anuais",
   rest: "Licença ou período de repouso",
-  other_work: "Condução de veículo isento (Art.º 3)",
-  exempt_vehicle: "Trabalho não relacionado com condução",
+  exempt_vehicle: "Condução de veículo isento (Art.º 3)",
+  other_work: "Trabalho não relacionado com condução",
   other: "Outro motivo",
 };
 
