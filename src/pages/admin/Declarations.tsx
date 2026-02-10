@@ -29,6 +29,8 @@ interface Declaration {
   created_at: string;
   driver_name?: string;
   license_number?: string;
+  birth_date?: string | null;
+  hire_date?: string | null;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -74,7 +76,7 @@ export default function Declarations() {
     const driverIds = [...new Set((data || []).map((d: any) => d.driver_id))];
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, full_name, license_number")
+      .select("id, full_name, license_number, birth_date, hire_date")
       .in("id", driverIds);
 
     const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
@@ -83,6 +85,8 @@ export default function Declarations() {
       ...d,
       driver_name: profileMap.get(d.driver_id)?.full_name || "Desconhecido",
       license_number: profileMap.get(d.driver_id)?.license_number || "",
+      birth_date: profileMap.get(d.driver_id)?.birth_date || null,
+      hire_date: profileMap.get(d.driver_id)?.hire_date || null,
     }));
 
     setDeclarations(enriched);
@@ -132,6 +136,8 @@ export default function Declarations() {
         const pdf = generateDeclarationPDF({
           driverName: selectedDecl.driver_name || "Desconhecido",
           licenseNumber: selectedDecl.license_number || "",
+          birthDate: selectedDecl.birth_date,
+          hireDate: selectedDecl.hire_date,
           gapStartDate: selectedDecl.gap_start_date,
           gapEndDate: selectedDecl.gap_end_date,
           reasonCode,
@@ -277,6 +283,8 @@ export default function Declarations() {
                                   const pdf = generateDeclarationPDF({
                                     driverName: d.driver_name || "Desconhecido",
                                     licenseNumber: d.license_number || "",
+                                    birthDate: d.birth_date,
+                                    hireDate: d.hire_date,
                                     gapStartDate: d.gap_start_date,
                                     gapEndDate: d.gap_end_date,
                                     reasonCode: d.reason_code || "other",

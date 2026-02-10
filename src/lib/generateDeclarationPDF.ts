@@ -5,6 +5,8 @@ import { pt } from "date-fns/locale";
 interface DeclarationPDFData {
   driverName: string;
   licenseNumber: string;
+  birthDate?: string | null;
+  hireDate?: string | null;
   gapStartDate: string;
   gapEndDate: string;
   reasonCode: string;
@@ -108,7 +110,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.text(data.driverName, margin + doc.getTextWidth("Apelido e nome: "), y);
   y += 6;
 
-  field("8", "Data de nascimento (dia/mês/ano)", "___/___/______");
+  field("8", "Data de nascimento (dia/mês/ano)", data.birthDate ? format(new Date(data.birthDate), "dd/MM/yyyy") : "___/___/______");
 
   doc.setFont("helvetica", "normal");
   doc.text("Número de carta de condução, de bilhete de identidade ou de passaporte: ", margin, y);
@@ -117,7 +119,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 6;
 
   doc.setFont("helvetica", "normal");
-  doc.text("que começou a trabalhar na empresa em (dia/mês/ano): ___/___/______", margin, y);
+  const hireDateStr = data.hireDate ? format(new Date(data.hireDate), "dd/MM/yyyy") : "___/___/______";
+  doc.text(`que começou a trabalhar na empresa em (dia/mês/ano): `, margin, y);
+  doc.setFont("helvetica", "bold");
+  doc.text(hireDateStr, margin + doc.getTextWidth("que começou a trabalhar na empresa em (dia/mês/ano): "), y);
   y += 7;
 
   doc.text("no período:", margin, y);

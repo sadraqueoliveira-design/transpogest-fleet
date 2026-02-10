@@ -566,8 +566,10 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          birth_date: string | null
           created_at: string
           full_name: string | null
+          hire_date: string | null
           id: string
           last_card_download_at: string | null
           license_number: string | null
@@ -576,8 +578,10 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string
           full_name?: string | null
+          hire_date?: string | null
           id: string
           last_card_download_at?: string | null
           license_number?: string | null
@@ -586,8 +590,10 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          birth_date?: string | null
           created_at?: string
           full_name?: string | null
+          hire_date?: string | null
           id?: string
           last_card_download_at?: string | null
           license_number?: string | null
