@@ -10,9 +10,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "sonner";
 import {
   Plus, Search, Store, MoreVertical, Trash2, Edit,
-  Upload, Download, FileSpreadsheet
+  Upload, Download, FileSpreadsheet, Check, X
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
 
 interface Location {
@@ -20,10 +21,20 @@ interface Location {
   client_id: string;
   name: string;
   code: string;
+  arp2_code: string | null;
   type: string;
+  categoria: string | null;
   address: string | null;
+  zona_vida: string | null;
+  distrito: string | null;
+  concelho: string | null;
+  freguesia: string | null;
+  codigo_postal: string | null;
+  localidade: string | null;
   lat: number | null;
   lng: number | null;
+  janelas_horarias: string | null;
+  ativo: boolean;
   status: string;
 }
 
@@ -33,11 +44,11 @@ interface Client {
   code: string;
 }
 
-const LOCATION_TYPES = ["loja", "centro de distribuição", "escritório", "outro"];
+const LOCATION_TYPES = ["loja", "hipermercado", "supermercado", "centro de distribuição", "mfc", "fornecedor", "partenariado", "escritório", "outro"];
 
 function downloadCSVTemplate() {
-  const header = "código;nome;tipo;morada;latitude;longitude";
-  const example = "LOJA-01;Loja Exemplo;loja;Rua Principal 123, Lisboa;38.7223;-9.1393";
+  const header = "Código Loja;Código ARP2;Nome;Categoria;Tipo;Zona Vida;Distrito;Concelho;Freguesia;Morada;Código Postal;Localidade;Latitude;Longitude;Janelas Horárias;Ativo";
+  const example = "01;;Armazém Azambuja;Loja;Centro de Distribuição;;Lisboa;;;Rua da Lezíria do Tejo;;Vila Nova da Rainha;39.04309776;-8.918798729;;Sim";
   const blob = new Blob([header + "\n" + example], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -50,12 +61,22 @@ function downloadCSVTemplate() {
 function normalizeHeaders(headers: string[]): Record<string, number> {
   const map: Record<string, number> = {};
   const aliases: Record<string, string[]> = {
-    code: ["code", "código", "codigo", "cod", "ref"],
-    name: ["name", "nome", "designação", "designacao", "local"],
-    type: ["type", "tipo"],
-    address: ["address", "morada", "endereço", "endereco"],
-    lat: ["lat", "latitude"],
-    lng: ["lng", "longitude", "long"],
+    code: ["código loja", "codigo loja", "code", "código", "codigo", "cod"],
+    arp2_code: ["código arp2", "codigo arp2", "arp2", "código arp"],
+    name: ["nome", "name", "designação", "designacao", "local"],
+    categoria: ["categoria"],
+    type: ["tipo", "type"],
+    zona_vida: ["zona vida", "zona"],
+    distrito: ["distrito"],
+    concelho: ["concelho"],
+    freguesia: ["freguesia"],
+    address: ["morada", "address", "endereço", "endereco"],
+    codigo_postal: ["código postal", "codigo postal", "cp", "cod postal"],
+    localidade: ["localidade"],
+    lat: ["latitude", "lat"],
+    lng: ["longitude", "long", "lng"],
+    janelas_horarias: ["janelas horárias", "janelas horarias", "janelas"],
+    ativo: ["ativo", "active"],
   };
   headers.forEach((h, i) => {
     const normalized = h.toLowerCase().trim().replace(/[_\-]/g, " ");
@@ -70,37 +91,55 @@ function normalizeHeaders(headers: string[]): Record<string, number> {
 
 interface ImportRow {
   code: string;
+  arp2_code: string;
   name: string;
+  categoria: string;
   type: string;
+  zona_vida: string;
+  distrito: string;
+  concelho: string;
+  freguesia: string;
   address: string;
+  codigo_postal: string;
+  localidade: string;
   lat: string;
   lng: string;
+  janelas_horarias: string;
+  ativo: boolean;
   valid: boolean;
   error?: string;
 }
 
-function parseImportRows(raw: string[][], headerMap: Record<string, number>): ImportRow[] {
-  const codeIdx = headerMap.code;
-  const nameIdx = headerMap.name;
-  if (codeIdx === undefined && nameIdx === undefined) return [];
+const ALL_IMPORT_FIELDS = [
+  "code", "arp2_code", "name", "categoria", "type", "zona_vida", "distrito",
+  "concelho", "freguesia", "address", "codigo_postal", "localidade", "lat", "lng",
+  "janelas_horarias", "ativo",
+] as const;
 
+function parseImportRows(raw: string[][], headerMap: Record<string, number>): ImportRow[] {
   return raw.map(row => {
-    const code = codeIdx !== undefined ? (row[codeIdx] || "").toString().trim() : "";
-    const name = nameIdx !== undefined ? (row[nameIdx] || "").toString().trim() : "";
-    const type = headerMap.type !== undefined ? (row[headerMap.type] || "").toString().trim().toLowerCase() : "loja";
-    const address = headerMap.address !== undefined ? (row[headerMap.address] || "").toString().trim() : "";
-    const lat = headerMap.lat !== undefined ? (row[headerMap.lat] || "").toString().trim() : "";
-    const lng = headerMap.lng !== undefined ? (row[headerMap.lng] || "").toString().trim() : "";
+    const get = (key: string) => headerMap[key] !== undefined ? (row[headerMap[key]] || "").toString().trim() : "";
+    const code = get("code");
+    const name = get("name");
+    const ativoStr = get("ativo").toLowerCase();
+    const ativo = ativoStr === "" || ativoStr === "sim" || ativoStr === "yes" || ativoStr === "true" || ativoStr === "1";
 
     const valid = code.length > 0 && name.length > 0;
     const error = !code ? "Código em falta" : !name ? "Nome em falta" : undefined;
 
-    return { code, name, type: type || "loja", address, lat, lng, valid, error };
+    return {
+      code, arp2_code: get("arp2_code"), name, categoria: get("categoria"),
+      type: get("type") || "loja", zona_vida: get("zona_vida"), distrito: get("distrito"),
+      concelho: get("concelho"), freguesia: get("freguesia"), address: get("address"),
+      codigo_postal: get("codigo_postal"), localidade: get("localidade"),
+      lat: get("lat"), lng: get("lng"), janelas_horarias: get("janelas_horarias"),
+      ativo, valid, error,
+    };
   }).filter(r => r.code.length > 0 || r.name.length > 0);
 }
 
 // Only show these types in this page
-const NETWORK_TYPE_FILTER = ["loja", "centro de distribuição", "escritório", "outro"];
+const NETWORK_TYPE_FILTER = ["loja", "hipermercado", "supermercado", "centro de distribuição", "mfc", "fornecedor", "partenariado", "escritório", "outro"];
 
 export default function NetworkLocations() {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -109,7 +148,7 @@ export default function NetworkLocations() {
   const [clientFilter, setClientFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
-  const [form, setForm] = useState({ name: "", code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
+  const [form, setForm] = useState({ name: "", code: "", arp2_code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
 
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -118,20 +157,23 @@ export default function NetworkLocations() {
 
   const fetchData = async () => {
     const [{ data: hubsData }, { data: clientsData }] = await Promise.all([
-      supabase.from("hubs").select("*").in("type", NETWORK_TYPE_FILTER).order("name"),
+      supabase.from("hubs").select("*").order("name"),
       supabase.from("clients").select("id, name, code").order("name"),
     ]);
     if (clientsData) setClients(clientsData);
-    if (hubsData) setLocations(hubsData as Location[]);
+    if (hubsData) setLocations(hubsData as unknown as Location[]);
   };
 
   useEffect(() => { fetchData(); }, []);
 
   const filtered = locations.filter(h => {
+    const s = search.toLowerCase();
     const matchSearch = !search ||
-      h.name.toLowerCase().includes(search.toLowerCase()) ||
-      h.code.toLowerCase().includes(search.toLowerCase()) ||
-      (h.address && h.address.toLowerCase().includes(search.toLowerCase()));
+      h.name.toLowerCase().includes(s) ||
+      h.code.toLowerCase().includes(s) ||
+      (h.arp2_code && h.arp2_code.toLowerCase().includes(s)) ||
+      (h.address && h.address.toLowerCase().includes(s)) ||
+      (h.localidade && h.localidade.toLowerCase().includes(s));
     const matchClient = !clientFilter || clientFilter === "all_clients_placeholder" || h.client_id === clientFilter;
     return matchSearch && matchClient;
   });
@@ -144,11 +186,12 @@ export default function NetworkLocations() {
       toast.error("Nome, código e cliente são obrigatórios"); return;
     }
     const payload = {
-      name: form.name, code: form.code, client_id: form.client_id, type: form.type,
+      name: form.name, code: form.code, arp2_code: form.arp2_code || null,
+      client_id: form.client_id, type: form.type,
       address: form.address || null,
       lat: form.lat ? parseFloat(form.lat) : null,
       lng: form.lng ? parseFloat(form.lng) : null,
-    };
+    } as any;
     if (editingLocation) {
       const { error } = await supabase.from("hubs").update(payload).eq("id", editingLocation.id);
       if (error) { toast.error("Erro ao atualizar"); return; }
@@ -160,7 +203,7 @@ export default function NetworkLocations() {
     }
     setDialogOpen(false);
     setEditingLocation(null);
-    setForm({ name: "", code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
+    setForm({ name: "", code: "", arp2_code: "", client_id: "", type: "loja", address: "", lat: "", lng: "" });
     fetchData();
   };
 
@@ -174,7 +217,8 @@ export default function NetworkLocations() {
   const openEdit = (h: Location) => {
     setEditingLocation(h);
     setForm({
-      name: h.name, code: h.code, client_id: h.client_id, type: h.type || "loja",
+      name: h.name, code: h.code, arp2_code: h.arp2_code || "",
+      client_id: h.client_id, type: h.type || "loja",
       address: h.address || "", lat: h.lat?.toString() || "", lng: h.lng?.toString() || "",
     });
     setDialogOpen(true);
@@ -182,18 +226,26 @@ export default function NetworkLocations() {
 
   const openNew = () => {
     setEditingLocation(null);
-    setForm({ name: "", code: "", client_id: clientFilter || clients[0]?.id || "", type: "loja", address: "", lat: "", lng: "" });
+    setForm({ name: "", code: "", arp2_code: "", client_id: clientFilter || clients[0]?.id || "", type: "loja", address: "", lat: "", lng: "" });
     setDialogOpen(true);
   };
 
   const handleExport = (format: "csv" | "xlsx") => {
     const data = filtered.map(h => ({
-      Código: h.code, Nome: h.name, Tipo: h.type || "loja",
-      Morada: h.address || "", Latitude: h.lat ?? "", Longitude: h.lng ?? "",
+      "Código Loja": h.code, "Código ARP2": h.arp2_code || "", Nome: h.name,
+      Categoria: h.categoria || "", Tipo: h.type || "loja",
+      "Zona Vida": h.zona_vida || "", Distrito: h.distrito || "",
+      Concelho: h.concelho || "", Freguesia: h.freguesia || "",
+      Morada: h.address || "", "Código Postal": h.codigo_postal || "",
+      Localidade: h.localidade || "",
+      Latitude: h.lat ?? "", Longitude: h.lng ?? "",
+      "Janelas Horárias": h.janelas_horarias || "",
+      Ativo: h.ativo ? "Sim" : "Não",
       Cliente: clientMap[h.client_id] || "",
     }));
+    if (data.length === 0) { toast.error("Sem dados para exportar"); return; }
     if (format === "csv") {
-      const header = Object.keys(data[0] || {}).join(";");
+      const header = Object.keys(data[0]).join(";");
       const rows = data.map(r => Object.values(r).join(";"));
       const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
@@ -226,7 +278,7 @@ export default function NetworkLocations() {
       if (lines.length < 2) { toast.error("Ficheiro vazio"); return; }
       const headerMap = normalizeHeaders(lines[0].map(String));
       if (headerMap.code === undefined && headerMap.name === undefined) {
-        toast.error("Colunas 'código' ou 'nome' não encontradas"); return;
+        toast.error("Colunas 'Código Loja' ou 'Nome' não encontradas"); return;
       }
       setImportRows(parseImportRows(lines.slice(1), headerMap));
       setImportDialogOpen(true);
@@ -240,11 +292,25 @@ export default function NetworkLocations() {
     if (valid.length === 0) return;
     setImporting(true);
     const payload = valid.map(r => ({
-      code: r.code, name: r.name, type: r.type || "loja", address: r.address || null,
-      lat: r.lat ? parseFloat(r.lat) : null, lng: r.lng ? parseFloat(r.lng) : null,
+      code: r.code,
+      arp2_code: r.arp2_code || null,
+      name: r.name,
+      categoria: r.categoria || null,
+      type: r.type?.toLowerCase() || "loja",
+      zona_vida: r.zona_vida || null,
+      distrito: r.distrito || null,
+      concelho: r.concelho || null,
+      freguesia: r.freguesia || null,
+      address: r.address || null,
+      codigo_postal: r.codigo_postal || null,
+      localidade: r.localidade || null,
+      lat: r.lat ? parseFloat(r.lat) : null,
+      lng: r.lng ? parseFloat(r.lng) : null,
+      janelas_horarias: r.janelas_horarias || null,
+      ativo: r.ativo,
       client_id: clientFilter,
     }));
-    const { error } = await supabase.from("hubs").upsert(payload, { onConflict: "code" });
+    const { error } = await supabase.from("hubs").upsert(payload as any, { onConflict: "code" });
     setImporting(false);
     if (error) { toast.error("Erro na importação: " + error.message); }
     else { toast.success(`${valid.length} local(is) importado(s)`); setImportDialogOpen(false); setImportRows([]); fetchData(); }
@@ -258,7 +324,7 @@ export default function NetworkLocations() {
         <h1 className="page-header flex items-center gap-2">
           <Store className="h-6 w-6" /> Locais da Rede
         </h1>
-        <p className="page-subtitle">Lojas, centros de distribuição e escritórios</p>
+        <p className="page-subtitle">Lojas, fornecedores, armazéns e centros de distribuição</p>
       </div>
 
       <Card>
@@ -291,7 +357,10 @@ export default function NetworkLocations() {
                       <SelectContent>{clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
-                  <div><Label>Código</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="Ex: LOJA-01" /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><Label>Código Loja</Label><Input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="Ex: 01" /></div>
+                    <div><Label>Código ARP2</Label><Input value={form.arp2_code} onChange={e => setForm(f => ({ ...f, arp2_code: e.target.value }))} placeholder="Ex: ARP-01" /></div>
+                  </div>
                   <div><Label>Nome</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ex: Loja Azambuja" /></div>
                   <div>
                     <Label>Tipo</Label>
@@ -340,7 +409,7 @@ export default function NetworkLocations() {
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Pesquisar por código, nome ou morada..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Pesquisar por Código Loja, Código ARP2, nome ou localidade..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
           </div>
 
           {/* Table */}
@@ -348,12 +417,12 @@ export default function NetworkLocations() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Código</TableHead>
+                  <TableHead>Cód. Loja</TableHead>
+                  <TableHead>Cód. ARP2</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Localidade</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Morada</TableHead>
-                  <TableHead>Localização</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -361,13 +430,11 @@ export default function NetworkLocations() {
                 {filtered.map(h => (
                   <TableRow key={h.id}>
                     <TableCell className="font-mono text-sm">{h.code}</TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground">{h.arp2_code || "—"}</TableCell>
                     <TableCell className="font-medium">{h.name}</TableCell>
                     <TableCell className="capitalize text-sm">{h.type || "loja"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{h.localidade || h.address || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{clientMap[h.client_id] || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{h.address || "—"}</TableCell>
-                    <TableCell className="text-sm font-mono text-muted-foreground">
-                      {h.lat && h.lng ? `${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}` : "—"}
-                    </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -395,34 +462,45 @@ export default function NetworkLocations() {
 
       {/* Import Preview Dialog */}
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Pré-visualização da Importação</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" /> Pré-visualização da Importação
+            </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">{validImportCount} de {importRows.length} linha(s) válida(s)</p>
-          <div className="border rounded-md overflow-auto max-h-60">
+          <div className="flex items-center gap-2 text-sm">
+            <Badge variant="secondary" className="gap-1"><Check className="h-3 w-3" />{validImportCount} válidos</Badge>
+            {importRows.length - validImportCount > 0 && (
+              <Badge variant="destructive" className="gap-1"><X className="h-3 w-3" />{importRows.length - validImportCount} com erros</Badge>
+            )}
+          </div>
+          <div className="overflow-auto flex-1 border rounded-md">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Código</TableHead>
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead>Cód. Loja</TableHead>
+                  <TableHead>Cód. ARP2</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Estado</TableHead>
+                  <TableHead>Localidade</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {importRows.map((r, i) => (
                   <TableRow key={i} className={r.valid ? "" : "bg-destructive/5"}>
+                    <TableCell>{r.valid ? <Check className="h-4 w-4 text-success" /> : <X className="h-4 w-4 text-destructive" />}</TableCell>
                     <TableCell className="font-mono text-sm">{r.code || "—"}</TableCell>
+                    <TableCell className="font-mono text-sm">{r.arp2_code || "—"}</TableCell>
                     <TableCell>{r.name || "—"}</TableCell>
-                    <TableCell className="capitalize">{r.type}</TableCell>
-                    <TableCell className="text-sm">{r.valid ? "✓" : <span className="text-destructive">{r.error}</span>}</TableCell>
+                    <TableCell className="capitalize text-sm">{r.type}</TableCell>
+                    <TableCell className="text-sm">{r.localidade || r.address || "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => setImportDialogOpen(false)}>Cancelar</Button>
             <Button onClick={handleImport} disabled={importing || validImportCount === 0}>
               {importing ? "A importar..." : `Importar ${validImportCount} local(is)`}
