@@ -2,12 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck, Navigation, Fuel, Gauge, Snowflake, Activity,
-  Clock, MapPin, AlertTriangle, CreditCard, Wrench, Droplets
+  Clock, MapPin, AlertTriangle, CreditCard, Wrench, Droplets, UserX
 } from "lucide-react";
+import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import {
@@ -57,6 +59,7 @@ interface Props {
   vehicle: Vehicle | null;
   open: boolean;
   onClose: () => void;
+  onDriverUnassigned?: (vehicleId: string) => void;
 }
 
 // Generate simulated telemetry history (since we only have current snapshot)
@@ -87,10 +90,11 @@ function generateTelemetryHistory(vehicle: Vehicle) {
   return data;
 }
 
-export default function VehicleDetailPanel({ vehicle, open, onClose }: Props) {
+export default function VehicleDetailPanel({ vehicle, open, onClose, onDriverUnassigned }: Props) {
   const [maintenance, setMaintenance] = useState<MaintenanceRecord[]>([]);
   const [fuelLogs, setFuelLogs] = useState<FuelLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [unassigning, setUnassigning] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
 
@@ -149,6 +153,22 @@ export default function VehicleDetailPanel({ vehicle, open, onClose }: Props) {
 
   if (!vehicle) return null;
 
+  const handleForceUnassign = async () => {
+    if (!vehicle) return;
+    setUnassigning(true);
+    const { error } = await supabase
+      .from("vehicles")
+      .update({ current_driver_id: null })
+      .eq("id", vehicle.id);
+    setUnassigning(false);
+    if (error) {
+      toast.error("Erro ao desassociar motorista");
+    } else {
+      toast.success("Motorista removido do veículo");
+      onDriverUnassigned?.(vehicle.id);
+    }
+  };
+
   const v = vehicle;
   const speed = v.last_speed || 0;
   const isMoving = speed > 5;
@@ -205,6 +225,29 @@ export default function VehicleDetailPanel({ vehicle, open, onClose }: Props) {
               <p className="text-lg font-bold">{v.odometer_km ? `${(v.odometer_km / 1000).toFixed(0)}k` : "—"}</p>
               <p className="text-[10px] text-muted-foreground">km</p>
             </div>
+          </div>
+          {/* Driver status + Force Unassign */}
+          <div className="flex items-center justify-between mt-3">
+            <div className="flex items-center gap-2 text-sm">
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
+              {v.current_driver_id ? (
+                <span className="text-foreground font-medium">Motorista atribuído</span>
+              ) : (
+                <Badge variant="secondary" className="text-muted-foreground">Sem Motorista</Badge>
+              )}
+            </div>
+            {v.current_driver_id && (
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={unassigning}
+                onClick={handleForceUnassign}
+              >
+                <UserX className="h-3.5 w-3.5 mr-1" />
+                {unassigning ? "A remover..." : "Forçar Remoção"}
+              </Button>
+            )}
           </div>
         </div>
 
