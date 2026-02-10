@@ -464,6 +464,9 @@ export default function NetworkLocations() {
                               <DropdownMenuItem onClick={() => window.open(`https://navigation.eurowag.com/navigate?lat=${h.lat}&lon=${h.lng}`, "_blank")}>
                                 <ExternalLink className="h-4 w-4 mr-2" />Eurowag GPS Truck
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`, "_blank")}>
+                                <ExternalLink className="h-4 w-4 mr-2" />OsmAnd
+                              </DropdownMenuItem>
 
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => {
