@@ -149,10 +149,8 @@ Deno.serve(async (req) => {
             const lastVehicleDownload = drs.last_download_at || d.tacho?.last_download_at || null;
 
             // === TACHOGRAPH-FIRST DRIVER ASSIGNMENT ===
-            // Extract driver card number from exd.eco.idc (Trackit Manual v110)
-            const exd = d.exd || {};
-            const ecoBlock = exd.eco || eco;
-            const driverCardNumber = ecoBlock.idc ?? drs.idc ?? null;
+            // Extract driver card number from drs.dc1 (driver card slot 1)
+            const driverCardNumber = drs.dc1 ?? d.exd?.eco?.idc ?? drs.idc ?? null;
             const driverState1 = ecoBlock.ds1 ?? drs.ds1 ?? null;
 
             // Determine if a valid card is inserted
