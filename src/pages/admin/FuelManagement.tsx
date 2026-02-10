@@ -100,6 +100,7 @@ export default function FuelManagement() {
   const [activeTab, setActiveTab] = useState("telemetry");
   const [alerts, setAlerts] = useState<FuelAlert[]>([]);
   const [refuelingEvents, setRefuelingEvents] = useState<RefuelingEvent[]>([]);
+  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [form, setForm] = useState({
     vehicle_id: "",
     fuel_type: "Diesel",
@@ -176,16 +177,18 @@ export default function FuelManagement() {
   };
 
   const fetchData = async () => {
-    const [{ data: logsData }, { data: vData }, { data: pData }, { data: cData }] = await Promise.all([
+    const [{ data: logsData }, { data: vData }, { data: pData }, { data: cData }, { data: syncData }] = await Promise.all([
       supabase.from("fuel_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("vehicles").select("*").order("plate"),
       supabase.from("profiles").select("id, full_name"),
       supabase.from("clients").select("id, name").order("name"),
+      supabase.from("clients").select("last_sync_at").eq("api_enabled", true).order("last_sync_at", { ascending: false }).limit(1),
     ]);
     if (logsData) setLogs(logsData);
     if (vData) setVehicles(vData);
     if (pData) setProfiles(pData);
     if (cData) setClients(cData);
+    if (syncData && syncData.length > 0) setLastSyncAt(syncData[0].last_sync_at);
     setLoading(false);
   };
 
@@ -372,10 +375,17 @@ export default function FuelManagement() {
           <p className="page-subtitle">Monitorização automática e registos manuais</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Sync button */}
-          <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar Trackit">
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          </Button>
+          {/* Sync button + timestamp */}
+          <div className="flex items-center gap-2">
+            {lastSyncAt && (
+              <span className="text-[11px] text-muted-foreground hidden sm:inline">
+                Última sync: {format(new Date(lastSyncAt), "HH:mm", { locale: pt })}
+              </span>
+            )}
+            <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar Trackit">
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
 
           {/* Alerts bell */}
           <Popover>
