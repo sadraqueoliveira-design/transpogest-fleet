@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ExportButton } from "@/components/admin/BulkImportExport";
-import { Search, Pencil, Save, X, Users, Truck, UserCheck, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ExportButton, ImportButton } from "@/components/admin/BulkImportExport";
+import { Search, Pencil, Save, X, Users, Truck, UserCheck, ArrowUpDown, ArrowUp, ArrowDown, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -37,6 +37,8 @@ export default function Drivers() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<Employee>>({});
   const [detailEmployee, setDetailEmployee] = useState<Employee | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newData, setNewData] = useState<Partial<Employee>>({});
   const [sortKey, setSortKey] = useState<SortKey>("employee_number");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -119,6 +121,74 @@ export default function Drivers() {
     fetchEmployees();
   };
 
+  const saveNew = async () => {
+    if (!newData.employee_number || !newData.full_name) {
+      toast.error("Nº Funcionário e Nome são obrigatórios");
+      return;
+    }
+    const { error } = await supabase.from("employees").insert({
+      employee_number: Number(newData.employee_number),
+      full_name: newData.full_name,
+      company: newData.company || "ARV",
+      nif: newData.nif,
+      hire_date: newData.hire_date,
+      category_code: newData.category_code,
+      category_description: newData.category_description,
+      card_number: newData.card_number,
+      card_start_date: newData.card_start_date,
+      card_expiry_date: newData.card_expiry_date,
+    });
+    if (error) { toast.error("Erro: " + error.message); return; }
+    toast.success("Funcionário adicionado");
+    setAddOpen(false);
+    setNewData({});
+    fetchEmployees();
+  };
+
+  const importColumns = ["employee_number", "full_name", "company", "nif", "hire_date", "category_code", "category_description", "card_number", "card_start_date", "card_expiry_date"];
+  const importAliases: Record<string, string[]> = {
+    employee_number: ["funcionário", "funcionario", "nº func", "num func", "employee"],
+    full_name: ["nome", "name"],
+    company: ["encarregado", "empresa", "company"],
+    nif: ["contribuinte", "nif"],
+    hire_date: ["data contratação", "data contratacao", "hire date"],
+    category_code: ["categoria", "category"],
+    category_description: ["descrição cat", "descricao cat", "description"],
+    card_number: ["cartão condutor", "cartao condutor", "card number"],
+    card_start_date: ["data início", "data inicio", "start date"],
+    card_expiry_date: ["data validade", "validade", "expiry"],
+  };
+
+  const parseDate = (v: string): string | null => {
+    if (!v) return null;
+    const parts = v.split("/");
+    if (parts.length === 3) {
+      const [d, m, y] = parts;
+      const year = y.length === 2 ? (Number(y) > 50 ? "19" + y : "20" + y) : y;
+      return `${year}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+    }
+    return v;
+  };
+
+  const handleImport = async (rows: Record<string, string>[]) => {
+    const toInsert = rows.map(r => ({
+      employee_number: Number(r.employee_number),
+      full_name: r.full_name,
+      company: r.company || "ARV",
+      nif: r.nif || null,
+      hire_date: parseDate(r.hire_date),
+      category_code: r.category_code || null,
+      category_description: r.category_description || null,
+      card_number: r.card_number || null,
+      card_start_date: parseDate(r.card_start_date),
+      card_expiry_date: parseDate(r.card_expiry_date),
+    }));
+    const { error } = await supabase.from("employees").upsert(toInsert, { onConflict: "employee_number" });
+    if (error) throw error;
+    toast.success(`${toInsert.length} funcionários importados/atualizados`);
+    fetchEmployees();
+  };
+
   const formatDate = (d: string | null) => {
     if (!d) return "—";
     try { return format(new Date(d), "dd/MM/yyyy"); } catch { return d; }
@@ -157,7 +227,26 @@ export default function Drivers() {
           <h1 className="page-header">Motoristas & Funcionários</h1>
           <p className="page-subtitle">{employees.length} funcionários registados</p>
         </div>
-        <ExportButton data={exportData} filenameBase="funcionarios" sheetName="Funcionários" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <ImportButton
+            columns={importColumns}
+            aliases={importAliases}
+            requiredColumns={["employee_number", "full_name"]}
+            validate={(row) => {
+              if (!row.employee_number || isNaN(Number(row.employee_number))) return { valid: false, error: "Nº funcionário inválido" };
+              if (!row.full_name) return { valid: false, error: "Nome em falta" };
+              return { valid: true };
+            }}
+            onImport={handleImport}
+            templateHeader="Funcionário;Nome;Encarregado;Contribuinte;Data Contratação;Categoria;Descrição Cat.;Cartão Condutor;Data Início;Data Validade"
+            templateExample="1234;João Silva;ARV;123456789;01/01/2020;83320;Motorista de Pesados;5B.000001234;01/01/2025;01/01/2030"
+            templateFilename="modelo_funcionarios.csv"
+          />
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" /> Novo
+          </Button>
+          <ExportButton data={exportData} filenameBase="funcionarios" sheetName="Funcionários" />
+        </div>
       </div>
 
       {/* Stats */}
@@ -335,6 +424,61 @@ export default function Drivers() {
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={cancelEdit}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
             <Button onClick={saveEdit}><Save className="h-4 w-4 mr-1" /> Guardar</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add new employee dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Novo Funcionário</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Nº Funcionário *</Label>
+              <Input type="number" value={newData.employee_number || ""} onChange={e => setNewData(p => ({ ...p, employee_number: Number(e.target.value) as any }))} />
+            </div>
+            <div>
+              <Label>Empresa</Label>
+              <Input value={newData.company || "ARV"} onChange={e => setNewData(p => ({ ...p, company: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <Label>Nome *</Label>
+              <Input value={newData.full_name || ""} onChange={e => setNewData(p => ({ ...p, full_name: e.target.value }))} />
+            </div>
+            <div>
+              <Label>NIF</Label>
+              <Input value={newData.nif || ""} onChange={e => setNewData(p => ({ ...p, nif: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Data Contratação</Label>
+              <Input type="date" value={newData.hire_date || ""} onChange={e => setNewData(p => ({ ...p, hire_date: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Cód. Categoria</Label>
+              <Input value={newData.category_code || ""} onChange={e => setNewData(p => ({ ...p, category_code: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Descrição Categoria</Label>
+              <Input value={newData.category_description || ""} onChange={e => setNewData(p => ({ ...p, category_description: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <Label>Cartão Condutor</Label>
+              <Input value={newData.card_number || ""} onChange={e => setNewData(p => ({ ...p, card_number: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Data Início Cartão</Label>
+              <Input type="date" value={newData.card_start_date || ""} onChange={e => setNewData(p => ({ ...p, card_start_date: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Data Validade Cartão</Label>
+              <Input type="date" value={newData.card_expiry_date || ""} onChange={e => setNewData(p => ({ ...p, card_expiry_date: e.target.value }))} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => { setAddOpen(false); setNewData({}); }}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
+            <Button onClick={saveNew}><Save className="h-4 w-4 mr-1" /> Criar</Button>
           </div>
         </DialogContent>
       </Dialog>
