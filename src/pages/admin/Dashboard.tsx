@@ -34,6 +34,7 @@ interface Vehicle {
   tachograph_calibration_date: string | null;
   client_id: string | null;
   trackit_id: string | null;
+  mobile_number: string | null;
 }
 
 interface ClientOption {
@@ -225,7 +226,7 @@ export default function Dashboard() {
     if (search) {
       const q = search.toLowerCase().trim();
       const plate = v.plate.toLowerCase().includes(q);
-      const trackitMatch = v.trackit_id?.toLowerCase().includes(q);
+      const trackitMatch = v.trackit_id?.toLowerCase().includes(q) || v.mobile_number?.toLowerCase().includes(q);
       const cName = clients.find(c => c.id === v.client_id)?.name?.toLowerCase().includes(q);
       const driverName = resolveDriverName(getDc1(v))?.toLowerCase().includes(q);
       const nearHub = getNearestHub(v);
@@ -300,7 +301,7 @@ export default function Dashboard() {
           const nearHub = getNearestHub(v);
           const marker = L.marker([v.last_lat, v.last_lng], { icon })
             .bindPopup(`<div style="font-family:Inter,sans-serif;min-width:160px">
-              <strong>${v.plate}</strong>${v.trackit_id ? ` <span style="color:#999;font-size:10px">#${v.trackit_id}</span>` : ''}
+              <strong>${v.plate}</strong>${(v.mobile_number || v.trackit_id) ? ` <span style="color:#999;font-size:10px">#${v.mobile_number || v.trackit_id}</span>` : ''}
               ${driverName ? `<br/><span style="font-size:12px">👤 ${driverName}</span>` : ''}
               ${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}
               ${nearHub ? `<br/><span style="font-size:11px">🏪 Loja ${nearHub.code} — ${nearHub.name}</span>` : ''}<br/>
@@ -492,7 +493,7 @@ export default function Dashboard() {
                     <div className="flex items-center gap-1.5">
                       <div className={`h-2 w-2 rounded-full shrink-0 ${isMoving ? "bg-success animate-pulse" : alert ? "bg-destructive" : "bg-muted-foreground"}`} />
                       <span className="font-bold text-sm tracking-wide">{v.plate}</span>
-                      {v.trackit_id && <span className="text-[10px] text-muted-foreground font-mono">#{v.trackit_id}</span>}
+                      {(v.mobile_number || v.trackit_id) && <span className="text-[10px] text-muted-foreground font-mono">#{v.mobile_number || v.trackit_id}</span>}
                     </div>
                     <span className={`text-[11px] font-bold tabular-nums ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
                   </div>
