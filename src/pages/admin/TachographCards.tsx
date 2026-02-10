@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, UserCheck, UserX, Link2
+  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, UserCheck, UserX, Link2, UserPlus
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
@@ -45,7 +45,10 @@ export default function TachographCards() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<TachCard | null>(null);
   const [form, setForm] = useState({ card_number: "", driver_name: "", driver_id: "" as string, expiry_date: undefined as Date | undefined });
-  const [bulkMapping, setBulkMapping] = useState(false);
+  const [createDriverOpen, setCreateDriverOpen] = useState(false);
+  const [createDriverFor, setCreateDriverFor] = useState<string | null>(null); // card ID to auto-link after creation
+  const [newDriver, setNewDriver] = useState({ full_name: "", email: "", password: "" });
+  const [creatingDriver, setCreatingDriver] = useState(false);
 
   const fetchCards = async () => {
     const { data } = await supabase.from("tachograph_cards").select("*").order("driver_name");
@@ -142,6 +145,52 @@ export default function TachographCards() {
     }
     toast.success(`${mapped} cartão(ões) mapeado(s) automaticamente`);
     fetchCards();
+  };
+
+  const openCreateDriver = (cardId?: string, prefillName?: string) => {
+    setCreateDriverFor(cardId || null);
+    setNewDriver({ full_name: prefillName || "", email: "", password: "" });
+    setCreateDriverOpen(true);
+  };
+
+  const handleCreateDriver = async () => {
+    if (!newDriver.full_name || !newDriver.email || !newDriver.password) {
+      toast.error("Preencha todos os campos"); return;
+    }
+    if (newDriver.password.length < 6) {
+      toast.error("Password deve ter pelo menos 6 caracteres"); return;
+    }
+    setCreatingDriver(true);
+    try {
+      const resp = await supabase.functions.invoke("create-driver", {
+        body: { full_name: newDriver.full_name, email: newDriver.email, password: newDriver.password },
+      });
+      if (resp.error || !resp.data?.success) {
+        toast.error(resp.data?.error || "Erro ao criar motorista");
+        setCreatingDriver(false);
+        return;
+      }
+      const newUserId = resp.data.user_id;
+      toast.success(`Motorista "${newDriver.full_name}" criado com sucesso`);
+
+      // Auto-link to card if we have one
+      if (createDriverFor) {
+        await supabase.from("tachograph_cards").update({ driver_id: newUserId }).eq("id", createDriverFor);
+        toast.success("Cartão associado ao novo motorista");
+      }
+
+      // Also update form if dialog is open
+      if (dialogOpen) {
+        setForm(f => ({ ...f, driver_id: newUserId }));
+      }
+
+      setCreateDriverOpen(false);
+      fetchDrivers();
+      fetchCards();
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao criar motorista");
+    }
+    setCreatingDriver(false);
   };
 
   const openEdit = (c: TachCard) => {
@@ -279,7 +328,12 @@ export default function TachographCards() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[11px] text-muted-foreground mt-1">Ao associar, a sincronização Trackit atribui automaticamente este motorista ao veículo quando o cartão é inserido.</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-[11px] text-muted-foreground flex-1">Ao associar, a sincronização Trackit atribui automaticamente este motorista ao veículo quando o cartão é inserido.</p>
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs shrink-0" onClick={() => openCreateDriver(editingCard?.id, form.driver_name)}>
+                    <UserPlus className="h-3 w-3 mr-1" />Novo Motorista
+                  </Button>
+                </div>
               </div>
               <div>
                 <Label>Data de Validade</Label>
@@ -340,17 +394,22 @@ export default function TachographCards() {
                           <UserCheck className="h-3 w-3" />{driverName}
                         </Badge>
                       ) : (
-                        <Select onValueChange={v => handleQuickMap(c.id, v === "none" ? null : v)}>
-                          <SelectTrigger className="h-7 text-xs w-[180px]">
-                            <SelectValue placeholder="Associar motorista..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">— Nenhum —</SelectItem>
-                            {drivers.map(d => (
-                              <SelectItem key={d.id} value={d.id}>{d.full_name || "(Sem nome)"}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex items-center gap-1">
+                          <Select onValueChange={v => handleQuickMap(c.id, v === "none" ? null : v)}>
+                            <SelectTrigger className="h-7 text-xs w-[160px]">
+                              <SelectValue placeholder="Associar..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">— Nenhum —</SelectItem>
+                              {drivers.map(d => (
+                                <SelectItem key={d.id} value={d.id}>{d.full_name || "(Sem nome)"}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" title="Criar novo motorista" onClick={() => openCreateDriver(c.id, c.driver_name || "")}>
+                            <UserPlus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">
@@ -387,6 +446,35 @@ export default function TachographCards() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Create Driver Dialog */}
+      <Dialog open={createDriverOpen} onOpenChange={setCreateDriverOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5" /> Criar Novo Motorista
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>Nome Completo</Label>
+              <Input value={newDriver.full_name} onChange={e => setNewDriver(f => ({ ...f, full_name: e.target.value }))} placeholder="Nome completo do motorista" />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input type="email" value={newDriver.email} onChange={e => setNewDriver(f => ({ ...f, email: e.target.value }))} placeholder="motorista@empresa.pt" />
+            </div>
+            <div>
+              <Label>Password Temporária</Label>
+              <Input type="password" value={newDriver.password} onChange={e => setNewDriver(f => ({ ...f, password: e.target.value }))} placeholder="Mínimo 6 caracteres" />
+              <p className="text-[11px] text-muted-foreground mt-1">O motorista poderá alterar a password após o primeiro login.</p>
+            </div>
+            <Button onClick={handleCreateDriver} disabled={creatingDriver} className="w-full">
+              {creatingDriver ? "A criar..." : "Criar Motorista e Associar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
