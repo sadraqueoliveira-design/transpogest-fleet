@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
+import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
 
 interface Declaration {
   id: string;
@@ -126,7 +127,26 @@ export default function Declarations() {
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Declaração assinada", description: "Declaração atualizada com sucesso." });
+      // Generate and download PDF
+      try {
+        const pdf = generateDeclarationPDF({
+          driverName: selectedDecl.driver_name || "Desconhecido",
+          licenseNumber: selectedDecl.license_number || "",
+          gapStartDate: selectedDecl.gap_start_date,
+          gapEndDate: selectedDecl.gap_end_date,
+          reasonCode,
+          reasonText: reasonText || undefined,
+          managerName: profile?.full_name || "—",
+          companyName: selectedDecl.company_name,
+        });
+        const driverSlug = (selectedDecl.driver_name || "motorista").replace(/\s+/g, "_");
+        const dateSlug = format(new Date(selectedDecl.gap_start_date), "yyyyMMdd");
+        pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
+      } catch (pdfErr) {
+        console.error("PDF generation error:", pdfErr);
+      }
+
+      toast({ title: "Declaração assinada", description: "PDF gerado e descarregado." });
       setSelectedDecl(null);
       fetchDeclarations();
     }
@@ -251,9 +271,30 @@ export default function Declarations() {
                             </Button>
                           )}
                           {d.status === "signed" && (
-                            <Button size="sm" variant="ghost" onClick={() => handleArchive(d.id)}>
-                              <Archive className="h-3 w-3 mr-1" /> Arquivar
-                            </Button>
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => {
+                                try {
+                                  const pdf = generateDeclarationPDF({
+                                    driverName: d.driver_name || "Desconhecido",
+                                    licenseNumber: d.license_number || "",
+                                    gapStartDate: d.gap_start_date,
+                                    gapEndDate: d.gap_end_date,
+                                    reasonCode: d.reason_code || "other",
+                                    reasonText: d.reason_text || undefined,
+                                    managerName: d.manager_name || "—",
+                                    companyName: d.company_name,
+                                  });
+                                  const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
+                                  const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
+                                  pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
+                                } catch (err) { console.error(err); }
+                              }}>
+                                <Download className="h-3 w-3 mr-1" /> PDF
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleArchive(d.id)}>
+                                <Archive className="h-3 w-3 mr-1" /> Arquivar
+                              </Button>
+                            </>
                           )}
                         </TableCell>
                       </TableRow>
