@@ -24,27 +24,43 @@ interface Vehicle {
   brand: string | null;
   model: string | null;
   updated_at: string;
+  reefer_set_point_1?: number | null;
+  reefer_set_point_2?: number | null;
+  adblue_level_percent?: number | null;
+}
+
+interface Trailer {
+  plate: string;
+  internal_id: string | null;
 }
 
 interface Props {
   vehicle: Vehicle;
   hasAlert: boolean;
   clientName?: string;
+  linkedTrailer?: Trailer | null;
   onClick?: () => void;
 }
 
-export default function VehicleCard({ vehicle: v, hasAlert, clientName, onClick }: Props) {
+export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTrailer, onClick }: Props) {
   const speed = v.last_speed || 0;
   const isMoving = speed > 5;
   const fuel = v.fuel_level_percent;
   const lowFuel = fuel != null && fuel < 15;
+  const adblue = (v as any).adblue_level_percent;
+  const lowAdblue = adblue != null && adblue < 10;
 
-  // Temperature data
+  // Temperature data with set point deviation logic
   const td = v.temperature_data as any;
   const t1 = td?.t1 ?? td?.T1 ?? td?.tp1;
   const t2 = td?.t2 ?? td?.T2 ?? td?.tp2;
   const hasTemp = typeof t1 === "number" || typeof t2 === "number";
-  const highTemp = (typeof t1 === "number" && t1 > 8) || (typeof t2 === "number" && t2 > 8);
+  const sp1 = v.reefer_set_point_1;
+  const sp2 = v.reefer_set_point_2;
+  // Highlight RED if deviation > 3°C from set point (or fallback to > 8°C if no set point)
+  const t1Alert = typeof t1 === "number" && (sp1 != null ? Math.abs(t1 - sp1) > 3 : t1 > 8);
+  const t2Alert = typeof t2 === "number" && (sp2 != null ? Math.abs(t2 - sp2) > 3 : t2 > 8);
+  const highTemp = t1Alert || t2Alert;
 
   // Tachograph driver info
   let tachDriver: string | null = null;
@@ -83,6 +99,11 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, onClick 
                   {v.brand && v.model ? `${v.brand} ${v.model}` : "—"}
                   {clientName && <span className="ml-1.5 text-primary/70">· {clientName}</span>}
                 </p>
+                {linkedTrailer && (
+                  <p className="text-[10px] font-medium text-primary mt-0.5">
+                    🔗 {linkedTrailer.plate} {linkedTrailer.internal_id ? `(${linkedTrailer.internal_id})` : ""}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -120,6 +141,12 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, onClick 
                 Nível de combustível baixo
               </div>
             )}
+            {lowAdblue && (
+              <div className="flex items-center gap-1 text-[11px] text-warning font-medium">
+                <Droplets className="h-3 w-3" />
+                AdBlue baixo ({adblue != null ? `${Math.round(adblue)}%` : ""})
+              </div>
+            )}
           </div>
 
           {/* Telemetry grid */}
@@ -148,14 +175,14 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, onClick 
               <div className="flex items-center gap-3 flex-1">
                 {typeof t1 === "number" && (
                   <div>
-                    <span className="text-[10px] text-muted-foreground">T1</span>
-                    <p className={`font-bold text-sm ${t1 > 8 ? "text-destructive" : "text-primary"}`}>{t1.toFixed(1)}°C</p>
+                    <span className="text-[10px] text-muted-foreground">T1{sp1 != null ? ` (SP: ${sp1}°)` : ""}</span>
+                    <p className={`font-bold text-sm ${t1Alert ? "text-destructive" : "text-primary"}`}>{t1.toFixed(1)}°C</p>
                   </div>
                 )}
                 {typeof t2 === "number" && (
                   <div>
-                    <span className="text-[10px] text-muted-foreground">T2</span>
-                    <p className={`font-bold text-sm ${t2 > 8 ? "text-destructive" : "text-primary"}`}>{t2.toFixed(1)}°C</p>
+                    <span className="text-[10px] text-muted-foreground">T2{sp2 != null ? ` (SP: ${sp2}°)` : ""}</span>
+                    <p className={`font-bold text-sm ${t2Alert ? "text-destructive" : "text-primary"}`}>{t2.toFixed(1)}°C</p>
                   </div>
                 )}
               </div>

@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
+import ComplianceWidget from "@/components/admin/ComplianceWidget";
 
 interface Vehicle {
   id: string;
@@ -62,13 +63,17 @@ export default function Dashboard() {
   const mapInstance = useRef<any>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
 
+  const [trailers, setTrailers] = useState<any[]>([]);
+
   const fetchVehicles = async () => {
-    const [{ data: vData }, { data: cData }] = await Promise.all([
+    const [{ data: vData }, { data: cData }, { data: tData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
       supabase.from("clients").select("id, name").order("name"),
+      supabase.from("trailers").select("id, plate, internal_id, status, last_linked_vehicle_id"),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
+    if (tData) setTrailers(tData);
   };
 
   useEffect(() => {
@@ -380,6 +385,7 @@ export default function Dashboard() {
               const rpm = v.rpm ?? tacho.rpm ?? null;
               const driverCard = tacho.dc1 || null;
               const cName = clients.find(c => c.id === v.client_id)?.name;
+              const linkedTrailer = trailers.find(t => t.last_linked_vehicle_id === v.id && t.status === "coupled");
               const locationName = (v as any).last_location_name;
               const hasCoords = v.last_lat != null && v.last_lng != null;
 
@@ -405,10 +411,17 @@ export default function Dashboard() {
                   </div>
 
                   {/* Brand/Client */}
-                  <p className="text-[10px] text-muted-foreground truncate mb-2">
+                  <p className="text-[10px] text-muted-foreground truncate mb-1">
                     {v.brand && v.model ? `${v.brand} ${v.model}` : ""}
                     {cName ? `${v.brand ? " · " : ""}${cName}` : ""}
                   </p>
+
+                  {/* Coupled trailer */}
+                  {linkedTrailer && (
+                    <p className="text-[10px] font-medium text-primary truncate mb-2">
+                      🔗 {linkedTrailer.plate} {linkedTrailer.internal_id ? `(${linkedTrailer.internal_id})` : ""}
+                    </p>
+                  )}
 
                   {/* Data rows */}
                   <div className="space-y-0.5 text-[11px]">
@@ -495,6 +508,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      <ComplianceWidget />
 
       <VehicleDetailPanel
         vehicle={selectedVehicle}
