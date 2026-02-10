@@ -19,8 +19,8 @@ const REASON_MAP: Record<string, number> = {
   sick_leave: 11,
   vacation: 12,
   rest: 13,
-  other_work: 14,
-  exempt_vehicle: 15,
+  exempt_vehicle: 14,
+  other_work: 15,
   other: 16,
 };
 
