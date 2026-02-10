@@ -196,6 +196,60 @@ export type Database = {
         }
         Relationships: []
       }
+      employees: {
+        Row: {
+          card_expiry_date: string | null
+          card_issue_date: string | null
+          card_number: string | null
+          card_start_date: string | null
+          category_code: string | null
+          category_description: string | null
+          company: string | null
+          created_at: string
+          employee_number: number
+          full_name: string
+          hire_date: string | null
+          id: string
+          nif: string | null
+          profile_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          card_expiry_date?: string | null
+          card_issue_date?: string | null
+          card_number?: string | null
+          card_start_date?: string | null
+          category_code?: string | null
+          category_description?: string | null
+          company?: string | null
+          created_at?: string
+          employee_number: number
+          full_name: string
+          hire_date?: string | null
+          id?: string
+          nif?: string | null
+          profile_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          card_expiry_date?: string | null
+          card_issue_date?: string | null
+          card_number?: string | null
+          card_start_date?: string | null
+          category_code?: string | null
+          category_description?: string | null
+          company?: string | null
+          created_at?: string
+          employee_number?: number
+          full_name?: string
+          hire_date?: string | null
+          id?: string
+          nif?: string | null
+          profile_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fuel_alerts: {
         Row: {
           acknowledged: boolean
