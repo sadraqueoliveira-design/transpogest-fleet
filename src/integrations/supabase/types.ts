@@ -411,6 +411,53 @@ export type Database = {
         }
         Relationships: []
       }
+      refueling_events: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          detected_at: string
+          estimated_liters: number | null
+          fuel_after: number | null
+          fuel_before: number | null
+          id: string
+          source: string
+          vehicle_id: string
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          detected_at?: string
+          estimated_liters?: number | null
+          fuel_after?: number | null
+          fuel_before?: number | null
+          id?: string
+          source?: string
+          vehicle_id: string
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          detected_at?: string
+          estimated_liters?: number | null
+          fuel_after?: number | null
+          fuel_before?: number | null
+          id?: string
+          source?: string
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refueling_events_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       routes: {
         Row: {
           client_id: string | null
