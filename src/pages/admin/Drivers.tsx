@@ -22,6 +22,7 @@ interface Employee {
   category_code: string | null;
   category_description: string | null;
   card_number: string | null;
+  card_issue_date: string | null;
   card_start_date: string | null;
   card_expiry_date: string | null;
 }
@@ -174,30 +175,40 @@ export default function Drivers() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-20">Nº Func.</TableHead>
+                  <TableHead className="w-20">Funcionário</TableHead>
                   <TableHead>Nome</TableHead>
-                  <TableHead className="w-16">Empresa</TableHead>
+                  <TableHead className="w-16">Encarregado</TableHead>
+                  <TableHead>Contribuinte</TableHead>
+                  <TableHead>Data Contratação</TableHead>
                   <TableHead>Categoria</TableHead>
+                  <TableHead>Descrição Cat.</TableHead>
                   <TableHead>Cartão Condutor</TableHead>
-                  <TableHead>Validade Cartão</TableHead>
+                  <TableHead>Emissão</TableHead>
+                  <TableHead>Data Início</TableHead>
+                  <TableHead>Data Validade</TableHead>
                   <TableHead className="w-20">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
                 ) : (
                   filtered.map((e) => (
                     <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailEmployee(e)}>
                       <TableCell className="font-mono text-muted-foreground">{e.employee_number}</TableCell>
-                      <TableCell className="font-medium">{e.full_name}</TableCell>
+                      <TableCell className="font-medium whitespace-nowrap">{e.full_name}</TableCell>
                       <TableCell>
                         <Badge variant={e.company === "ART" ? "outline" : "secondary"}>{e.company || "—"}</Badge>
                       </TableCell>
-                      <TableCell className="text-sm">{e.category_description || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{e.nif || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(e.hire_date)}</TableCell>
+                      <TableCell className="font-mono text-xs">{e.category_code || "—"}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{e.category_description || "—"}</TableCell>
                       <TableCell className="font-mono text-xs">{e.card_number || "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(e.card_issue_date)}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(e.card_start_date)}</TableCell>
                       <TableCell>
                         {e.card_expiry_date ? (
                           <Badge variant={isExpired(e.card_expiry_date) ? "destructive" : isExpiringSoon(e.card_expiry_date) ? "default" : "secondary"}>
