@@ -266,9 +266,12 @@ export default function Dashboard() {
             className: "", iconSize: [28, 28], iconAnchor: [14, 14],
           });
           const clientName = clients.find(c => c.id === v.client_id)?.name;
+          const driverName = resolveDriverName(getDc1(v));
           const marker = L.marker([v.last_lat, v.last_lng], { icon })
             .bindPopup(`<div style="font-family:Inter,sans-serif;min-width:160px">
-              <strong>${v.plate}</strong>${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}<br/>
+              <strong>${v.plate}</strong>${v.trackit_id ? ` <span style="color:#999;font-size:10px">#${v.trackit_id}</span>` : ''}
+              ${driverName ? `<br/><span style="font-size:12px">👤 ${driverName}</span>` : ''}
+              ${clientName ? `<br/><span style="color:#888;font-size:11px">${clientName}</span>` : ''}<br/>
               <span style="color:#666">${speed} km/h · ${v.fuel_level_percent ?? "—"}% fuel</span>
             </div>`);
           clusterGroup.addLayer(marker);
