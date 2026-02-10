@@ -71,6 +71,8 @@ export default function Declarations() {
     licenseNumber: "",
     birthDate: "",
     hireDate: "",
+    gapStartDate: "",
+    gapEndDate: "",
   });
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -154,8 +156,8 @@ export default function Declarations() {
           licenseNumber: driverFields.licenseNumber || "",
           birthDate: driverFields.birthDate || null,
           hireDate: driverFields.hireDate || null,
-          gapStartDate: selectedDecl.gap_start_date,
-          gapEndDate: selectedDecl.gap_end_date,
+          gapStartDate: driverFields.gapStartDate || selectedDecl.gap_start_date,
+          gapEndDate: driverFields.gapEndDate || selectedDecl.gap_end_date,
           reasonCode,
           reasonText: reasonText || undefined,
           managerName: profile?.full_name || "—",
@@ -294,6 +296,8 @@ export default function Declarations() {
                                 licenseNumber: d.license_number || "",
                                 birthDate: d.birth_date || "",
                                 hireDate: d.hire_date || "",
+                                gapStartDate: d.gap_start_date ? d.gap_start_date.slice(0, 16) : "",
+                                gapEndDate: d.gap_end_date ? d.gap_end_date.slice(0, 16) : "",
                               });
                             }}>
                               <FileText className="h-3 w-3 mr-1" /> Gerar
@@ -350,8 +354,17 @@ export default function Declarations() {
               <div className="rounded-lg border p-3 space-y-1 text-sm">
                 <p><strong>Empresa:</strong> {selectedDecl.company_name}</p>
                 <p><strong>Gestor:</strong> {profile?.full_name || "—"}</p>
-                <p><strong>Período:</strong> {formatDate(selectedDecl.gap_start_date)} — {formatDate(selectedDecl.gap_end_date)}</p>
-                <p><strong>Duração:</strong> {gapDays(selectedDecl.gap_start_date, selectedDecl.gap_end_date)} dias</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs font-semibold">Início do período (9)</Label>
+                  <Input type="datetime-local" value={driverFields.gapStartDate} onChange={(e) => setDriverFields(f => ({ ...f, gapStartDate: e.target.value }))} className="text-xs" />
+                </div>
+                <div>
+                  <Label className="text-xs font-semibold">Fim do período (10)</Label>
+                  <Input type="datetime-local" value={driverFields.gapEndDate} onChange={(e) => setDriverFields(f => ({ ...f, gapEndDate: e.target.value }))} className="text-xs" />
+                </div>
               </div>
 
               <Collapsible defaultOpen>
