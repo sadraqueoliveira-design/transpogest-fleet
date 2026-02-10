@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, RefreshCw
+  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, UserCheck, UserX, Link2
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
@@ -29,22 +30,34 @@ interface TachCard {
   expiry_date: string | null;
 }
 
-type FilterTab = "all" | "expiring" | "expired";
+interface DriverProfile {
+  id: string;
+  full_name: string | null;
+}
+
+type FilterTab = "all" | "expiring" | "expired" | "unmapped";
 
 export default function TachographCards() {
   const [cards, setCards] = useState<TachCard[]>([]);
+  const [drivers, setDrivers] = useState<DriverProfile[]>([]);
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<TachCard | null>(null);
-  const [form, setForm] = useState({ card_number: "", driver_name: "", expiry_date: undefined as Date | undefined });
+  const [form, setForm] = useState({ card_number: "", driver_name: "", driver_id: "" as string, expiry_date: undefined as Date | undefined });
+  const [bulkMapping, setBulkMapping] = useState(false);
 
   const fetchCards = async () => {
     const { data } = await supabase.from("tachograph_cards").select("*").order("driver_name");
     if (data) setCards(data);
   };
 
-  useEffect(() => { fetchCards(); }, []);
+  const fetchDrivers = async () => {
+    const { data } = await supabase.from("profiles").select("id, full_name").order("full_name");
+    if (data) setDrivers(data);
+  };
+
+  useEffect(() => { fetchCards(); fetchDrivers(); }, []);
 
   const now = new Date();
   const in60Days = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
@@ -60,6 +73,8 @@ export default function TachographCards() {
   const expiringCount = cards.filter(c => getCardStatus(c) === "expiring").length;
   const expiredCount = cards.filter(c => getCardStatus(c) === "expired").length;
   const identifiedCount = cards.filter(c => c.driver_name).length;
+  const unmappedCount = cards.filter(c => !c.driver_id).length;
+  const mappedCount = cards.filter(c => c.driver_id).length;
 
   const filtered = cards.filter(c => {
     const matchSearch = !search ||
@@ -68,16 +83,18 @@ export default function TachographCards() {
     if (!matchSearch) return false;
     if (filterTab === "expiring") return getCardStatus(c) === "expiring";
     if (filterTab === "expired") return getCardStatus(c) === "expired";
+    if (filterTab === "unmapped") return !c.driver_id;
     return true;
   });
 
   const handleSave = async () => {
     if (!form.card_number) { toast.error("Número do cartão é obrigatório"); return; }
 
-    const payload = {
+    const payload: any = {
       card_number: form.card_number,
       driver_name: form.driver_name || null,
       expiry_date: form.expiry_date ? format(form.expiry_date, "yyyy-MM-dd") : null,
+      driver_id: form.driver_id || null,
     };
 
     if (editingCard) {
@@ -91,7 +108,7 @@ export default function TachographCards() {
     }
     setDialogOpen(false);
     setEditingCard(null);
-    setForm({ card_number: "", driver_name: "", expiry_date: undefined });
+    setForm({ card_number: "", driver_name: "", driver_id: "", expiry_date: undefined });
     fetchCards();
   };
 
@@ -102,11 +119,37 @@ export default function TachographCards() {
     fetchCards();
   };
 
+  const handleQuickMap = async (cardId: string, driverId: string | null) => {
+    const { error } = await supabase.from("tachograph_cards").update({ driver_id: driverId }).eq("id", cardId);
+    if (error) { toast.error("Erro ao mapear"); return; }
+    toast.success(driverId ? "Motorista associado" : "Motorista removido");
+    fetchCards();
+  };
+
+  const handleAutoMap = async () => {
+    // Try to auto-map cards by matching driver_name with profiles.full_name
+    let mapped = 0;
+    const unmapped = cards.filter(c => !c.driver_id && c.driver_name);
+    for (const card of unmapped) {
+      const match = drivers.find(d =>
+        d.full_name && card.driver_name &&
+        d.full_name.toLowerCase().trim() === card.driver_name.toLowerCase().trim()
+      );
+      if (match) {
+        const { error } = await supabase.from("tachograph_cards").update({ driver_id: match.id }).eq("id", card.id);
+        if (!error) mapped++;
+      }
+    }
+    toast.success(`${mapped} cartão(ões) mapeado(s) automaticamente`);
+    fetchCards();
+  };
+
   const openEdit = (c: TachCard) => {
     setEditingCard(c);
     setForm({
       card_number: c.card_number,
       driver_name: c.driver_name || "",
+      driver_id: c.driver_id || "",
       expiry_date: c.expiry_date ? new Date(c.expiry_date) : undefined,
     });
     setDialogOpen(true);
@@ -114,14 +157,20 @@ export default function TachographCards() {
 
   const openNew = () => {
     setEditingCard(null);
-    setForm({ card_number: "", driver_name: "", expiry_date: undefined });
+    setForm({ card_number: "", driver_name: "", driver_id: "", expiry_date: undefined });
     setDialogOpen(true);
   };
 
-  const identPct = cards.length > 0 ? Math.round((identifiedCount / cards.length) * 100) : 0;
+  const getDriverName = (driverId: string | null) => {
+    if (!driverId) return null;
+    return drivers.find(d => d.id === driverId)?.full_name || "Desconhecido";
+  };
+
+  const mappedPct = cards.length > 0 ? Math.round((mappedCount / cards.length) * 100) : 0;
 
   const tabs: { key: FilterTab; label: string; count: number; alert?: boolean }[] = [
     { key: "all", label: "Todos", count: cards.length },
+    { key: "unmapped", label: "Sem Motorista", count: unmappedCount, alert: unmappedCount > 0 },
     { key: "expiring", label: "A Vencer", count: expiringCount, alert: expiringCount > 0 },
     { key: "expired", label: "Expirados", count: expiredCount, alert: expiredCount > 0 },
   ];
@@ -140,23 +189,35 @@ export default function TachographCards() {
         <CardContent className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">Cobertura de Identificação:</p>
-              <p className="text-lg font-bold">{identPct}%</p>
-              <p className="text-xs text-muted-foreground">{identifiedCount} de {cards.length} cartões identificados</p>
+              <p className="text-sm text-muted-foreground">Mapeamento a Perfis:</p>
+              <p className="text-lg font-bold">{mappedPct}%</p>
+              <p className="text-xs text-muted-foreground">{mappedCount} de {cards.length} cartões mapeados a motoristas</p>
             </div>
             <div className="flex items-center gap-6 text-sm">
               <div className="text-center">
-                <CreditCard className="h-4 w-4 mx-auto text-muted-foreground mb-1" />
-                <span className="font-bold">{cards.length}</span>
-                <p className="text-xs text-muted-foreground">Mapeamentos</p>
+                <UserCheck className="h-4 w-4 mx-auto text-success mb-1" />
+                <span className="font-bold">{mappedCount}</span>
+                <p className="text-xs text-muted-foreground">Mapeados</p>
               </div>
               <div className="text-center">
-                <span className="font-bold">{identifiedCount}</span>
-                <p className="text-xs text-muted-foreground">Identificados</p>
+                <UserX className="h-4 w-4 mx-auto text-destructive mb-1" />
+                <span className="font-bold">{unmappedCount}</span>
+                <p className="text-xs text-muted-foreground">Sem perfil</p>
               </div>
             </div>
           </div>
-          <Progress value={identPct} className="h-2" />
+          <Progress value={mappedPct} className="h-2" />
+
+          {unmappedCount > 0 && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="gap-1 border-warning text-warning">
+                <Link2 className="h-3 w-3" /> {unmappedCount} cartão(ões) sem motorista associado
+              </Badge>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleAutoMap}>
+                <Link2 className="h-3 w-3 mr-1" />Auto-mapear por nome
+              </Button>
+            </div>
+          )}
 
           {expiredCount > 0 && (
             <Badge variant="destructive" className="gap-1">
@@ -206,6 +267,21 @@ export default function TachographCards() {
               <div><Label>Número do Cartão</Label><Input value={form.card_number} onChange={e => setForm(f => ({ ...f, card_number: e.target.value }))} placeholder="Ex: 19444950" /></div>
               <div><Label>Nome do Motorista</Label><Input value={form.driver_name} onChange={e => setForm(f => ({ ...f, driver_name: e.target.value }))} placeholder="Nome completo" /></div>
               <div>
+                <Label>Perfil do Motorista (para sincronização)</Label>
+                <Select value={form.driver_id} onValueChange={v => setForm(f => ({ ...f, driver_id: v === "none" ? "" : v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar motorista..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Sem motorista —</SelectItem>
+                    {drivers.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.full_name || "(Sem nome)"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground mt-1">Ao associar, a sincronização Trackit atribui automaticamente este motorista ao veículo quando o cartão é inserido.</p>
+              </div>
+              <div>
                 <Label>Data de Validade</Label>
                 <Popover>
                   <PopoverTrigger asChild>
@@ -239,6 +315,7 @@ export default function TachographCards() {
               <TableRow>
                 <TableHead>Número do Cartão</TableHead>
                 <TableHead>Nome do Motorista</TableHead>
+                <TableHead>Perfil Associado</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
@@ -246,6 +323,7 @@ export default function TachographCards() {
             <TableBody>
               {filtered.map(c => {
                 const status = getCardStatus(c);
+                const driverName = getDriverName(c.driver_id);
                 return (
                   <TableRow key={c.id} className={status === "expired" ? "bg-destructive/5" : status === "expiring" ? "bg-warning/5" : ""}>
                     <TableCell className="font-mono">
@@ -256,6 +334,25 @@ export default function TachographCards() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium">{c.driver_name || "—"}</TableCell>
+                    <TableCell>
+                      {c.driver_id ? (
+                        <Badge variant="default" className="bg-success/10 text-success border-success/20 gap-1">
+                          <UserCheck className="h-3 w-3" />{driverName}
+                        </Badge>
+                      ) : (
+                        <Select onValueChange={v => handleQuickMap(c.id, v === "none" ? null : v)}>
+                          <SelectTrigger className="h-7 text-xs w-[180px]">
+                            <SelectValue placeholder="Associar motorista..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">— Nenhum —</SelectItem>
+                            {drivers.map(d => (
+                              <SelectItem key={d.id} value={d.id}>{d.full_name || "(Sem nome)"}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm">
                       {c.expiry_date ? format(new Date(c.expiry_date), "dd/MM/yyyy") : "—"}
                       {c.expiry_date && status === "expiring" && (
@@ -269,6 +366,11 @@ export default function TachographCards() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(c)}><Edit className="h-4 w-4 mr-2" />Editar</DropdownMenuItem>
+                          {c.driver_id && (
+                            <DropdownMenuItem onClick={() => handleQuickMap(c.id, null)}>
+                              <UserX className="h-4 w-4 mr-2" />Remover Motorista
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => handleDelete(c.id)} className="text-destructive"><Trash2 className="h-4 w-4 mr-2" />Eliminar</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -278,7 +380,7 @@ export default function TachographCards() {
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground py-8">Nenhum cartão encontrado</TableCell>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum cartão encontrado</TableCell>
                 </TableRow>
               )}
             </TableBody>
