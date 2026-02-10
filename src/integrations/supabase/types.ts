@@ -246,6 +246,7 @@ export type Database = {
       }
       employees: {
         Row: {
+          birth_date: string | null
           card_expiry_date: string | null
           card_issue_date: string | null
           card_number: string | null
@@ -258,11 +259,13 @@ export type Database = {
           full_name: string
           hire_date: string | null
           id: string
+          license_number: string | null
           nif: string | null
           profile_id: string | null
           updated_at: string
         }
         Insert: {
+          birth_date?: string | null
           card_expiry_date?: string | null
           card_issue_date?: string | null
           card_number?: string | null
@@ -275,11 +278,13 @@ export type Database = {
           full_name: string
           hire_date?: string | null
           id?: string
+          license_number?: string | null
           nif?: string | null
           profile_id?: string | null
           updated_at?: string
         }
         Update: {
+          birth_date?: string | null
           card_expiry_date?: string | null
           card_issue_date?: string | null
           card_number?: string | null
@@ -292,6 +297,7 @@ export type Database = {
           full_name?: string
           hire_date?: string | null
           id?: string
+          license_number?: string | null
           nif?: string | null
           profile_id?: string | null
           updated_at?: string
