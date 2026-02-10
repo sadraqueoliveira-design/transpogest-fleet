@@ -66,6 +66,12 @@ export default function Declarations() {
     managerPosition: "Responsável de Tráfego",
     signingLocation: "Alverca",
   });
+  const [driverFields, setDriverFields] = useState({
+    driverName: "",
+    licenseNumber: "",
+    birthDate: "",
+    hireDate: "",
+  });
   const { toast } = useToast();
   const { profile } = useAuth();
 
@@ -144,10 +150,10 @@ export default function Declarations() {
       // Generate and download PDF
       try {
         const pdf = generateDeclarationPDF({
-          driverName: selectedDecl.driver_name || "Desconhecido",
-          licenseNumber: selectedDecl.license_number || "",
-          birthDate: selectedDecl.birth_date,
-          hireDate: selectedDecl.hire_date,
+          driverName: driverFields.driverName || "Desconhecido",
+          licenseNumber: driverFields.licenseNumber || "",
+          birthDate: driverFields.birthDate || null,
+          hireDate: driverFields.hireDate || null,
           gapStartDate: selectedDecl.gap_start_date,
           gapEndDate: selectedDecl.gap_end_date,
           reasonCode,
@@ -156,7 +162,7 @@ export default function Declarations() {
           companyName: selectedDecl.company_name,
           ...editFields,
         });
-        const driverSlug = (selectedDecl.driver_name || "motorista").replace(/\s+/g, "_");
+        const driverSlug = (driverFields.driverName || "motorista").replace(/\s+/g, "_");
         const dateSlug = format(new Date(selectedDecl.gap_start_date), "yyyyMMdd");
         pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
       } catch (pdfErr) {
@@ -283,6 +289,12 @@ export default function Declarations() {
                               setSelectedDecl(d);
                               setReasonCode("vacation");
                               setReasonText("");
+                              setDriverFields({
+                                driverName: d.driver_name || "",
+                                licenseNumber: d.license_number || "",
+                                birthDate: d.birth_date || "",
+                                hireDate: d.hire_date || "",
+                              });
                             }}>
                               <FileText className="h-3 w-3 mr-1" /> Gerar
                             </Button>
@@ -338,11 +350,38 @@ export default function Declarations() {
               <div className="rounded-lg border p-3 space-y-1 text-sm">
                 <p><strong>Empresa:</strong> {selectedDecl.company_name}</p>
                 <p><strong>Gestor:</strong> {profile?.full_name || "—"}</p>
-                <p><strong>Motorista:</strong> {selectedDecl.driver_name}</p>
-                <p><strong>N.º Carta:</strong> {selectedDecl.license_number || "N/D"}</p>
                 <p><strong>Período:</strong> {formatDate(selectedDecl.gap_start_date)} — {formatDate(selectedDecl.gap_end_date)}</p>
                 <p><strong>Duração:</strong> {gapDays(selectedDecl.gap_start_date, selectedDecl.gap_end_date)} dias</p>
               </div>
+
+              <Collapsible defaultOpen>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="w-full justify-between text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><Pencil className="h-3 w-3" /> Dados do motorista</span>
+                    <ChevronDown className="h-3 w-3" />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-3 pt-2">
+                  <div>
+                    <Label className="text-xs">Nome do motorista</Label>
+                    <Input value={driverFields.driverName} onChange={(e) => setDriverFields(f => ({ ...f, driverName: e.target.value }))} className="text-xs" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">N.º Carta de Condução / BI / Passaporte</Label>
+                    <Input value={driverFields.licenseNumber} onChange={(e) => setDriverFields(f => ({ ...f, licenseNumber: e.target.value }))} className="text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs">Data de nascimento</Label>
+                      <Input type="date" value={driverFields.birthDate} onChange={(e) => setDriverFields(f => ({ ...f, birthDate: e.target.value }))} className="text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Data de contratação</Label>
+                      <Input type="date" value={driverFields.hireDate} onChange={(e) => setDriverFields(f => ({ ...f, hireDate: e.target.value }))} className="text-xs" />
+                    </div>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
 
               <div className="space-y-2">
                 <Label className="font-semibold">Motivo da ausência</Label>
