@@ -461,6 +461,9 @@ export default function NetworkLocations() {
                               <DropdownMenuItem onClick={() => window.open(`https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`, "_blank")}>
                                 <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`https://navigation.eurowag.com/navigate?lat=${h.lat}&lon=${h.lng}`, "_blank")}>
+                                <ExternalLink className="h-4 w-4 mr-2" />Eurowag GPS Truck
+                              </DropdownMenuItem>
 
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onClick={() => {
