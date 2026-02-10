@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle } from "lucide-react";
+import { Fuel, Plus, Search, Droplets, Gauge, TrendingDown, FileText, Snowflake, Thermometer, Bell, CheckCheck, ArrowUpCircle, RefreshCw } from "lucide-react";
 import { ExportButton, exportCSV } from "@/components/admin/BulkImportExport";
 
 interface FuelLog {
@@ -108,6 +108,31 @@ export default function FuelManagement() {
     odometer_at_fillup: "",
     reefer_engine_hours: "",
   });
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-trackit-data`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro na sincronização");
+      const total = data.results?.reduce((s: number, r: any) => s + (r.count || 0), 0) || 0;
+      toast.success(`Sincronização concluída — ${total} veículos atualizados`);
+      fetchData();
+      fetchAlerts();
+      fetchRefuelingEvents();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Falha na sincronização"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const fetchAlerts = async () => {
     const { data } = await supabase
@@ -347,6 +372,11 @@ export default function FuelManagement() {
           <p className="page-subtitle">Monitorização automática e registos manuais</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Sync button */}
+          <Button variant="outline" size="icon" onClick={handleSync} disabled={syncing} title="Sincronizar Trackit">
+            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+          </Button>
+
           {/* Alerts bell */}
           <Popover>
             <PopoverTrigger asChild>
