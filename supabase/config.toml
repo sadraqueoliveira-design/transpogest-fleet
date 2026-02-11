@@ -29,3 +29,9 @@ verify_jwt = false
 
 [functions.map-tacho-cards]
 verify_jwt = false
+
+[functions.auto-approve-declaration]
+verify_jwt = false
+
+[functions.morning-digest]
+verify_jwt = false

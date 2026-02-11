@@ -104,6 +104,53 @@ export type Database = {
         }
         Relationships: []
       }
+      approval_rules: {
+        Row: {
+          active_hours_end: string
+          active_hours_start: string
+          allowed_reasons: string[]
+          created_at: string
+          digital_signature_url: string | null
+          driver_group_id: string
+          id: string
+          is_active: boolean
+          manager_id: string
+          updated_at: string
+        }
+        Insert: {
+          active_hours_end?: string
+          active_hours_start?: string
+          allowed_reasons?: string[]
+          created_at?: string
+          digital_signature_url?: string | null
+          driver_group_id: string
+          id?: string
+          is_active?: boolean
+          manager_id: string
+          updated_at?: string
+        }
+        Update: {
+          active_hours_end?: string
+          active_hours_start?: string
+          allowed_reasons?: string[]
+          created_at?: string
+          digital_signature_url?: string | null
+          driver_group_id?: string
+          id?: string
+          is_active?: boolean
+          manager_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_rules_driver_group_id_fkey"
+            columns: ["driver_group_id"]
+            isOneToOne: false
+            referencedRelation: "driver_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checklist_submissions: {
         Row: {
           created_at: string
@@ -294,6 +341,59 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      driver_group_members: {
+        Row: {
+          created_at: string
+          driver_id: string
+          group_id: string
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          driver_id: string
+          group_id: string
+          id?: string
+        }
+        Update: {
+          created_at?: string
+          driver_id?: string
+          group_id?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "driver_group_members_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "driver_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      driver_groups: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       dynamic_forms: {
         Row: {
@@ -869,6 +969,8 @@ export type Database = {
       }
       signature_audit_logs: {
         Row: {
+          approval_rule_id: string | null
+          approval_type: string | null
           created_at: string
           declaration_id: string
           device_info: string | null
@@ -876,6 +978,9 @@ export type Database = {
           gps_lng: number | null
           id: string
           ip_address: string | null
+          liability_accepted_at: string | null
+          liability_text: string | null
+          morning_digest_sent: boolean | null
           pdf_url: string | null
           signature_url: string | null
           signed_at: string
@@ -885,6 +990,8 @@ export type Database = {
           verification_id: string
         }
         Insert: {
+          approval_rule_id?: string | null
+          approval_type?: string | null
           created_at?: string
           declaration_id: string
           device_info?: string | null
@@ -892,6 +999,9 @@ export type Database = {
           gps_lng?: number | null
           id?: string
           ip_address?: string | null
+          liability_accepted_at?: string | null
+          liability_text?: string | null
+          morning_digest_sent?: boolean | null
           pdf_url?: string | null
           signature_url?: string | null
           signed_at?: string
@@ -901,6 +1011,8 @@ export type Database = {
           verification_id?: string
         }
         Update: {
+          approval_rule_id?: string | null
+          approval_type?: string | null
           created_at?: string
           declaration_id?: string
           device_info?: string | null
@@ -908,6 +1020,9 @@ export type Database = {
           gps_lng?: number | null
           id?: string
           ip_address?: string | null
+          liability_accepted_at?: string | null
+          liability_text?: string | null
+          morning_digest_sent?: boolean | null
           pdf_url?: string | null
           signature_url?: string | null
           signed_at?: string
@@ -917,6 +1032,13 @@ export type Database = {
           verification_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "signature_audit_logs_approval_rule_id_fkey"
+            columns: ["approval_rule_id"]
+            isOneToOne: false
+            referencedRelation: "approval_rules"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "signature_audit_logs_declaration_id_fkey"
             columns: ["declaration_id"]
