@@ -292,6 +292,82 @@ Deno.serve(async (req) => {
             .from("vehicles")
             .upsert(vehicleRecords, { onConflict: "trackit_id" });
 
+          // === DRIVER ACTIVITY TRACKING (EU 561/2006) ===
+          // Extract current tachograph state for each vehicle and upsert driver_activities
+          const activityMap: Record<string, string> = {
+            "0": "rest", "1": "available", "2": "work", "3": "driving",
+          };
+          const nowISO = new Date().toISOString();
+
+          for (const v of filteredVehicles) {
+            const d = v.data || {};
+            const drs = d.drs || {};
+            const ds1 = drs.ds1 ?? d.exd?.eco?.ds1 ?? null;
+            const plate = (v.info?.plate || v.plate || v.name || "").replace(/[\s]/g, "").toUpperCase();
+            const vRec = vehicleRecords.find((r: any) => r.plate === plate);
+            if (!vRec || !vRec.current_driver_id || ds1 == null) continue;
+
+            const activityType = activityMap[String(ds1)] || "unknown";
+            const driverId = vRec.current_driver_id;
+
+            // Get vehicle ID from DB
+            const { data: vDb } = await supabaseAdmin
+              .from("vehicles")
+              .select("id")
+              .eq("plate", plate)
+              .limit(1)
+              .maybeSingle();
+            const vehicleId = vDb?.id || null;
+
+            // Check if there's an open activity of the same type for this driver
+            const { data: openActivity } = await supabaseAdmin
+              .from("driver_activities")
+              .select("id, activity_type, start_time")
+              .eq("driver_id", driverId)
+              .is("end_time", null)
+              .order("start_time", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (openActivity) {
+              if (openActivity.activity_type === activityType) {
+                // Same activity, update duration
+                const startTime = new Date(openActivity.start_time);
+                const durationMin = Math.round((Date.now() - startTime.getTime()) / 60000);
+                await supabaseAdmin
+                  .from("driver_activities")
+                  .update({ duration_minutes: durationMin })
+                  .eq("id", openActivity.id);
+              } else {
+                // Activity changed — close the old one, open new
+                const startTime = new Date(openActivity.start_time);
+                const durationMin = Math.round((Date.now() - startTime.getTime()) / 60000);
+                await supabaseAdmin
+                  .from("driver_activities")
+                  .update({ end_time: nowISO, duration_minutes: durationMin })
+                  .eq("id", openActivity.id);
+
+                // Insert new activity
+                await supabaseAdmin.from("driver_activities").insert({
+                  driver_id: driverId,
+                  vehicle_id: vehicleId,
+                  activity_type: activityType,
+                  start_time: nowISO,
+                  source: "trackit",
+                });
+              }
+            } else {
+              // No open activity — create one
+              await supabaseAdmin.from("driver_activities").insert({
+                driver_id: driverId,
+                vehicle_id: vehicleId,
+                activity_type: activityType,
+                start_time: nowISO,
+                source: "trackit",
+              });
+            }
+          }
+
           // Insert refueling events
           if (refuelingEvents.length > 0) {
             const { error: refuelErr } = await supabaseAdmin
