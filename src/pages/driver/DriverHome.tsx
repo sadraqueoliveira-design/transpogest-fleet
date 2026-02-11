@@ -23,24 +23,47 @@ export default function DriverHome() {
     if (!user) return;
     setRequestingPush(true);
     try {
+      // Check if Notification API is available
+      if (typeof Notification === "undefined") {
+        toast.error("Este browser não suporta notificações. Abra a app diretamente no browser (não em iframe).");
+        return;
+      }
+
+      // Check if service workers are supported
+      if (!("serviceWorker" in navigator)) {
+        toast.error("Service Workers não suportados neste browser.");
+        return;
+      }
+
+      console.log("Requesting notification permission...");
       const vapidKey = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
       const token = await requestNotificationPermission(vapidKey);
+      console.log("FCM token result:", token ? "obtained" : "null");
+      
       if (token) {
-        await supabase.from("user_fcm_tokens").upsert(
+        const { error } = await supabase.from("user_fcm_tokens").upsert(
           { user_id: user.id, token, device_type: "web", last_active_at: new Date().toISOString() },
           { onConflict: "token" }
         );
-        setPushPermission("granted");
-        toast.success("Notificações ativadas com sucesso!");
+        if (error) {
+          console.error("Error saving FCM token:", error);
+          toast.error("Erro ao guardar token: " + error.message);
+        } else {
+          setPushPermission("granted");
+          toast.success("Notificações ativadas com sucesso!");
+        }
       } else {
-        setPushPermission(Notification.permission);
-        if (Notification.permission === "denied") {
-          toast.error("Notificações bloqueadas. Ative nas definições do browser.");
+        const perm = typeof Notification !== "undefined" ? Notification.permission : "default";
+        setPushPermission(perm);
+        if (perm === "denied") {
+          toast.error("Notificações bloqueadas. Ative nas definições do browser para este site.");
+        } else {
+          toast.warning("Não foi possível obter o token. Tente abrir a app diretamente no browser (não dentro do Lovable).");
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Push request failed:", err);
-      toast.error("Erro ao ativar notificações");
+      toast.error("Erro ao ativar notificações: " + (err?.message || String(err)));
     } finally {
       setRequestingPush(false);
     }
