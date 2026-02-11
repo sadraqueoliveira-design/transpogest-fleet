@@ -854,6 +854,33 @@ export type Database = {
           },
         ]
       }
+      user_fcm_tokens: {
+        Row: {
+          created_at: string
+          device_type: string
+          id: string
+          last_active_at: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_type?: string
+          id?: string
+          last_active_at?: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_type?: string
+          id?: string
+          last_active_at?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
