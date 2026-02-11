@@ -13,23 +13,50 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-messaging.onBackgroundMessage((payload) => {
-  console.log("[firebase-messaging-sw.js] Background message:", payload);
-  // Use data fields (data-only messages) or notification fields
-  const title = payload.data?.title || payload.notification?.title || "TranspoGest";
-  const body = payload.data?.body || payload.notification?.body || "";
-  const icon = payload.notification?.icon || "/pwa-192x192.png";
-  const route = payload.data?.route || "/";
+// Handle push: if app is focused, forward via postMessage; otherwise show notification
+self.addEventListener("push", (event) => {
+  const payload = event.data?.json() || {};
+  console.log("[SW] Push received:", payload);
 
-  self.registration.showNotification(title, {
-    body,
-    icon,
-    badge: "/pwa-192x192.png",
-    data: { url: route },
-  });
+  const data = payload.data || {};
+  const title = data.title || payload.notification?.title || "TranspoGest";
+  const body = data.body || payload.notification?.body || "";
+  const route = data.route || "/";
+
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      const focusedClient = windowClients.find((c) => c.visibilityState === "visible");
+
+      if (focusedClient) {
+        // App is open — send to app, don't show system notification
+        console.log("[SW] App is focused, forwarding via postMessage");
+        focusedClient.postMessage({
+          type: "PUSH_FOREGROUND",
+          title,
+          body,
+          route,
+        });
+        // Don't show notification — app will handle display
+      } else {
+        // App is closed/background — show system notification
+        console.log("[SW] App is in background, showing notification");
+        self.registration.showNotification(title, {
+          body,
+          icon: "/pwa-192x192.png",
+          badge: "/pwa-192x192.png",
+          data: { url: route },
+        });
+      }
+    })
+  );
 });
 
-// Handle notification click - open the deep-link URL
+// Prevent Firebase SDK from also showing a notification
+messaging.onBackgroundMessage(() => {
+  // Handled by push event above — do nothing here
+});
+
+// Handle notification click
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = event.notification.data?.url || "/";

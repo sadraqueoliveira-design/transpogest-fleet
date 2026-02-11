@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { requestNotificationPermission, getFirebaseMessaging, onMessage } from "@/lib/firebase";
+import { requestNotificationPermission, getFirebaseMessaging } from "@/lib/firebase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -10,61 +10,46 @@ export function usePushNotifications() {
   const listenerSet = useRef(false);
 
   useEffect(() => {
-    // Always set up foreground listener
+    // Listen for foreground messages from service worker via postMessage
     if (!listenerSet.current) {
       listenerSet.current = true;
-      console.log("[PUSH] Setting up foreground listener...");
-      
-      getFirebaseMessaging().then((messaging) => {
-        if (!messaging) {
-          console.warn("[PUSH] Messaging not supported, skipping listener");
-          return;
+      console.log("[PUSH] Setting up SW postMessage listener...");
+
+      const handleSWMessage = (event: MessageEvent) => {
+        if (event.data?.type !== "PUSH_FOREGROUND") return;
+
+        const { title, body, route } = event.data;
+        console.log("[PUSH] 🔔 Foreground push received:", title, body);
+
+        // Vibrate
+        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
+        // Show native notification
+        if (Notification.permission === "granted") {
+          try {
+            const n = new Notification(title || "TranspoGest", {
+              body: body || "",
+              icon: "/pwa-192x192.png",
+              badge: "/pwa-192x192.png",
+              tag: "fg-" + Date.now(),
+              requireInteraction: true,
+            });
+            n.onclick = () => {
+              window.focus();
+              if (route && route !== "/") window.location.href = route;
+              n.close();
+            };
+          } catch (e) {
+            console.error("[PUSH] Native notification failed:", e);
+          }
         }
-        console.log("[PUSH] ✅ Foreground listener active");
-        
-        onMessage(messaging, (payload) => {
-          console.log("[PUSH] 🔔 Foreground message received:", JSON.stringify(payload));
-          const title = payload.notification?.title || payload.data?.title || "TranspoGest";
-          const body = payload.notification?.body || payload.data?.body || "";
-          const route = payload.data?.route || "/";
 
-          // Vibrate
-          if (navigator.vibrate) {
-            navigator.vibrate([200, 100, 200]);
-            console.log("[PUSH] Vibrated");
-          }
+        // Show in-app toast
+        toast.info(title || "Notificação", { description: body, duration: 10000 });
+      };
 
-          // Native notification
-          if (Notification.permission === "granted") {
-            try {
-              const n = new Notification(title, {
-                body,
-                icon: "/pwa-192x192.png",
-                badge: "/pwa-192x192.png",
-                tag: "fg-" + Date.now(),
-                requireInteraction: true,
-              });
-              n.onclick = () => {
-                window.focus();
-                if (route !== "/") window.location.href = route;
-                n.close();
-              };
-              console.log("[PUSH] Native notification shown");
-            } catch (e) {
-              console.error("[PUSH] Native notification failed:", e);
-            }
-          } else {
-            console.warn("[PUSH] Notification permission:", Notification.permission);
-          }
-
-          // Toast
-          toast.info(title, { description: body, duration: 10000 });
-          console.log("[PUSH] Toast shown");
-        });
-      }).catch((err) => {
-        console.error("[PUSH] Listener setup error:", err);
-        listenerSet.current = false;
-      });
+      navigator.serviceWorker?.addEventListener("message", handleSWMessage);
+      console.log("[PUSH] ✅ Foreground listener active (postMessage)");
     }
 
     // Token registration
