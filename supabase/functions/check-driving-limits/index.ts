@@ -40,6 +40,8 @@ async function getFcmAccessToken(serviceAccount: { client_email: string; private
 interface ComplianceStatus {
   driver_id: string;
   driver_name: string | null;
+  current_activity: string | null;
+  current_activity_start: string | null;
   continuous_driving_minutes: number;
   continuous_driving_limit: number;
   daily_driving_minutes: number;
@@ -128,8 +130,15 @@ Deno.serve(async (req) => {
       .from("driver_activities")
       .select("driver_id, activity_type, start_time, end_time, duration_minutes")
       .in("driver_id", driverIds)
-      .gte("start_time", biweekStart.toISOString())
-      .eq("activity_type", "driving");
+      .gte("start_time", biweekStart.toISOString());
+
+    // Also fetch the current open activity for each driver (any type)
+    const { data: openActivities } = await supabaseAdmin
+      .from("driver_activities")
+      .select("driver_id, activity_type, start_time")
+      .in("driver_id", driverIds)
+      .is("end_time", null)
+      .order("start_time", { ascending: false });
 
     // Fetch driver profiles
     const { data: profiles } = await supabaseAdmin
@@ -145,16 +154,31 @@ Deno.serve(async (req) => {
 
     for (const driverId of driverIds) {
       const driverActivities = (activities || []).filter((a: any) => a.driver_id === driverId);
+      const drivingActivities = driverActivities.filter((a: any) => a.activity_type === "driving");
+
+      // Get current open activity for this driver
+      const currentOpen = (openActivities || []).find((a: any) => a.driver_id === driverId);
+      const currentActivity = currentOpen?.activity_type || null;
+      const currentActivityStart = currentOpen?.start_time || null;
+
+      // Helper: get real-time duration (for open sessions, compute from start_time to now)
+      const getRealDuration = (a: any) => {
+        if (!a.end_time) {
+          // Ongoing session — calculate from start_time to now
+          return Math.round((now.getTime() - new Date(a.start_time).getTime()) / 60000);
+        }
+        return a.duration_minutes || 0;
+      };
 
       // Calculate continuous driving (latest unbroken driving session)
       let continuousDriving = 0;
-      const todayDrivingSessions = driverActivities
+      const todayDrivingSessions = drivingActivities
         .filter((a: any) => new Date(a.start_time) >= todayStart)
         .sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
 
       // Walk backwards from most recent to find continuous driving
       for (const session of todayDrivingSessions) {
-        const dur = session.duration_minutes || 0;
+        const dur = getRealDuration(session);
         continuousDriving += dur;
         // Check if there was a sufficient break before this session
         const sessionStart = new Date(session.start_time);
@@ -169,26 +193,26 @@ Deno.serve(async (req) => {
       }
 
       // Daily driving total
-      const dailyDriving = driverActivities
+      const dailyDriving = drivingActivities
         .filter((a: any) => new Date(a.start_time) >= todayStart)
-        .reduce((sum: number, a: any) => sum + (a.duration_minutes || 0), 0);
+        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
 
       // Weekly driving total
-      const weeklyDriving = driverActivities
+      const weeklyDriving = drivingActivities
         .filter((a: any) => new Date(a.start_time) >= weekStart)
-        .reduce((sum: number, a: any) => sum + (a.duration_minutes || 0), 0);
+        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
 
       // Biweekly driving total
-      const biweeklyDriving = driverActivities
-        .reduce((sum: number, a: any) => sum + (a.duration_minutes || 0), 0);
+      const biweeklyDriving = drivingActivities
+        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
 
       // Count 10h extension days this week
       const dailyTotals = new Map<string, number>();
-      driverActivities
+      drivingActivities
         .filter((a: any) => new Date(a.start_time) >= weekStart)
         .forEach((a: any) => {
           const day = new Date(a.start_time).toISOString().split("T")[0];
-          dailyTotals.set(day, (dailyTotals.get(day) || 0) + (a.duration_minutes || 0));
+          dailyTotals.set(day, (dailyTotals.get(day) || 0) + getRealDuration(a));
         });
       const extensionsUsed = [...dailyTotals.values()].filter(v => v > DAILY_STANDARD).length;
 
@@ -244,6 +268,8 @@ Deno.serve(async (req) => {
       results.push({
         driver_id: driverId,
         driver_name: profileMap.get(driverId) || null,
+        current_activity: currentActivity,
+        current_activity_start: currentActivityStart,
         continuous_driving_minutes: continuousDriving,
         continuous_driving_limit: CONTINUOUS_LIMIT,
         daily_driving_minutes: dailyDriving,

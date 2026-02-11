@@ -3,11 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle } from "lucide-react";
+import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle, Truck, Wrench, Coffee } from "lucide-react";
 
 // === Types ===
 
 interface DriverStatus {
+  currentActivity: string | null;
+  currentActivityStart: string | null;
   continuousMinutes: number;
   dailyMinutes: number;
   weeklyMinutes: number;
@@ -230,12 +232,42 @@ function AlertBanners({ status }: { status: DriverStatus }) {
   );
 }
 
+// === Activity Status Badge ===
+
+const ACTIVITY_CONFIG: Record<string, { label: string; icon: any; className: string }> = {
+  driving: { label: "A Conduzir", icon: Truck, className: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" },
+  work: { label: "Em Trabalho", icon: Wrench, className: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30" },
+  available: { label: "Disponível", icon: Coffee, className: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30" },
+  rest: { label: "Em Repouso", icon: BedDouble, className: "bg-muted text-muted-foreground border-muted-foreground/20" },
+};
+
+function ActivityBadge({ activity, since }: { activity: string | null; since: string | null }) {
+  const config = activity ? ACTIVITY_CONFIG[activity] : null;
+  if (!config) return null;
+
+  const Icon = config.icon;
+  const sinceStr = since ? new Date(since).toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" }) : null;
+
+  return (
+    <div className={`flex items-center justify-between rounded-lg px-3 py-2 border ${config.className}`}>
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4" />
+        <span className="text-sm font-semibold">{config.label}</span>
+      </div>
+      {sinceStr && <span className="text-xs opacity-75">desde {sinceStr}</span>}
+    </div>
+  );
+}
+
 // === Main Component ===
 
 export function TachographLiveStatus({ driverStatus }: { driverStatus: DriverStatus }) {
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-4 space-y-4">
+        {/* Current Activity State */}
+        <ActivityBadge activity={driverStatus.currentActivity} since={driverStatus.currentActivityStart} />
+
         {/* Smart Alerts */}
         <AlertBanners status={driverStatus} />
 
@@ -275,6 +307,8 @@ export default function TachoWidget() {
         if (!error && res?.results?.length > 0) {
           const d = res.results[0];
           setStatus({
+            currentActivity: d.current_activity || null,
+            currentActivityStart: d.current_activity_start || null,
             continuousMinutes: d.continuous_driving_minutes,
             dailyMinutes: d.daily_driving_minutes,
             weeklyMinutes: d.weekly_driving_minutes,
