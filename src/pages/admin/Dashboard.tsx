@@ -1,4 +1,7 @@
 import { useEffect, useState, useRef } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Truck, AlertTriangle, Fuel, Thermometer, CreditCard,
@@ -255,14 +258,24 @@ export default function Dashboard() {
   };
 
   const [sendingPush, setSendingPush] = useState(false);
-  const handleSendTestPush = async () => {
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
+  const [pushTitle, setPushTitle] = useState("TranspoGest");
+  const [pushBody, setPushBody] = useState("");
+
+  const handleSendPush = async () => {
+    if (!pushTitle.trim() || !pushBody.trim()) {
+      toast.error("Preencha o título e a mensagem");
+      return;
+    }
     setSendingPush(true);
     try {
       const { data, error } = await supabase.functions.invoke("send-push", {
-        body: { title: "TranspoGest", body: "Notificação de teste 🚛" },
+        body: { title: pushTitle.trim(), body: pushBody.trim() },
       });
       if (error) throw error;
       toast.success(`Push enviado: ${data.sent} entregue(s), ${data.failed || 0} falha(s)`);
+      setPushDialogOpen(false);
+      setPushBody("");
     } catch (err: any) {
       toast.error("Erro ao enviar push: " + (err.message || "Erro desconhecido"));
     }
@@ -372,10 +385,33 @@ export default function Dashboard() {
           <p className="page-subtitle">Gestão Global do Sistema</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleSendTestPush} disabled={sendingPush} variant="outline" size="sm">
-            <Send className={`mr-2 h-4 w-4 ${sendingPush ? "animate-pulse" : ""}`} />
-            {sendingPush ? "A enviar..." : "Push Teste"}
-          </Button>
+          <Dialog open={pushDialogOpen} onOpenChange={setPushDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Send className="mr-2 h-4 w-4" />
+                Enviar Push
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Enviar Notificação Push</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="push-title">Título</Label>
+                  <Input id="push-title" value={pushTitle} onChange={e => setPushTitle(e.target.value)} placeholder="TranspoGest" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="push-body">Mensagem</Label>
+                  <Textarea id="push-body" value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Escreva a mensagem..." rows={3} />
+                </div>
+                <Button onClick={handleSendPush} disabled={sendingPush || !pushTitle.trim() || !pushBody.trim()} className="w-full">
+                  <Send className={`mr-2 h-4 w-4 ${sendingPush ? "animate-pulse" : ""}`} />
+                  {sendingPush ? "A enviar..." : "Enviar para todos"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Button onClick={handleSync} disabled={syncing} variant="outline" size="sm">
             <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "A sincronizar..." : "Sincronizar GPS"}
