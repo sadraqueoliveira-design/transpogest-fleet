@@ -4,7 +4,7 @@ import { requestNotificationPermission, getFirebaseMessaging, onMessage } from "
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-const VAPID_KEY = ""; // User must set this
+const VAPID_KEY = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
 
 export function usePushNotifications() {
   const { user } = useAuth();
