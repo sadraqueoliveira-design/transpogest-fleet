@@ -160,6 +160,35 @@ export default function Dashboard() {
   const now = new Date();
   const in60Days = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
+  // Find nearest hub within 2km (moved before stats)
+  const getNearestHub = (v: Vehicle): HubLocation | null => {
+    if (v.last_lat == null || v.last_lng == null) return null;
+    let best: HubLocation | null = null;
+    let bestDist = 2; // max 2km
+    for (const h of hubs) {
+      if (h.lat == null || h.lng == null) continue;
+      const dlat = (v.last_lat - h.lat) * 111.32;
+      const dlng = (v.last_lng - h.lng!) * 111.32 * Math.cos(v.last_lat * Math.PI / 180);
+      const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+      if (dist < bestDist) { bestDist = dist; best = h; }
+    }
+    return best;
+  };
+
+  const isAtStore = (v: Vehicle) => {
+    const h = getNearestHub(v);
+    if (!h || !h.type) return false;
+    const t = h.type.toLowerCase();
+    return ["loja", "supermercado", "hipermercado", "ultra proximidade", "franchising", "partenariado", "mfc"].includes(t);
+  };
+
+  const isAtSupplier = (v: Vehicle) => {
+    const h = getNearestHub(v);
+    if (!h || !h.type) return false;
+    const t = h.type.toLowerCase();
+    return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
+  };
+
   const stats = {
     total: vehicles.length,
     moving: vehicles.filter(v => getStatus(v) === "moving").length,
@@ -182,18 +211,8 @@ export default function Dashboard() {
       v.tachograph_calibration_date &&
       new Date(v.tachograph_calibration_date) <= now
     ).length,
-    atStore: vehicles.filter(v => {
-      const h = getNearestHub(v);
-      if (!h || !h.type) return false;
-      const t = h.type.toLowerCase();
-      return ["loja", "supermercado", "hipermercado", "ultra proximidade", "franchising", "partenariado", "mfc"].includes(t);
-    }).length,
-    atSupplier: vehicles.filter(v => {
-      const h = getNearestHub(v);
-      if (!h || !h.type) return false;
-      const t = h.type.toLowerCase();
-      return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
-    }).length,
+    atStore: vehicles.filter(v => isAtStore(v)).length,
+    atSupplier: vehicles.filter(v => isAtSupplier(v)).length,
   };
 
   // Normalize card number: remove prefix "5B.", leading zeros, last 2 digits
@@ -222,20 +241,6 @@ export default function Dashboard() {
     try { return JSON.parse(v.tachograph_status)?.dc1 || null; } catch { return null; }
   };
 
-  // Find nearest hub within 2km
-  const getNearestHub = (v: Vehicle): HubLocation | null => {
-    if (v.last_lat == null || v.last_lng == null) return null;
-    let best: HubLocation | null = null;
-    let bestDist = 2; // max 2km
-    for (const h of hubs) {
-      if (h.lat == null || h.lng == null) continue;
-      const dlat = (v.last_lat - h.lat) * 111.32;
-      const dlng = (v.last_lng - h.lng!) * 111.32 * Math.cos(v.last_lat * Math.PI / 180);
-      const dist = Math.sqrt(dlat * dlat + dlng * dlng);
-      if (dist < bestDist) { bestDist = dist; best = h; }
-    }
-    return best;
-  };
 
   const filtered = vehicles.filter(v => {
     if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
@@ -252,18 +257,8 @@ export default function Dashboard() {
     if (filterTab === "moving") return getStatus(v) === "moving";
     if (filterTab === "stopped") return getStatus(v) === "stopped";
     if (filterTab === "alerts") return hasAlert(v);
-    if (filterTab === "at_store") {
-      const h = getNearestHub(v);
-      if (!h || !h.type) return false;
-      const t = h.type.toLowerCase();
-      return ["loja", "supermercado", "hipermercado", "ultra proximidade", "franchising", "partenariado", "mfc"].includes(t);
-    }
-    if (filterTab === "at_supplier") {
-      const h = getNearestHub(v);
-      if (!h || !h.type) return false;
-      const t = h.type.toLowerCase();
-      return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
-    }
+    if (filterTab === "at_store") return isAtStore(v);
+    if (filterTab === "at_supplier") return isAtSupplier(v);
     return true;
   });
 
