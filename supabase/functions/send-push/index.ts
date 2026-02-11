@@ -148,10 +148,20 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               message: {
                 token: fcmToken,
-                notification: { title: payload.title, body: payload.body },
-                data: payload.data || {},
+                data: {
+                  title: payload.title,
+                  body: payload.body,
+                  route: payload.data?.route || "/",
+                  ...(payload.data || {}),
+                },
                 webpush: {
-                  fcm_options: { link: "/" },
+                  notification: {
+                    title: payload.title,
+                    body: payload.body,
+                    icon: "/pwa-192x192.png",
+                    badge: "/pwa-192x192.png",
+                  },
+                  fcm_options: { link: payload.data?.route || "/" },
                 },
               },
             }),
