@@ -71,7 +71,23 @@ Deno.serve(async (req) => {
 
     if (!serviceAccountJson) throw new Error("FIREBASE_SERVICE_ACCOUNT secret not set");
 
-    const serviceAccount = JSON.parse(serviceAccountJson);
+    // Handle cases where the secret might be double-quoted or have extra escaping
+    let cleanedJson = serviceAccountJson.trim();
+    // If wrapped in outer quotes (e.g. "'{...}'" or '"{...}"'), unwrap
+    if ((cleanedJson.startsWith('"') && cleanedJson.endsWith('"')) || 
+        (cleanedJson.startsWith("'") && cleanedJson.endsWith("'"))) {
+      cleanedJson = cleanedJson.slice(1, -1);
+    }
+    // Replace escaped newlines if present
+    cleanedJson = cleanedJson.replace(/\\\\n/g, '\\n');
+    
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(cleanedJson);
+    } catch (parseErr) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT. First 50 chars:", cleanedJson.substring(0, 50));
+      throw new Error("FIREBASE_SERVICE_ACCOUNT is not valid JSON. Please paste the full service account JSON file contents.");
+    }
     const projectId = serviceAccount.project_id;
 
     // Verify caller is admin/manager
