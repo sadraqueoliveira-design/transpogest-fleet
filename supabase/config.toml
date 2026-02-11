@@ -18,5 +18,8 @@ verify_jwt = false
 [functions.send-push]
 verify_jwt = false
 
+[functions.notify-missing-card]
+verify_jwt = false
+
 [functions.check-tacho-gaps]
 verify_jwt = false
