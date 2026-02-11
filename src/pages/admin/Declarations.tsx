@@ -136,13 +136,40 @@ export default function Declarations() {
     if (!selectedDecl) return;
     setSigning(true);
 
+    // Try to find the traffic manager from the driver's hub
+    let managerName = profile?.full_name || null;
+    try {
+      // Look up driver's vehicle -> client -> hub with traffic manager
+      const { data: vehicle } = await supabase
+        .from("vehicles")
+        .select("client_id")
+        .eq("current_driver_id", selectedDecl.driver_id)
+        .maybeSingle();
+      
+      if (vehicle?.client_id) {
+        const { data: hub } = await supabase
+          .from("hubs")
+          .select("traffic_manager_name")
+          .eq("client_id", vehicle.client_id)
+          .not("traffic_manager_name", "is", null)
+          .limit(1)
+          .maybeSingle();
+        
+        if (hub?.traffic_manager_name) {
+          managerName = hub.traffic_manager_name;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch hub manager:", e);
+    }
+
     const { error } = await supabase
       .from("activity_declarations")
       .update({
         status: "signed",
         reason_code: reasonCode as any,
         reason_text: reasonText || null,
-        manager_name: profile?.full_name || null,
+        manager_name: managerName,
       })
       .eq("id", selectedDecl.id);
 
@@ -160,7 +187,7 @@ export default function Declarations() {
           gapEndDate: driverFields.gapEndDate || selectedDecl.gap_end_date,
           reasonCode,
           reasonText: reasonText || undefined,
-          managerName: profile?.full_name || "—",
+          managerName: managerName || "—",
           companyName: selectedDecl.company_name,
           ...editFields,
         });
