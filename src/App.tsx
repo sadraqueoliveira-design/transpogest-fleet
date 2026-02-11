@@ -27,6 +27,7 @@ import TachographCards from "./pages/admin/TachographCards";
 import AntramSettings from "./pages/admin/AntramSettings";
 import FuelManagement from "./pages/admin/FuelManagement";
 import Declarations from "./pages/admin/Declarations";
+import Compliance from "./pages/admin/Compliance";
 
 // Driver pages
 import DriverHome from "./pages/driver/DriverHome";
@@ -78,6 +79,7 @@ const App = () => (
             <Route path="/admin/tacografo" element={<AdminRoute><TachographCards /></AdminRoute>} />
             <Route path="/admin/declaracoes" element={<AdminRoute><Declarations /></AdminRoute>} />
             <Route path="/admin/antram" element={<AdminRoute><AntramSettings /></AdminRoute>} />
+            <Route path="/admin/compliance" element={<AdminRoute><Compliance /></AdminRoute>} />
 
             {/* Driver routes */}
             <Route path="/motorista" element={<DriverRoute><DriverHome /></DriverRoute>} />
