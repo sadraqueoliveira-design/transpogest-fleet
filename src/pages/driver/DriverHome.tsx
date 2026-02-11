@@ -61,8 +61,16 @@ export default function DriverHome() {
         return;
       }
 
-      // Register service worker and get token
-      console.log("[PUSH] Registering SW...");
+      // Unregister old SW and register fresh to clear stale tokens
+      console.log("[PUSH] Unregistering old SWs...");
+      const existingRegs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of existingRegs) {
+        if (reg.active?.scriptURL.includes("firebase-messaging-sw")) {
+          await reg.unregister();
+          console.log("[PUSH] Unregistered old SW");
+        }
+      }
+      console.log("[PUSH] Registering fresh SW...");
       const sw = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
       await navigator.serviceWorker.ready;
       console.log("[PUSH] SW ready, getting token...");
