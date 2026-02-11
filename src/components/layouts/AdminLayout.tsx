@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
@@ -34,6 +35,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [pendingDeclarations, setPendingDeclarations] = useState(0);
   const { pathname } = useLocation();
   const { profile, signOut, role } = useAuth();
+
+  // Push notifications for admins
+  usePushNotifications();
 
   useEffect(() => {
     const fetchPending = async () => {
