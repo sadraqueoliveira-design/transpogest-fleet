@@ -25,20 +25,38 @@ export default function DriverHome() {
     try {
       // Check if Notification API is available
       if (typeof Notification === "undefined") {
-        toast.error("Este browser não suporta notificações. Abra a app diretamente no browser (não em iframe).");
+        alert("Este browser não suporta notificações. Abra a app diretamente no browser.");
+        toast.error("Este browser não suporta notificações.");
         return;
       }
 
       // Check if service workers are supported
       if (!("serviceWorker" in navigator)) {
+        alert("Service Workers não suportados neste browser.");
         toast.error("Service Workers não suportados neste browser.");
         return;
       }
 
-      console.log("Requesting notification permission...");
+      // First request permission directly
+      console.log("[PUSH] Current permission:", Notification.permission);
+      const permission = await Notification.requestPermission();
+      console.log("[PUSH] Permission result:", permission);
+
+      if (permission === "denied") {
+        alert("Notificações bloqueadas pelo browser. Vá às definições do site e ative as notificações.");
+        setPushPermission("denied");
+        return;
+      }
+
+      if (permission !== "granted") {
+        alert("Permissão não concedida: " + permission);
+        return;
+      }
+
+      // Now get FCM token
       const vapidKey = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
       const token = await requestNotificationPermission(vapidKey);
-      console.log("FCM token result:", token ? "obtained" : "null");
+      console.log("[PUSH] FCM token result:", token ? "obtained" : "null");
       
       if (token) {
         const { error } = await supabase.from("user_fcm_tokens").upsert(
@@ -46,24 +64,18 @@ export default function DriverHome() {
           { onConflict: "token" }
         );
         if (error) {
-          console.error("Error saving FCM token:", error);
-          toast.error("Erro ao guardar token: " + error.message);
+          alert("Erro ao guardar token: " + error.message);
         } else {
           setPushPermission("granted");
+          alert("Notificações ativadas com sucesso!");
           toast.success("Notificações ativadas com sucesso!");
         }
       } else {
-        const perm = typeof Notification !== "undefined" ? Notification.permission : "default";
-        setPushPermission(perm);
-        if (perm === "denied") {
-          toast.error("Notificações bloqueadas. Ative nas definições do browser para este site.");
-        } else {
-          toast.warning("Não foi possível obter o token. Tente abrir a app diretamente no browser (não dentro do Lovable).");
-        }
+        alert("Não foi possível obter o token FCM. Verifique a consola (F12) para mais detalhes.");
       }
     } catch (err: any) {
-      console.error("Push request failed:", err);
-      toast.error("Erro ao ativar notificações: " + (err?.message || String(err)));
+      console.error("[PUSH] Error:", err);
+      alert("Erro: " + (err?.message || String(err)));
     } finally {
       setRequestingPush(false);
     }
