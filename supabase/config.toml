@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.check-driving-limits]
 verify_jwt = false
+
+[functions.map-tacho-cards]
+verify_jwt = false
