@@ -18,6 +18,7 @@ import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
 import SignaturePad from "@/components/SignaturePad";
 import { uploadSignature, uploadSignedPDF, collectSigningMetadata, createAuditLog } from "@/lib/signatureUtils";
+import { fetchManagerSignatureForPDF } from "@/lib/managerSignature";
 
 interface Declaration {
   id: string;
@@ -88,7 +89,7 @@ export default function Declarations() {
   const [savedManagerSig, setSavedManagerSig] = useState<string | null>(null);
   const [showSaveSignature, setShowSaveSignature] = useState(false);
 
-  // Load saved manager signature
+  // Load saved manager signature (from private manager-signatures bucket)
   useEffect(() => {
     if (!user) return;
     supabase
@@ -96,9 +97,19 @@ export default function Declarations() {
       .select("saved_signature_url")
       .eq("id", user.id)
       .maybeSingle()
-      .then(({ data }) => {
-        if ((data as any)?.saved_signature_url) {
-          setSavedManagerSig((data as any).saved_signature_url);
+      .then(async ({ data }) => {
+        const path = (data as any)?.saved_signature_url;
+        if (path) {
+          // Try to get a signed URL from private bucket
+          const { data: signed } = await supabase.storage
+            .from("manager-signatures")
+            .createSignedUrl(path, 60 * 60);
+          if (signed?.signedUrl) {
+            setSavedManagerSig(signed.signedUrl);
+          } else {
+            // Fallback: maybe it's an old public URL
+            setSavedManagerSig(path);
+          }
         }
       });
   }, [user]);
@@ -232,14 +243,21 @@ export default function Declarations() {
         }
       } catch (e) { console.warn("Could not fetch hub manager:", e); }
 
-      // Fetch saved signature as data URL
-      const res = await fetch(savedManagerSig);
-      const blob = await res.blob();
-      const managerSigDataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(blob);
-      });
+      // Fetch digitized signature from private bucket as data URL for PDF
+      const managerSigDataUrl = await fetchManagerSignatureForPDF(user.id);
+      if (!managerSigDataUrl) {
+        // Fallback: fetch from the saved URL
+        const res = await fetch(savedManagerSig);
+        const blob = await res.blob();
+        const fallbackDataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+        var finalManagerSigDataUrl = fallbackDataUrl;
+      } else {
+        var finalManagerSigDataUrl = managerSigDataUrl;
+      }
 
       // Create audit log first to get verification ID
       const managerAuditVerificationId = await createAuditLog({
@@ -255,7 +273,7 @@ export default function Declarations() {
         signature_url: savedManagerSig,
       });
 
-      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, managerSigDataUrl, managerName || "—", managerAuditVerificationId);
+      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, finalManagerSigDataUrl, managerName || "—", managerAuditVerificationId);
 
       // Update audit log with PDF URL
       await supabase

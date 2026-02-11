@@ -7,15 +7,18 @@ import { LogOut, User, Hash, CheckCircle, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import SignatureUpload from "@/components/admin/SignatureUpload";
 
 export default function DriverProfile() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, role, signOut } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [licenseNumber, setLicenseNumber] = useState(profile?.license_number || "");
   const [employeeNumber, setEmployeeNumber] = useState("");
   const [linkedEmployee, setLinkedEmployee] = useState<{ employee_number: number; full_name: string } | null>(null);
   const [linking, setLinking] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
+  const isManagerOrAdmin = role === "admin" || role === "manager";
 
   useEffect(() => {
     if (!user) return;
@@ -26,7 +29,20 @@ export default function DriverProfile() {
           setEmployeeNumber(String(data.employee_number));
         }
       });
-  }, [user]);
+
+    // Load existing signature URL for managers
+    if (isManagerOrAdmin) {
+      supabase.from("profiles").select("saved_signature_url").eq("id", user.id).maybeSingle()
+        .then(async ({ data }) => {
+          if (data?.saved_signature_url) {
+            const { data: signed } = await supabase.storage
+              .from("manager-signatures")
+              .createSignedUrl(data.saved_signature_url, 60 * 60);
+            if (signed) setSignatureUrl(signed.signedUrl);
+          }
+        });
+    }
+  }, [user, isManagerOrAdmin]);
 
   const handleLinkEmployee = async () => {
     if (!user || !employeeNumber.trim()) return;
@@ -148,6 +164,14 @@ export default function DriverProfile() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Manager/Admin signature upload */}
+      {isManagerOrAdmin && (
+        <SignatureUpload
+          currentUrl={signatureUrl}
+          onSaved={(url) => setSignatureUrl(url)}
+        />
+      )}
 
       <Button variant="outline" className="w-full text-destructive" onClick={signOut}>
         <LogOut className="mr-2 h-4 w-4" />Terminar Sessão
