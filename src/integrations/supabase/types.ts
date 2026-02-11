@@ -867,6 +867,65 @@ export type Database = {
         }
         Relationships: []
       }
+      signature_audit_logs: {
+        Row: {
+          created_at: string
+          declaration_id: string
+          device_info: string | null
+          gps_lat: number | null
+          gps_lng: number | null
+          id: string
+          ip_address: string | null
+          pdf_url: string | null
+          signature_url: string | null
+          signed_at: string
+          signed_by_user_id: string
+          signer_name: string
+          signer_role: string
+          verification_id: string
+        }
+        Insert: {
+          created_at?: string
+          declaration_id: string
+          device_info?: string | null
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          ip_address?: string | null
+          pdf_url?: string | null
+          signature_url?: string | null
+          signed_at?: string
+          signed_by_user_id: string
+          signer_name: string
+          signer_role: string
+          verification_id?: string
+        }
+        Update: {
+          created_at?: string
+          declaration_id?: string
+          device_info?: string | null
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          ip_address?: string | null
+          pdf_url?: string | null
+          signature_url?: string | null
+          signed_at?: string
+          signed_by_user_id?: string
+          signer_name?: string
+          signer_role?: string
+          verification_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signature_audit_logs_declaration_id_fkey"
+            columns: ["declaration_id"]
+            isOneToOne: false
+            referencedRelation: "activity_declarations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tachograph_cards: {
         Row: {
           card_number: string

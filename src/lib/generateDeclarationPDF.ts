@@ -23,6 +23,7 @@ interface DeclarationPDFData {
   managerSignatureDataUrl?: string;
   signedAt?: string;
   signedIP?: string;
+  verificationId?: string;
 }
 
 const REASON_MAP: Record<string, number> = {
@@ -223,13 +224,16 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.line(margin, y, W - margin, y);
   y += 3;
 
-  // Digital signature audit trail
-  if (data.signedAt || data.signedIP) {
-    const auditParts: string[] = [];
-    if (data.signedAt) auditParts.push(`Assinado digitalmente em ${data.signedAt}`);
-    if (data.signedIP) auditParts.push(`IP: ${data.signedIP}`);
+  // Digital signature audit trail watermark
+  if (data.signedAt || data.signedIP || data.verificationId) {
     doc.setFont("helvetica", "bold");
-    doc.text(`${auditParts.join(" — ")} via TranspoGest`, margin, y);
+    const signerLine = `Assinado digitalmente por ${data.driverName} em ${data.signedAt || today}`;
+    doc.text(signerLine, margin, y);
+    y += 3;
+    const auditParts: string[] = [];
+    if (data.signedIP) auditParts.push(`IP: ${data.signedIP}`);
+    if (data.verificationId) auditParts.push(`ID de Verificação: ${data.verificationId}`);
+    doc.text(`${auditParts.join(" — ")} — via TranspoGest`, margin, y);
     y += 3;
     doc.setFont("helvetica", "italic");
   }
