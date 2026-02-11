@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Truck, AlertTriangle, Fuel, Thermometer, CreditCard,
   RefreshCw, Bell, Navigation, Store, Warehouse,
-  Search, LayoutGrid, Map as MapIcon, Filter, Send
+  Search, LayoutGrid, Map as MapIcon, Filter, Send, Users, Check
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -261,21 +261,54 @@ export default function Dashboard() {
   const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [pushTitle, setPushTitle] = useState("TranspoGest");
   const [pushBody, setPushBody] = useState("");
+  const [pushTarget, setPushTarget] = useState<"all" | "selected">("all");
+  const [selectedDriverIds, setSelectedDriverIds] = useState<string[]>([]);
+  const [driverProfiles, setDriverProfiles] = useState<{ id: string; full_name: string | null }[]>([]);
+
+  useEffect(() => {
+    if (!pushDialogOpen) return;
+    const fetchDrivers = async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "driver");
+      if (!data) return;
+      const ids = data.map(d => d.user_id);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", ids);
+      setDriverProfiles(profiles || []);
+    };
+    fetchDrivers();
+  }, [pushDialogOpen]);
+
+  const toggleDriver = (id: string) => {
+    setSelectedDriverIds(prev =>
+      prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]
+    );
+  };
 
   const handleSendPush = async () => {
     if (!pushTitle.trim() || !pushBody.trim()) {
       toast.error("Preencha o título e a mensagem");
       return;
     }
+    if (pushTarget === "selected" && selectedDriverIds.length === 0) {
+      toast.error("Selecione pelo menos um motorista");
+      return;
+    }
     setSendingPush(true);
     try {
-      const { data, error } = await supabase.functions.invoke("send-push", {
-        body: { title: pushTitle.trim(), body: pushBody.trim() },
-      });
+      const body: any = { title: pushTitle.trim(), body: pushBody.trim() };
+      if (pushTarget === "selected") body.user_ids = selectedDriverIds;
+      const { data, error } = await supabase.functions.invoke("send-push", { body });
       if (error) throw error;
       toast.success(`Push enviado: ${data.sent} entregue(s), ${data.failed || 0} falha(s)`);
       setPushDialogOpen(false);
       setPushBody("");
+      setSelectedDriverIds([]);
+      setPushTarget("all");
     } catch (err: any) {
       toast.error("Erro ao enviar push: " + (err.message || "Erro desconhecido"));
     }
@@ -405,9 +438,38 @@ export default function Dashboard() {
                   <Label htmlFor="push-body">Mensagem</Label>
                   <Textarea id="push-body" value={pushBody} onChange={e => setPushBody(e.target.value)} placeholder="Escreva a mensagem..." rows={3} />
                 </div>
-                <Button onClick={handleSendPush} disabled={sendingPush || !pushTitle.trim() || !pushBody.trim()} className="w-full">
+                <div className="space-y-2">
+                  <Label>Destinatários</Label>
+                  <div className="flex gap-2">
+                    <Button type="button" variant={pushTarget === "all" ? "default" : "outline"} size="sm" onClick={() => { setPushTarget("all"); setSelectedDriverIds([]); }}>
+                      <Users className="mr-1.5 h-3.5 w-3.5" /> Todos
+                    </Button>
+                    <Button type="button" variant={pushTarget === "selected" ? "default" : "outline"} size="sm" onClick={() => setPushTarget("selected")}>
+                      <Check className="mr-1.5 h-3.5 w-3.5" /> Selecionar
+                    </Button>
+                  </div>
+                </div>
+                {pushTarget === "selected" && (
+                  <div className="max-h-48 overflow-y-auto space-y-1 rounded-md border p-2">
+                    {driverProfiles.length === 0 && <p className="text-sm text-muted-foreground py-2 text-center">Nenhum motorista encontrado</p>}
+                    {driverProfiles.map(d => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => toggleDriver(d.id)}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${selectedDriverIds.includes(d.id) ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted"}`}
+                      >
+                        <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selectedDriverIds.includes(d.id) ? "bg-primary border-primary" : "border-muted-foreground/30"}`}>
+                          {selectedDriverIds.includes(d.id) && <Check className="h-3 w-3 text-primary-foreground" />}
+                        </div>
+                        {d.full_name || "Sem nome"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <Button onClick={handleSendPush} disabled={sendingPush || !pushTitle.trim() || !pushBody.trim() || (pushTarget === "selected" && selectedDriverIds.length === 0)} className="w-full">
                   <Send className={`mr-2 h-4 w-4 ${sendingPush ? "animate-pulse" : ""}`} />
-                  {sendingPush ? "A enviar..." : "Enviar para todos"}
+                  {sendingPush ? "A enviar..." : pushTarget === "all" ? "Enviar para todos" : `Enviar para ${selectedDriverIds.length} motorista(s)`}
                 </Button>
               </div>
             </DialogContent>
