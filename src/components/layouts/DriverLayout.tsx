@@ -2,7 +2,7 @@ import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Home, Fuel, FileText, AlertTriangle, User, ClipboardList } from "lucide-react";
+import { Home, Fuel, FileText, AlertTriangle, User, ClipboardList, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
@@ -15,6 +15,7 @@ const navItems = [
   { to: "/motorista/solicitacoes", icon: FileText, label: "Pedidos" },
   { to: "/motorista/ocorrencia", icon: AlertTriangle, label: "Ocorrência" },
   { to: "/motorista/declaracoes", icon: ClipboardList, label: "Declarações" },
+  { to: "/motorista/documentos", icon: FolderOpen, label: "Docs" },
   { to: "/motorista/perfil", icon: User, label: "Perfil" },
 ];
 
