@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
 import InstallPrompt from "@/components/driver/InstallPrompt";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const navItems = [
   { to: "/motorista", icon: Home, label: "Início" },
@@ -20,6 +21,9 @@ const navItems = [
 export default function DriverLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { profile, user } = useAuth();
+
+  // Push notifications
+  usePushNotifications();
 
   // Force dark mode on driver app
   useEffect(() => {
