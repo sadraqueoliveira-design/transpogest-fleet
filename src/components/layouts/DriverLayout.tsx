@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
 import InstallPrompt from "@/components/driver/InstallPrompt";
+import OfflineIndicator from "@/components/driver/OfflineIndicator";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 const navItems = [
@@ -77,6 +78,9 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
       <main className="flex-1 p-4 pb-28">
         {children}
       </main>
+
+      {/* Offline indicator */}
+      <OfflineIndicator />
 
       {/* Install prompt */}
       <InstallPrompt />

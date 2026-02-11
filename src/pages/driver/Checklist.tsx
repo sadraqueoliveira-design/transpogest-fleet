@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -31,6 +32,7 @@ const defaultChecklist: FormField[] = [
 
 export default function Checklist() {
   const { user } = useAuth();
+  const { enqueue } = useOfflineQueue();
   const navigate = useNavigate();
   const [values, setValues] = useState<Record<string, any>>({});
   const [dynamicForms, setDynamicForms] = useState<{ id: string; title: string; fields: FormField[] }[]>([]);
@@ -60,7 +62,6 @@ export default function Checklist() {
   };
 
   const handleSubmit = async () => {
-    // Validate required fields
     for (const field of activeFields) {
       if (field.required && !values[field.name]) {
         toast.error(`O campo "${field.label}" é obrigatório`);
@@ -69,18 +70,29 @@ export default function Checklist() {
     }
 
     setLoading(true);
-    const { data: vehicle } = await supabase.from("vehicles").select("id").eq("current_driver_id", user?.id).maybeSingle();
-    const { error } = await supabase.from("checklist_submissions").insert({
-      driver_id: user?.id,
-      vehicle_id: vehicle?.id || null,
-      form_id: selectedFormId === "default" ? null : selectedFormId,
-      data: values,
-    });
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Checklist submetido com sucesso!");
-      navigate("/motorista");
+
+    // Get vehicle if online
+    let vehicleId: string | null = null;
+    if (navigator.onLine) {
+      const { data: vehicle } = await supabase.from("vehicles").select("id").eq("current_driver_id", user?.id).maybeSingle();
+      vehicleId = vehicle?.id || null;
     }
+
+    try {
+      const success = await enqueue("checklist_submissions", {
+        driver_id: user?.id,
+        vehicle_id: vehicleId,
+        form_id: selectedFormId === "default" ? null : selectedFormId,
+        data: values,
+      });
+      if (success) {
+        toast.success("Checklist submetido com sucesso!");
+        navigate("/motorista");
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+
     setLoading(false);
   };
 
@@ -168,7 +180,6 @@ export default function Checklist() {
     <div className="space-y-4 animate-fade-in">
       <h1 className="text-xl font-bold">Checklist Diário</h1>
 
-      {/* Form selector */}
       {dynamicForms.length > 0 && (
         <div className="space-y-2">
           <Label className="text-sm text-muted-foreground">Formulário</Label>

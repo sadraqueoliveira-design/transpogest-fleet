@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function FuelLog() {
   const { user } = useAuth();
+  const { enqueue } = useOfflineQueue();
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [form, setForm] = useState({
     vehicle_id: "",
@@ -35,19 +37,6 @@ export default function FuelLog() {
     });
   }, [user]);
 
-  const uploadReceipt = async (): Promise<string | null> => {
-    if (!receiptFile || !user) return null;
-    const ext = receiptFile.name.split(".").pop();
-    const path = `${user.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("fuel-receipts").upload(path, receiptFile);
-    if (error) {
-      toast.error("Erro ao enviar recibo: " + error.message);
-      return null;
-    }
-    const { data } = supabase.storage.from("fuel-receipts").getPublicUrl(path);
-    return data.publicUrl;
-  };
-
   const requiresReceipt = form.payment_method === "cash" || form.payment_method === "credit_card";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,24 +46,39 @@ export default function FuelLog() {
       return;
     }
     setLoading(true);
-    const receiptUrl = await uploadReceipt();
-    const { error } = await supabase.from("fuel_logs").insert({
+
+    const payload: Record<string, any> = {
       vehicle_id: form.vehicle_id,
       driver_id: user?.id,
-      fuel_type: form.fuel_type as any,
+      fuel_type: form.fuel_type,
       liters: parseFloat(form.liters),
       price_per_liter: form.price_per_liter ? parseFloat(form.price_per_liter) : null,
       odometer_at_fillup: form.odometer_at_fillup ? parseFloat(form.odometer_at_fillup) : null,
       reefer_engine_hours: form.fuel_type === "Reefer_Diesel" && form.reefer_engine_hours ? parseFloat(form.reefer_engine_hours) : null,
-      receipt_photo_url: receiptUrl,
+      receipt_photo_url: null,
       payment_method: form.payment_method,
-    } as any);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Abastecimento registado!");
-      setForm({ ...form, liters: "", price_per_liter: "", odometer_at_fillup: "", reefer_engine_hours: "" });
-      setReceiptFile(null);
+    };
+
+    // Prepare file for offline queue if needed
+    let files: any[] | undefined;
+    if (receiptFile && user) {
+      const ext = receiptFile.name.split(".").pop();
+      const path = `${user.id}/${Date.now()}.${ext}`;
+      const blobUrl = URL.createObjectURL(receiptFile);
+      files = [{ bucket: "fuel-receipts", path, fieldKey: "receipt_photo_url", blob: blobUrl }];
     }
+
+    try {
+      const success = await enqueue("fuel_logs", payload, files ? { files } : undefined);
+      if (success) {
+        toast.success("Abastecimento registado!");
+        setForm({ ...form, liters: "", price_per_liter: "", odometer_at_fillup: "", reefer_engine_hours: "" });
+        setReceiptFile(null);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao registar");
+    }
+
     setLoading(false);
   };
 
@@ -151,7 +155,6 @@ export default function FuelLog() {
               </div>
             )}
 
-            {/* Receipt photo upload - only for non-fleet-card payments */}
             {requiresReceipt && (
               <div className="space-y-2">
                 <Label>Foto do Recibo *</Label>
