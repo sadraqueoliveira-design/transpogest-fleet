@@ -1,71 +1,268 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Shield, AlertTriangle } from "lucide-react";
+import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle } from "lucide-react";
 
-interface ComplianceData {
-  continuous_driving_minutes: number;
-  continuous_driving_limit: number;
-  daily_driving_minutes: number;
-  daily_driving_limit: number;
-  daily_extended_used_this_week: number;
-  weekly_driving_minutes: number;
-  weekly_driving_limit: number;
-  biweekly_driving_minutes: number;
-  biweekly_driving_limit: number;
+// === Types ===
+
+interface DriverStatus {
+  continuousMinutes: number;
+  dailyMinutes: number;
+  weeklyMinutes: number;
+  biweeklyMinutes: number;
+  extensionsUsed: number;
+  dailyLimit: number;
+  weeklyLimit: number;
+  biweeklyLimit: number;
+  continuousLimit: number;
   warnings: string[];
   violations: string[];
 }
 
-function CircularProgress({ value, max, size = 120, strokeWidth = 10, color = "hsl(var(--primary))", warningColor = "hsl(var(--warning))", dangerColor = "hsl(var(--destructive))" }: {
-  value: number; max: number; size?: number; strokeWidth?: number;
-  color?: string; warningColor?: string; dangerColor?: string;
-}) {
-  const percent = Math.min((value / max) * 100, 100);
+// === Constants (EU 561/2006) ===
+const CONTINUOUS_SAFE = 210;     // 3h30 → green
+const CONTINUOUS_PREPARE = 255;  // 4h15 → yellow
+const DAILY_WARNING = 525;       // 8h45
+
+// === Helpers ===
+
+function fmt(mins: number) {
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h}h${m.toString().padStart(2, "0")}`;
+}
+
+function fmtTimer(mins: number) {
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+}
+
+// === Sub-components ===
+
+function CockpitRing({ value, max }: { value: number; max: number }) {
+  const size = 180;
+  const strokeWidth = 14;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
+  const percent = Math.min((value / max) * 100, 100);
   const offset = circumference - (percent / 100) * circumference;
   const remaining = Math.max(max - value, 0);
-  const hours = Math.floor(remaining / 60);
-  const mins = remaining % 60;
 
-  let strokeColor = color;
-  if (percent >= 100) strokeColor = dangerColor;
-  else if (percent >= 85) strokeColor = warningColor;
+  // Color logic: 0-3h30 green, 3h30-4h15 yellow, >4h15 red
+  let strokeClass = "text-emerald-500";
+  let glowClass = "";
+  let isPulsing = false;
+
+  if (value >= CONTINUOUS_PREPARE) {
+    strokeClass = "text-red-500";
+    glowClass = "drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]";
+    isPulsing = true;
+  } else if (value >= CONTINUOUS_SAFE) {
+    strokeClass = "text-amber-400";
+    glowClass = "drop-shadow-[0_0_6px_rgba(251,191,36,0.4)]";
+  }
 
   return (
-    <div className="relative" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke="hsl(var(--muted))" strokeWidth={strokeWidth}
-        />
-        <circle
-          cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke={strokeColor} strokeWidth={strokeWidth}
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          strokeLinecap="round" className="transition-all duration-700"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-lg font-bold">{hours}h{mins.toString().padStart(2, "0")}</span>
-        <span className="text-[10px] text-muted-foreground">restante</span>
+    <div className="flex flex-col items-center">
+      <div className={`relative ${isPulsing ? "animate-pulse" : ""}`} style={{ width: size, height: size }}>
+        <svg width={size} height={size} className={`-rotate-90 ${glowClass}`}>
+          {/* Track */}
+          <circle
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke="currentColor"
+            className="text-muted/30" strokeWidth={strokeWidth}
+          />
+          {/* Progress */}
+          <circle
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke="currentColor"
+            className={`${strokeClass} transition-all duration-1000 ease-out`}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference} strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        </svg>
+        {/* Center content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-3xl font-mono font-black tracking-tight">
+            {fmtTimer(value)}
+          </span>
+          <span className="text-[11px] text-muted-foreground font-medium mt-0.5">
+            Condução Contínua
+          </span>
+        </div>
       </div>
+      {/* Countdown below */}
+      <p className="text-xs text-muted-foreground mt-2 text-center">
+        {remaining <= 0 ? (
+          <span className="text-destructive font-bold">Pausa obrigatória agora!</span>
+        ) : (
+          <>Pausa obrigatória em: <span className="font-semibold text-foreground">{fmt(remaining)}</span></>
+        )}
+      </p>
     </div>
   );
 }
 
-function formatMinutes(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${h}h${m.toString().padStart(2, "0")}`;
+function MetricCard({ icon: Icon, label, children, className = "" }: {
+  icon: any; label: string; children: React.ReactNode; className?: string;
+}) {
+  return (
+    <div className={`rounded-xl border bg-card/50 p-3 space-y-1.5 ${className}`}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
+      </div>
+      {children}
+    </div>
+  );
 }
+
+function DailyCard({ minutes, limit, extensionsUsed }: { minutes: number; limit: number; extensionsUsed: number }) {
+  const percent = Math.min((minutes / limit) * 100, 100);
+  const barColor = minutes >= limit
+    ? "bg-destructive"
+    : minutes >= limit * 0.9
+    ? "bg-amber-400"
+    : "bg-emerald-500";
+
+  return (
+    <MetricCard icon={Clock} label="Diário">
+      <p className="text-sm font-semibold">{fmt(minutes)} <span className="text-muted-foreground font-normal">/ {fmt(limit)}</span></p>
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${percent}%` }} />
+      </div>
+      {/* Extension dots */}
+      <div className="flex items-center gap-1.5 pt-0.5">
+        <span className="text-[10px] text-muted-foreground">Ext. 10h:</span>
+        {[0, 1].map(i => (
+          <div
+            key={i}
+            className={`w-3 h-3 rounded-full border-[1.5px] transition-colors ${
+              i < extensionsUsed
+                ? "bg-amber-400 border-amber-500"
+                : "bg-transparent border-muted-foreground/25"
+            }`}
+          />
+        ))}
+      </div>
+    </MetricCard>
+  );
+}
+
+function WeeklyCard({ minutes, limit }: { minutes: number; limit: number }) {
+  const color = minutes >= limit
+    ? "text-destructive"
+    : minutes >= 3000 // 50h
+    ? "text-amber-400"
+    : "text-emerald-500";
+
+  return (
+    <MetricCard icon={Calendar} label="Semanal">
+      <p className={`text-sm font-semibold ${color}`}>
+        {fmt(minutes)} <span className="text-muted-foreground font-normal">/ {fmt(limit)}</span>
+      </p>
+    </MetricCard>
+  );
+}
+
+function BiweeklyCard({ minutes, limit }: { minutes: number; limit: number }) {
+  const percent = Math.min((minutes / limit) * 100, 100);
+  const color = percent >= 100 ? "text-destructive" : percent >= 85 ? "text-amber-400" : "text-foreground";
+
+  return (
+    <MetricCard icon={CalendarRange} label="Bi-Semanal">
+      <p className={`text-sm font-semibold ${color}`}>
+        {fmt(minutes)} <span className="text-muted-foreground font-normal">/ {fmt(limit)}</span>
+      </p>
+    </MetricCard>
+  );
+}
+
+function RestCard() {
+  return (
+    <MetricCard icon={BedDouble} label="Próximo Repouso">
+      <p className="text-sm font-semibold">45min <span className="text-muted-foreground font-normal">(Regular)</span></p>
+      <p className="text-[10px] text-muted-foreground">ou 15+30 (Dividido)</p>
+    </MetricCard>
+  );
+}
+
+// === Alert Banners ===
+
+function AlertBanners({ status }: { status: DriverStatus }) {
+  const alerts: { message: string; variant: "critical" | "warning" }[] = [];
+
+  if (status.continuousMinutes >= CONTINUOUS_PREPARE) {
+    alerts.push({ message: "⚠ PAUSA DE 45 MIN NECESSÁRIA AGORA!", variant: "critical" });
+  }
+  if (status.dailyMinutes >= DAILY_WARNING) {
+    alerts.push({ message: "⚠ Fim de turno aproxima-se.", variant: "warning" });
+  }
+  if (status.violations.includes("WEEKLY_LIMIT_EXCEEDED")) {
+    alerts.push({ message: "🚨 Limite semanal de 56h excedido!", variant: "critical" });
+  }
+  if (status.violations.includes("BIWEEKLY_LIMIT_EXCEEDED")) {
+    alerts.push({ message: "🚨 Limite bi-semanal de 90h excedido!", variant: "critical" });
+  }
+
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {alerts.map((alert, i) => (
+        <div
+          key={i}
+          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+            alert.variant === "critical"
+              ? "bg-destructive/15 text-destructive border border-destructive/30 animate-pulse"
+              : "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+          }`}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {alert.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// === Main Component ===
+
+export function TachographLiveStatus({ driverStatus }: { driverStatus: DriverStatus }) {
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="p-4 space-y-4">
+        {/* Smart Alerts */}
+        <AlertBanners status={driverStatus} />
+
+        {/* Cockpit Ring */}
+        <CockpitRing value={driverStatus.continuousMinutes} max={driverStatus.continuousLimit} />
+
+        {/* 2x2 Metrics Grid */}
+        <div className="grid grid-cols-2 gap-2">
+          <DailyCard
+            minutes={driverStatus.dailyMinutes}
+            limit={driverStatus.dailyLimit}
+            extensionsUsed={driverStatus.extensionsUsed}
+          />
+          <WeeklyCard minutes={driverStatus.weeklyMinutes} limit={driverStatus.weeklyLimit} />
+          <BiweeklyCard minutes={driverStatus.biweeklyMinutes} limit={driverStatus.biweeklyLimit} />
+          <RestCard />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// === Connected Wrapper (fetches data from edge function) ===
 
 export default function TachoWidget() {
   const { user } = useAuth();
-  const [data, setData] = useState<ComplianceData | null>(null);
+  const [status, setStatus] = useState<DriverStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -76,7 +273,20 @@ export default function TachoWidget() {
           body: { driver_id: user.id },
         });
         if (!error && res?.results?.length > 0) {
-          setData(res.results[0]);
+          const d = res.results[0];
+          setStatus({
+            continuousMinutes: d.continuous_driving_minutes,
+            dailyMinutes: d.daily_driving_minutes,
+            weeklyMinutes: d.weekly_driving_minutes,
+            biweeklyMinutes: d.biweekly_driving_minutes,
+            extensionsUsed: d.daily_extended_used_this_week,
+            dailyLimit: d.daily_driving_limit,
+            weeklyLimit: d.weekly_driving_limit,
+            biweeklyLimit: d.biweekly_driving_limit,
+            continuousLimit: d.continuous_driving_limit,
+            warnings: d.warnings || [],
+            violations: d.violations || [],
+          });
         }
       } catch {
         // silently fail
@@ -84,7 +294,6 @@ export default function TachoWidget() {
       setLoading(false);
     };
     fetchCompliance();
-    // Refresh every 5 minutes
     const interval = setInterval(fetchCompliance, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [user]);
@@ -92,119 +301,22 @@ export default function TachoWidget() {
   if (loading) {
     return (
       <Card>
-        <CardContent className="p-4 flex items-center justify-center h-32">
-          <div className="animate-pulse text-sm text-muted-foreground">A carregar estado legal...</div>
+        <CardContent className="p-4 flex items-center justify-center h-40">
+          <div className="animate-pulse text-sm text-muted-foreground">A carregar tacógrafo digital...</div>
         </CardContent>
       </Card>
     );
   }
 
-  if (!data) {
+  if (!status) {
     return (
       <Card>
-        <CardContent className="p-4">
+        <CardContent className="p-4 text-center">
           <p className="text-sm text-muted-foreground">Sem dados de condução disponíveis</p>
         </CardContent>
       </Card>
     );
   }
 
-  const hasWarnings = data.warnings.length > 0;
-  const hasViolations = data.violations.length > 0;
-  const borderClass = hasViolations ? "border-destructive/50" : hasWarnings ? "border-warning/50" : "";
-
-  return (
-    <Card className={borderClass}>
-      <CardHeader className="flex flex-row items-center gap-3 pb-2">
-        {hasViolations ? (
-          <AlertTriangle className="h-5 w-5 text-destructive" />
-        ) : (
-          <Shield className="h-5 w-5 text-primary" />
-        )}
-        <CardTitle className="text-base">Estado Legal (EU 561/2006)</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Circular progress for continuous driving */}
-        <div className="flex items-center gap-4">
-          <CircularProgress
-            value={data.continuous_driving_minutes}
-            max={data.continuous_driving_limit}
-          />
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium">Condução Contínua</p>
-            <p className="text-xs text-muted-foreground">
-              Conduziste {formatMinutes(data.continuous_driving_minutes)}.{" "}
-              {data.continuous_driving_minutes >= data.continuous_driving_limit
-                ? <span className="text-destructive font-bold">Pausa obrigatória!</span>
-                : `Tens ${formatMinutes(data.continuous_driving_limit - data.continuous_driving_minutes)} restante.`
-              }
-            </p>
-            {/* Alerts */}
-            {data.warnings.includes("CONTINUOUS_LIMIT_NEAR") && (
-              <Badge variant="outline" className="text-warning border-warning text-[10px]">
-                ⚠️ Pausa em breve
-              </Badge>
-            )}
-            {data.violations.includes("CONTINUOUS_LIMIT_EXCEEDED") && (
-              <Badge variant="destructive" className="text-[10px]">
-                🚨 Limite ultrapassado
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        {/* Daily driving bar */}
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span>Diário: {formatMinutes(data.daily_driving_minutes)}</span>
-            <span className="text-muted-foreground">/ {formatMinutes(data.daily_driving_limit)}</span>
-          </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                data.daily_driving_minutes >= data.daily_driving_limit
-                  ? "bg-destructive"
-                  : data.daily_driving_minutes >= data.daily_driving_limit * 0.85
-                  ? "bg-warning"
-                  : "bg-primary"
-              }`}
-              style={{ width: `${Math.min((data.daily_driving_minutes / data.daily_driving_limit) * 100, 100)}%` }}
-            />
-          </div>
-        </div>
-
-        {/* 10h extension indicators */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Extensões 10h:</span>
-          <div className="flex gap-1">
-            {[0, 1].map(i => (
-              <div
-                key={i}
-                className={`w-4 h-4 rounded-full border-2 ${
-                  i < data.daily_extended_used_this_week
-                    ? "bg-warning border-warning"
-                    : "bg-transparent border-muted-foreground/30"
-                }`}
-              />
-            ))}
-          </div>
-          <span className="text-[10px] text-muted-foreground">
-            ({data.daily_extended_used_this_week}/2 usadas esta semana)
-          </span>
-        </div>
-
-        {/* Weekly and biweekly compact */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="p-2 rounded bg-muted/50">
-            <span className="text-muted-foreground">Semanal</span>
-            <p className="font-medium">{formatMinutes(data.weekly_driving_minutes)} / {formatMinutes(data.weekly_driving_limit)}</p>
-          </div>
-          <div className="p-2 rounded bg-muted/50">
-            <span className="text-muted-foreground">Quinzenal</span>
-            <p className="font-medium">{formatMinutes(data.biweekly_driving_minutes)} / {formatMinutes(data.biweekly_driving_limit)}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+  return <TachographLiveStatus driverStatus={status} />;
 }
