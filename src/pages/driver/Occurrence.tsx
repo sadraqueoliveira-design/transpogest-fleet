@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 export default function Occurrence() {
   const { user } = useAuth();
+  const { enqueue } = useOfflineQueue();
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -58,27 +60,60 @@ export default function Occurrence() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const [photoUrls, audioUrlUploaded] = await Promise.all([uploadPhotos(), uploadAudio()]);
-    const allMedia = [...photoUrls, ...(audioUrlUploaded ? [audioUrlUploaded] : [])];
-    const { data: vehicle } = await supabase.from("vehicles").select("id").eq("current_driver_id", user?.id || "").maybeSingle();
-    const { error } = await supabase.from("occurrences").insert({
-      driver_id: user?.id,
-      vehicle_id: vehicle?.id || null,
-      description,
-      lat: location?.lat || null,
-      lng: location?.lng || null,
-      photos: allMedia.length > 0 ? allMedia : null,
-    });
-    if (error) { toast.error(error.message); hapticError(); }
-    else {
-      toast.success("Ocorrência registada!");
-      hapticSuccess();
-      setDescription("");
-      setLocation(null);
-      setPhotos([]);
-      setAudioBlob(null);
-      setAudioUrl(null);
+
+    // If online, try uploading files directly
+    if (navigator.onLine) {
+      const [photoUrls, audioUrlUploaded] = await Promise.all([uploadPhotos(), uploadAudio()]);
+      const allMedia = [...photoUrls, ...(audioUrlUploaded ? [audioUrlUploaded] : [])];
+      const { data: vehicle } = await supabase.from("vehicles").select("id").eq("current_driver_id", user?.id || "").maybeSingle();
+
+      try {
+        const success = await enqueue("occurrences", {
+          driver_id: user?.id,
+          vehicle_id: vehicle?.id || null,
+          description,
+          lat: location?.lat || null,
+          lng: location?.lng || null,
+          photos: allMedia.length > 0 ? allMedia : null,
+        });
+        if (success) {
+          toast.success("Ocorrência registada!");
+          hapticSuccess();
+          setDescription("");
+          setLocation(null);
+          setPhotos([]);
+          setAudioBlob(null);
+          setAudioUrl(null);
+        }
+      } catch (err: any) {
+        toast.error(err.message);
+        hapticError();
+      }
+    } else {
+      // Offline: save without files (photos can't be serialized easily to localStorage)
+      try {
+        const success = await enqueue("occurrences", {
+          driver_id: user?.id,
+          vehicle_id: null,
+          description,
+          lat: location?.lat || null,
+          lng: location?.lng || null,
+          photos: null,
+        });
+        if (success) {
+          hapticSuccess();
+          setDescription("");
+          setLocation(null);
+          setPhotos([]);
+          setAudioBlob(null);
+          setAudioUrl(null);
+        }
+      } catch (err: any) {
+        toast.error(err.message);
+        hapticError();
+      }
     }
+
     setLoading(false);
   };
 
@@ -105,7 +140,6 @@ export default function Occurrence() {
               <Textarea value={description} onChange={(e) => setDescription(e.target.value)} required placeholder="Descreva o incidente..." rows={4} className="text-base min-h-[120px]" />
             </div>
 
-            {/* Voice note */}
             <div className="space-y-2">
               <Label>Nota de Voz</Label>
               <VoiceRecorder
@@ -123,7 +157,6 @@ export default function Occurrence() {
               </Button>
             </div>
 
-            {/* Photo upload */}
             <div className="space-y-2">
               <Label>Fotos</Label>
               <input
