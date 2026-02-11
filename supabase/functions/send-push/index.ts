@@ -71,6 +71,8 @@ Deno.serve(async (req) => {
 
     if (!serviceAccountJson) throw new Error("FIREBASE_SERVICE_ACCOUNT secret not set");
 
+    console.log("SA secret length:", serviceAccountJson.length, "starts with:", serviceAccountJson.substring(0, 30));
+
     const serviceAccount = JSON.parse(serviceAccountJson);
     const projectId = serviceAccount.project_id;
 
