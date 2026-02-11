@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Truck, AlertTriangle, Fuel, Thermometer, CreditCard,
   RefreshCw, Bell, Navigation, Store, Warehouse,
-  Search, LayoutGrid, Map as MapIcon, Filter
+  Search, LayoutGrid, Map as MapIcon, Filter, Send
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -254,6 +254,21 @@ export default function Dashboard() {
     setSyncing(false);
   };
 
+  const [sendingPush, setSendingPush] = useState(false);
+  const handleSendTestPush = async () => {
+    setSendingPush(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-push", {
+        body: { title: "TranspoGest", body: "Notificação de teste 🚛" },
+      });
+      if (error) throw error;
+      toast.success(`Push enviado: ${data.sent} entregue(s), ${data.failed || 0} falha(s)`);
+    } catch (err: any) {
+      toast.error("Erro ao enviar push: " + (err.message || "Erro desconhecido"));
+    }
+    setSendingPush(false);
+  };
+
   // Map with clustering
   useEffect(() => {
     if (viewMode !== "map" || !mapRef.current) return;
@@ -356,10 +371,16 @@ export default function Dashboard() {
           <h1 className="page-header">Painel de Controlo</h1>
           <p className="page-subtitle">Gestão Global do Sistema</p>
         </div>
-        <Button onClick={handleSync} disabled={syncing} variant="outline" size="sm">
-          <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "A sincronizar..." : "Sincronizar GPS"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={handleSendTestPush} disabled={sendingPush} variant="outline" size="sm">
+            <Send className={`mr-2 h-4 w-4 ${sendingPush ? "animate-pulse" : ""}`} />
+            {sendingPush ? "A enviar..." : "Push Teste"}
+          </Button>
+          <Button onClick={handleSync} disabled={syncing} variant="outline" size="sm">
+            <RefreshCw className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "A sincronizar..." : "Sincronizar GPS"}
+          </Button>
+        </div>
       </div>
 
       {/* Compact Status Widgets */}
