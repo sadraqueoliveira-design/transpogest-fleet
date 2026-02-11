@@ -15,14 +15,17 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   console.log("[firebase-messaging-sw.js] Background message:", payload);
-  const { title, body, icon } = payload.notification || {};
-  const data = payload.data || {};
-  const clickUrl = data.route || "/";
-  self.registration.showNotification(title || "TranspoGest", {
-    body: body || "",
-    icon: icon || "/pwa-192x192.png",
+  // Use data fields (data-only messages) or notification fields
+  const title = payload.data?.title || payload.notification?.title || "TranspoGest";
+  const body = payload.data?.body || payload.notification?.body || "";
+  const icon = payload.notification?.icon || "/pwa-192x192.png";
+  const route = payload.data?.route || "/";
+
+  self.registration.showNotification(title, {
+    body,
+    icon,
     badge: "/pwa-192x192.png",
-    data: { url: clickUrl },
+    data: { url: route },
   });
 });
 
