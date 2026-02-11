@@ -16,9 +16,29 @@ const messaging = firebase.messaging();
 messaging.onBackgroundMessage((payload) => {
   console.log("[firebase-messaging-sw.js] Background message:", payload);
   const { title, body, icon } = payload.notification || {};
+  const data = payload.data || {};
+  const clickUrl = data.route || "/";
   self.registration.showNotification(title || "TranspoGest", {
     body: body || "",
     icon: icon || "/pwa-192x192.png",
     badge: "/pwa-192x192.png",
+    data: { url: clickUrl },
   });
+});
+
+// Handle notification click - open the deep-link URL
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
 });
