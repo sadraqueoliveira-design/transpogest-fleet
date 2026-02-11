@@ -10,43 +10,71 @@ export function usePushNotifications() {
   const listenerSet = useRef(false);
 
   useEffect(() => {
-    // Always set up foreground listener (independent of user/token)
+    // Always set up foreground listener
     if (!listenerSet.current) {
       listenerSet.current = true;
+      console.log("[PUSH] Setting up foreground listener...");
+      
       getFirebaseMessaging().then((messaging) => {
-        if (!messaging) return;
-        console.log("[PUSH] Foreground listener registered");
+        if (!messaging) {
+          console.warn("[PUSH] Messaging not supported, skipping listener");
+          return;
+        }
+        console.log("[PUSH] ✅ Foreground listener active");
+        
         onMessage(messaging, (payload) => {
-          console.log("[PUSH] Foreground message received:", payload);
-          const { title, body } = payload.notification || {};
+          console.log("[PUSH] 🔔 Foreground message received:", JSON.stringify(payload));
+          const title = payload.notification?.title || payload.data?.title || "TranspoGest";
+          const body = payload.notification?.body || payload.data?.body || "";
           const route = payload.data?.route || "/";
-          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-          if (Notification.permission === "granted") {
-            const n = new Notification(title || "TranspoGest", {
-              body: body || "",
-              icon: "/pwa-192x192.png",
-              badge: "/pwa-192x192.png",
-              tag: "foreground-" + Date.now(),
-            });
-            n.onclick = () => {
-              window.focus();
-              if (route !== "/") window.location.href = route;
-              n.close();
-            };
+
+          // Vibrate
+          if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200]);
+            console.log("[PUSH] Vibrated");
           }
-          toast.info(title || "Notificação", { description: body });
+
+          // Native notification
+          if (Notification.permission === "granted") {
+            try {
+              const n = new Notification(title, {
+                body,
+                icon: "/pwa-192x192.png",
+                badge: "/pwa-192x192.png",
+                tag: "fg-" + Date.now(),
+                requireInteraction: true,
+              });
+              n.onclick = () => {
+                window.focus();
+                if (route !== "/") window.location.href = route;
+                n.close();
+              };
+              console.log("[PUSH] Native notification shown");
+            } catch (e) {
+              console.error("[PUSH] Native notification failed:", e);
+            }
+          } else {
+            console.warn("[PUSH] Notification permission:", Notification.permission);
+          }
+
+          // Toast
+          toast.info(title, { description: body, duration: 10000 });
+          console.log("[PUSH] Toast shown");
         });
-      }).catch((err) => console.error("[PUSH] Foreground listener error:", err));
+      }).catch((err) => {
+        console.error("[PUSH] Listener setup error:", err);
+        listenerSet.current = false;
+      });
     }
 
-    // Token registration (needs user)
+    // Token registration
     if (!user || registered.current) return;
 
     const register = async () => {
       try {
         const { data: vapidData, error: vapidError } = await supabase.functions.invoke("get-vapid-key");
         if (vapidError || !vapidData?.vapidKey) {
-          console.error("Failed to get VAPID key:", vapidError);
+          console.error("[PUSH] Failed to get VAPID key:", vapidError);
           return;
         }
         const token = await requestNotificationPermission(vapidData.vapidKey);
@@ -58,9 +86,9 @@ export function usePushNotifications() {
         );
 
         registered.current = true;
-        console.log("[PUSH] FCM token registered");
+        console.log("[PUSH] FCM token registered for user:", user.id);
       } catch (err) {
-        console.error("[PUSH] Push registration failed:", err);
+        console.error("[PUSH] Registration failed:", err);
       }
     };
 
