@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { hapticTap } from "@/lib/haptics";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -405,7 +406,7 @@ export default function TachoWidget() {
     <div className="space-y-2">
       <TachographLiveStatus driverStatus={status} />
       <button
-        onClick={() => fetchCompliance(true)}
+        onClick={() => { hapticTap(); fetchCompliance(true); }}
         disabled={refreshing}
         className="w-full flex items-center justify-center gap-2 rounded-lg border bg-card/50 px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors active:scale-[0.98] disabled:opacity-50"
       >
