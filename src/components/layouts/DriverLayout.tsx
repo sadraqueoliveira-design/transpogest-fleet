@@ -9,6 +9,7 @@ import { hapticTap } from "@/lib/haptics";
 import InstallPrompt from "@/components/driver/InstallPrompt";
 import OfflineIndicator from "@/components/driver/OfflineIndicator";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 
 const navItems = [
   { to: "/motorista", icon: Home, label: "Início" },
@@ -23,6 +24,7 @@ const navItems = [
 export default function DriverLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { profile, user } = useAuth();
+  const { pendingCount } = useOfflineQueue();
 
   // Push notifications
   usePushNotifications();
@@ -96,11 +98,18 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
                 to={item.to}
                 onClick={() => hapticTap()}
                 className={cn(
-                  "flex flex-col items-center gap-0.5 rounded-lg px-3 py-2 min-h-[52px] min-w-[52px] justify-center text-xs font-medium transition-colors",
+                  "relative flex flex-col items-center gap-0.5 rounded-lg px-3 py-2 min-h-[52px] min-w-[52px] justify-center text-xs font-medium transition-colors",
                   active ? "text-driver-nav-active" : "text-driver-nav-foreground"
                 )}
               >
-                <item.icon className={cn("h-6 w-6", active && "text-driver-nav-active")} />
+                <div className="relative">
+                  <item.icon className={cn("h-6 w-6", active && "text-driver-nav-active")} />
+                  {item.to === "/motorista" && pendingCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                      {pendingCount > 9 ? "9+" : pendingCount}
+                    </span>
+                  )}
+                </div>
                 <span className="text-[11px]">{item.label}</span>
               </Link>
             );
