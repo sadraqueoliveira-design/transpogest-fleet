@@ -47,6 +47,8 @@ interface ComplianceStatus {
   continuous_driving_limit: number;
   daily_driving_minutes: number;
   daily_driving_limit: number;
+  daily_work_minutes: number;
+  daily_available_minutes: number;
   daily_extended_used_this_week: number;
   weekly_driving_minutes: number;
   weekly_driving_limit: number;
@@ -199,6 +201,16 @@ Deno.serve(async (req) => {
         .filter((a: any) => new Date(a.start_time) >= todayStart)
         .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
 
+      // Daily work total
+      const dailyWork = driverActivities
+        .filter((a: any) => a.activity_type === "work" && new Date(a.start_time) >= todayStart)
+        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+      // Daily available total
+      const dailyAvailable = driverActivities
+        .filter((a: any) => a.activity_type === "available" && new Date(a.start_time) >= todayStart)
+        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
       // Weekly driving total
       const weeklyDriving = drivingActivities
         .filter((a: any) => new Date(a.start_time) >= weekStart)
@@ -279,6 +291,8 @@ Deno.serve(async (req) => {
         continuous_driving_limit: CONTINUOUS_LIMIT,
         daily_driving_minutes: dailyDriving,
         daily_driving_limit: dailyLimit,
+        daily_work_minutes: dailyWork,
+        daily_available_minutes: dailyAvailable,
         daily_extended_used_this_week: extensionsUsed,
         weekly_driving_minutes: weeklyDriving,
         weekly_driving_limit: WEEKLY_LIMIT,
