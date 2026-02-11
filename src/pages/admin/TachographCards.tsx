@@ -350,6 +350,10 @@ export default function TachographCards() {
                       selected={form.expiry_date}
                       onSelect={(d) => setForm(f => ({ ...f, expiry_date: d }))}
                       initialFocus
+                      captionLayout="dropdown-buttons"
+                      fromYear={2020}
+                      toYear={2035}
+                      defaultMonth={form.expiry_date || new Date()}
                       className={cn("p-3 pointer-events-auto")}
                     />
                   </PopoverContent>
