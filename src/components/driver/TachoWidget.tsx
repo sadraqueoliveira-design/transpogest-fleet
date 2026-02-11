@@ -13,6 +13,8 @@ interface DriverStatus {
   cardInserted: boolean;
   continuousMinutes: number;
   dailyMinutes: number;
+  dailyWorkMinutes: number;
+  dailyAvailableMinutes: number;
   weeklyMinutes: number;
   biweeklyMinutes: number;
   extensionsUsed: number;
@@ -288,8 +290,14 @@ export function TachographLiveStatus({ driverStatus }: { driverStatus: DriverSta
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground text-center">Resumo do dia</p>
             <div className="grid grid-cols-2 gap-2">
-              <MetricCard icon={Clock} label="Condução Hoje">
+              <MetricCard icon={Truck} label="Condução Hoje">
                 <p className="text-sm font-semibold">{fmt(driverStatus.dailyMinutes)}</p>
+              </MetricCard>
+              <MetricCard icon={Wrench} label="Trabalho Hoje">
+                <p className="text-sm font-semibold">{fmt(driverStatus.dailyWorkMinutes)}</p>
+              </MetricCard>
+              <MetricCard icon={Coffee} label="Disponibilidade">
+                <p className="text-sm font-semibold">{fmt(driverStatus.dailyAvailableMinutes)}</p>
               </MetricCard>
               <MetricCard icon={Calendar} label="Condução Semanal">
                 <p className="text-sm font-semibold">{fmt(driverStatus.weeklyMinutes)}</p>
@@ -346,6 +354,8 @@ export default function TachoWidget() {
           cardInserted: d.card_inserted !== false,
           continuousMinutes: d.continuous_driving_minutes,
           dailyMinutes: d.daily_driving_minutes,
+          dailyWorkMinutes: d.daily_work_minutes || 0,
+          dailyAvailableMinutes: d.daily_available_minutes || 0,
           weeklyMinutes: d.weekly_driving_minutes,
           biweeklyMinutes: d.biweekly_driving_minutes,
           extensionsUsed: d.daily_extended_used_this_week,

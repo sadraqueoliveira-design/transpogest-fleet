@@ -42,6 +42,8 @@ export default function TachoTest() {
     cardInserted: true,
     continuousMinutes: continuous,
     dailyMinutes: daily,
+    dailyWorkMinutes: Math.round(daily * 0.3),
+    dailyAvailableMinutes: Math.round(daily * 0.15),
     weeklyMinutes: weekly,
     biweeklyMinutes: biweekly,
     extensionsUsed: extensions,
