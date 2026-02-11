@@ -280,8 +280,9 @@ export default function Drivers() {
                   <SortableHead label="Nome" field="full_name" />
                   <SortableHead label="Encarregado" field="company" className="w-16" />
                   <SortableHead label="Contribuinte" field="nif" />
-                  <SortableHead label="Data Contratação" field="hire_date" />
-                  <SortableHead label="Categoria" field="category_code" />
+                   <SortableHead label="Data Nascimento" field="birth_date" />
+                   <SortableHead label="Data Contratação" field="hire_date" />
+                   <SortableHead label="Categoria" field="category_code" />
                    <SortableHead label="Descrição Cat." field="category_description" />
                    <SortableHead label="Carta Condução" field="license_number" />
                   <SortableHead label="Cartão Condutor" field="card_number" />
@@ -293,9 +294,9 @@ export default function Drivers() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
-                ) : paginated.length === 0 ? (
-                  <TableRow><TableCell colSpan={12} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
+                   <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                 ) : paginated.length === 0 ? (
+                   <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
                 ) : (
                   paginated.map((e) => (
                     <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailEmployee(e)}>
@@ -303,7 +304,8 @@ export default function Drivers() {
                       <TableCell className="font-medium whitespace-nowrap">{e.full_name}</TableCell>
                       <TableCell><Badge variant={e.company === "ART" ? "outline" : "secondary"}>{e.company || "—"}</Badge></TableCell>
                       <TableCell className="font-mono text-xs">{e.nif || "—"}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatDate(e.hire_date)}</TableCell>
+                       <TableCell className="whitespace-nowrap">{formatDate(e.birth_date)}</TableCell>
+                       <TableCell className="whitespace-nowrap">{formatDate(e.hire_date)}</TableCell>
                       <TableCell className="font-mono text-xs">{e.category_code || "—"}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">{e.category_description || "—"}</TableCell>
                       <TableCell className="font-mono text-xs">{e.license_number || "—"}</TableCell>
