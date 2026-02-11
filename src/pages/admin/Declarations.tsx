@@ -17,7 +17,7 @@ import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
 import SignaturePad from "@/components/SignaturePad";
-import { uploadSignature, uploadSignedPDF, getUserIP } from "@/lib/signatureUtils";
+import { uploadSignature, uploadSignedPDF, collectSigningMetadata, createAuditLog } from "@/lib/signatureUtils";
 
 interface Declaration {
   id: string;
@@ -157,13 +157,14 @@ export default function Declarations() {
     }
   };
 
-  /** Generate PDF with signatures and upload */
+  /** Generate PDF with signatures, audit trail and upload */
   const generateAndUploadPDF = async (
     decl: Declaration,
     managerSignatureDataUrl: string,
-    managerName: string
+    managerName: string,
+    verificationId?: string
   ) => {
-    const ip = await getUserIP();
+    const metadata = await collectSigningMetadata(user!.id);
     const signedAt = format(new Date(), "dd/MM/yyyy HH:mm:ss", { locale: pt });
 
     // Fetch driver signature data URL if available
@@ -194,7 +195,8 @@ export default function Declarations() {
       driverSignatureDataUrl: driverSigDataUrl,
       managerSignatureDataUrl: managerSignatureDataUrl,
       signedAt,
-      signedIP: ip,
+      signedIP: metadata.ip_address,
+      verificationId,
       ...editFields,
     });
 
@@ -202,7 +204,7 @@ export default function Declarations() {
     const pdfBlob = pdf.output("blob");
     const pdfUrl = await uploadSignedPDF(pdfBlob, decl.id);
 
-    return { pdfUrl, ip, signedAt };
+    return { pdfUrl, metadata, signedAt };
   };
 
   const handleSignWithSaved = async () => {
@@ -239,7 +241,27 @@ export default function Declarations() {
         reader.readAsDataURL(blob);
       });
 
-      const { pdfUrl, ip } = await generateAndUploadPDF(selectedDecl, managerSigDataUrl, managerName || "—");
+      // Create audit log first to get verification ID
+      const managerAuditVerificationId = await createAuditLog({
+        declaration_id: selectedDecl.id,
+        signed_by_user_id: user.id,
+        signer_role: "manager",
+        signer_name: managerName || profile?.full_name || "Gestor",
+        signed_at: new Date().toISOString(),
+        gps_lat: null,
+        gps_lng: null,
+        device_info: navigator.userAgent,
+        ip_address: (await collectSigningMetadata(user.id)).ip_address,
+        signature_url: savedManagerSig,
+      });
+
+      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, managerSigDataUrl, managerName || "—", managerAuditVerificationId);
+
+      // Update audit log with PDF URL
+      await supabase
+        .from("signature_audit_logs" as any)
+        .update({ pdf_url: pdfUrl } as any)
+        .eq("verification_id", managerAuditVerificationId);
 
       const { error } = await supabase
         .from("activity_declarations")
@@ -251,13 +273,13 @@ export default function Declarations() {
           manager_signature_url: savedManagerSig,
           signed_pdf_url: pdfUrl,
           signed_at: new Date().toISOString(),
-          signed_ip: ip,
+          signed_ip: metadata.ip_address,
         } as any)
         .eq("id", selectedDecl.id);
 
       if (error) throw error;
 
-      toast({ title: "Declaração assinada", description: "PDF gerado com assinatura digital." });
+      toast({ title: "Declaração assinada", description: `PDF gerado. ID: ${managerAuditVerificationId}` });
       setSelectedDecl(null);
       fetchDeclarations();
     } catch (err: any) {
@@ -293,7 +315,27 @@ export default function Declarations() {
         }
       } catch (e) { console.warn("Could not fetch hub manager:", e); }
 
-      const { pdfUrl, ip } = await generateAndUploadPDF(selectedDecl, dataUrl, managerName || "—");
+      // Create audit log
+      const manualVerificationId = await createAuditLog({
+        declaration_id: selectedDecl.id,
+        signed_by_user_id: user.id,
+        signer_role: "manager",
+        signer_name: managerName || profile?.full_name || "Gestor",
+        signed_at: new Date().toISOString(),
+        gps_lat: null,
+        gps_lng: null,
+        device_info: navigator.userAgent,
+        ip_address: (await collectSigningMetadata(user.id)).ip_address,
+        signature_url: managerSigUrl,
+      });
+
+      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, dataUrl, managerName || "—", manualVerificationId);
+
+      // Update audit with PDF
+      await supabase
+        .from("signature_audit_logs" as any)
+        .update({ pdf_url: pdfUrl } as any)
+        .eq("verification_id", manualVerificationId);
 
       const { error } = await supabase
         .from("activity_declarations")
@@ -305,13 +347,13 @@ export default function Declarations() {
           manager_signature_url: managerSigUrl,
           signed_pdf_url: pdfUrl,
           signed_at: new Date().toISOString(),
-          signed_ip: ip,
+          signed_ip: metadata.ip_address,
         } as any)
         .eq("id", selectedDecl.id);
 
       if (error) throw error;
 
-      toast({ title: "Declaração assinada", description: "PDF gerado com assinatura digital." });
+      toast({ title: "Declaração assinada", description: `PDF gerado. ID: ${manualVerificationId}` });
       setShowManagerSig(false);
       setSelectedDecl(null);
       fetchDeclarations();

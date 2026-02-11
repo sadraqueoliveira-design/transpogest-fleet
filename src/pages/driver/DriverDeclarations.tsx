@@ -13,7 +13,7 @@ import { FileText, Clock, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import SignaturePad from "@/components/SignaturePad";
-import { uploadSignature, getUserIP } from "@/lib/signatureUtils";
+import { uploadSignature, collectSigningMetadata, createAuditLog } from "@/lib/signatureUtils";
 
 interface Declaration {
   id: string;
@@ -36,7 +36,7 @@ const REASON_LABELS: Record<string, string> = {
 };
 
 export default function DriverDeclarations() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [declarations, setDeclarations] = useState<Declaration[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Declaration | null>(null);
@@ -99,22 +99,42 @@ export default function DriverDeclarations() {
     setSigLoading(true);
 
     try {
-      const [signatureUrl, ip] = await Promise.all([
+      const [signatureUrl, metadata] = await Promise.all([
         uploadSignature(dataUrl, user.id, "driver"),
-        getUserIP(),
+        collectSigningMetadata(user.id),
       ]);
+
+      if (!metadata.gps_lat || !metadata.gps_lng) {
+        toast.error("Localização GPS obrigatória. Active a localização e tente novamente.");
+        setSigLoading(false);
+        return;
+      }
 
       const { error } = await supabase
         .from("activity_declarations")
         .update({
           driver_signature_url: signatureUrl,
-          signed_ip: ip,
+          signed_ip: metadata.ip_address,
         } as any)
         .eq("id", pendingDecl.id);
 
       if (error) throw error;
 
-      toast.success("Declaração assinada com sucesso!");
+      // Create audit log
+      const verificationId = await createAuditLog({
+        declaration_id: pendingDecl.id,
+        signed_by_user_id: user.id,
+        signer_role: "driver",
+        signer_name: profile?.full_name || user.email || "Motorista",
+        signed_at: metadata.signed_at,
+        gps_lat: metadata.gps_lat,
+        gps_lng: metadata.gps_lng,
+        device_info: metadata.device_info,
+        ip_address: metadata.ip_address,
+        signature_url: signatureUrl,
+      });
+
+      toast.success(`Declaração assinada! ID: ${verificationId}`);
       setShowSignature(false);
       setPendingDecl(null);
       fetchDeclarations();
