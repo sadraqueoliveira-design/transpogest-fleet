@@ -1,10 +1,10 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User } from "lucide-react";
-import { useState } from "react";
+import { LogOut, User, Hash } from "lucide-react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -12,7 +12,14 @@ export default function DriverProfile() {
   const { user, profile, signOut } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [licenseNumber, setLicenseNumber] = useState(profile?.license_number || "");
+  const [employeeNumber, setEmployeeNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("employees").select("employee_number").eq("profile_id", user.id).maybeSingle()
+      .then(({ data }) => { if (data) setEmployeeNumber(data.employee_number); });
+  }, [user]);
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,6 +37,13 @@ export default function DriverProfile() {
       <Card>
         <CardContent className="pt-6">
           <form onSubmit={handleUpdate} className="space-y-4">
+            {employeeNumber !== null && (
+              <div className="flex items-center gap-2 rounded-md bg-muted p-3">
+                <Hash className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Nº Funcionário:</span>
+                <span className="font-semibold">{employeeNumber}</span>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Nome Completo</Label>
               <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
