@@ -36,6 +36,7 @@ import DriverRequests from "./pages/driver/DriverRequests";
 import Occurrence from "./pages/driver/Occurrence";
 import DriverProfile from "./pages/driver/DriverProfile";
 import DriverDocuments from "./pages/driver/DriverDocuments";
+import DriverDeclarations from "./pages/driver/DriverDeclarations";
 
 const queryClient = new QueryClient();
 
@@ -85,6 +86,7 @@ const App = () => (
             <Route path="/motorista/solicitacoes" element={<DriverRoute><DriverRequests /></DriverRoute>} />
             <Route path="/motorista/ocorrencia" element={<DriverRoute><Occurrence /></DriverRoute>} />
             <Route path="/motorista/documentos" element={<DriverRoute><DriverDocuments /></DriverRoute>} />
+            <Route path="/motorista/declaracoes" element={<DriverRoute><DriverDeclarations /></DriverRoute>} />
             <Route path="/motorista/perfil" element={<DriverRoute><DriverProfile /></DriverRoute>} />
 
             <Route path="*" element={<NotFound />} />

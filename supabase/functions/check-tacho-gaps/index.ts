@@ -6,6 +6,38 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+async function getAccessToken(serviceAccount: { client_email: string; private_key: string; token_uri: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = btoa(JSON.stringify({
+    iss: serviceAccount.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: serviceAccount.token_uri,
+    iat: now,
+    exp: now + 3600,
+  }));
+  const textEncoder = new TextEncoder();
+  const inputData = textEncoder.encode(`${header}.${claim}`);
+  const pemContents = serviceAccount.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\n/g, "");
+  const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey("pkcs8", binaryKey, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, inputData);
+  const sig = btoa(String.fromCharCode(...new Uint8Array(signature)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const jwt = `${header}.${claim}.${sig}`;
+  const tokenRes = await fetch(serviceAccount.token_uri, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenData.access_token) throw new Error("Failed to get access token");
+  return tokenData.access_token;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -128,6 +160,59 @@ Deno.serve(async (req) => {
         } else {
           created++;
           details.push({ driver: profile.full_name || "Unknown", gap_hours: Math.round(gapHours) });
+
+          // Send push notification to the driver
+          try {
+            const { data: driverTokens } = await supabaseAdmin
+              .from("user_fcm_tokens")
+              .select("token")
+              .eq("user_id", profile.id);
+
+            if (driverTokens && driverTokens.length > 0) {
+              const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
+              if (serviceAccountJson) {
+                const serviceAccount = JSON.parse(serviceAccountJson);
+                const accessToken = await getAccessToken(serviceAccount);
+                const firstName = (profile.full_name || "Motorista").split(" ")[0];
+
+                for (const { token } of driverTokens) {
+                  try {
+                    const res = await fetch(
+                      `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+                      {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          message: {
+                            token,
+                            notification: {
+                              title: "Declaração de Atividade",
+                              body: `Olá ${firstName}, detetámos ${Math.round(gapHours)}h sem cartão. Toque para justificar a ausência.`,
+                            },
+                            data: { route: "/motorista/declaracoes" },
+                            webpush: { fcm_options: { link: "/motorista/declaracoes" } },
+                          },
+                        }),
+                      }
+                    );
+                    if (!res.ok) {
+                      const errBody = await res.text();
+                      console.error(`[TACHO-GAP] FCM error for ${profile.full_name}:`, errBody);
+                      if (errBody.includes("UNREGISTERED") || errBody.includes("INVALID_ARGUMENT")) {
+                        await supabaseAdmin.from("user_fcm_tokens").delete().eq("token", token);
+                      }
+                    } else {
+                      console.log(`[TACHO-GAP] Push sent to ${profile.full_name}`);
+                    }
+                  } catch (pushErr) {
+                    console.error(`[TACHO-GAP] Push error:`, pushErr);
+                  }
+                }
+              }
+            }
+          } catch (notifErr) {
+            console.error(`[TACHO-GAP] Notification error for ${profile.full_name}:`, notifErr);
+          }
         }
       }
     }
