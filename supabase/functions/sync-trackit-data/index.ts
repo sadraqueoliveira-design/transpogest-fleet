@@ -149,12 +149,13 @@ Deno.serve(async (req) => {
             const lastVehicleDownload = drs.last_download_at || d.tacho?.last_download_at || null;
 
             // === TACHOGRAPH-FIRST DRIVER ASSIGNMENT ===
-            // Extract driver card number — try dc1 first, then fallback to idc
-            const driverCardNumber = drs.dc1 ?? d.exd?.eco?.idc ?? drs.idc ?? null;
+            // Extract driver card number — try dc1 first, then tac.1.idc, then fallback to exd.eco.idc / drs.idc
+            const tacSlot1 = d.tac?.["1"]?.idc ?? null;
+            const driverCardNumber = drs.dc1 ?? tacSlot1 ?? d.exd?.eco?.idc ?? drs.idc ?? null;
             const driverState1 = drs.ds1 ?? d.exd?.eco?.ds1 ?? null;
 
             // Detailed logging for card field debugging
-            console.log(`[CARD-DEBUG] ${plate}: dc1=${drs.dc1 ?? "N/A"}, exd.eco.idc=${d.exd?.eco?.idc ?? "N/A"}, drs.idc=${drs.idc ?? "N/A"} → using: ${driverCardNumber ?? "NONE"}, ds1=${driverState1 ?? "N/A"}`);
+            console.log(`[CARD-DEBUG] ${plate}: dc1=${drs.dc1 ?? "N/A"}, tac.1.idc=${tacSlot1 ?? "N/A"}, exd.eco.idc=${d.exd?.eco?.idc ?? "N/A"}, drs.idc=${drs.idc ?? "N/A"} → using: ${driverCardNumber ?? "NONE"}, ds1=${driverState1 ?? "N/A"}`);
 
             // Determine if a valid card is inserted
             const EMPTY_CARD = "0000000000000000";
