@@ -14,68 +14,81 @@ export default function DriverHome() {
   const [vehicle, setVehicle] = useState<any>(null);
   const [route, setRoute] = useState<any>(null);
   const [checklistDone, setChecklistDone] = useState(false);
-  const [pushPermission, setPushPermission] = useState<NotificationPermission>(
-    typeof Notification !== "undefined" ? Notification.permission : "default"
-  );
+  const [pushStatus, setPushStatus] = useState<"idle" | "registered" | "denied" | "unsupported">("idle");
   const [requestingPush, setRequestingPush] = useState(false);
+
+  // Check if already registered
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("user_fcm_tokens").select("id").eq("user_id", user.id).limit(1).then(({ data }) => {
+      if (data && data.length > 0) setPushStatus("registered");
+    });
+  }, [user]);
 
   const handleRequestPush = async () => {
     if (!user) return;
     setRequestingPush(true);
     try {
-      // Check if Notification API is available
-      if (typeof Notification === "undefined") {
-        alert("Este browser não suporta notificações. Abra a app diretamente no browser.");
-        toast.error("Este browser não suporta notificações.");
+      if (typeof Notification === "undefined" || !("serviceWorker" in navigator)) {
+        alert("Este browser não suporta notificações push.");
+        setPushStatus("unsupported");
         return;
       }
 
-      // Check if service workers are supported
-      if (!("serviceWorker" in navigator)) {
-        alert("Service Workers não suportados neste browser.");
-        toast.error("Service Workers não suportados neste browser.");
-        return;
-      }
-
-      // First request permission directly
-      console.log("[PUSH] Current permission:", Notification.permission);
-      const permission = await Notification.requestPermission();
-      console.log("[PUSH] Permission result:", permission);
-
-      if (permission === "denied") {
-        alert("Notificações bloqueadas pelo browser. Vá às definições do site e ative as notificações.");
-        setPushPermission("denied");
-        return;
-      }
-
-      if (permission !== "granted") {
-        alert("Permissão não concedida: " + permission);
-        return;
-      }
-
-      // Now get FCM token
       const vapidKey = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
-      const token = await requestNotificationPermission(vapidKey);
-      console.log("[PUSH] FCM token result:", token ? "obtained" : "null");
       
-      if (token) {
-        const { error } = await supabase.from("user_fcm_tokens").upsert(
-          { user_id: user.id, token, device_type: "web", last_active_at: new Date().toISOString() },
-          { onConflict: "token" }
-        );
-        if (error) {
-          alert("Erro ao guardar token: " + error.message);
-        } else {
-          setPushPermission("granted");
-          alert("Notificações ativadas com sucesso!");
-          toast.success("Notificações ativadas com sucesso!");
-        }
+      // Get messaging instance
+      const { getFirebaseMessaging } = await import("@/lib/firebase");
+      const messaging = await getFirebaseMessaging();
+      if (!messaging) {
+        alert("Firebase Messaging não suportado neste browser.");
+        return;
+      }
+
+      // Request permission
+      const permission = await Notification.requestPermission();
+      console.log("[PUSH] Permission:", permission);
+      if (permission !== "granted") {
+        setPushStatus("denied");
+        alert("Notificações bloqueadas. Vá às definições do site no browser e ative as notificações.");
+        return;
+      }
+
+      // Register service worker and get token
+      console.log("[PUSH] Registering SW...");
+      const sw = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+      await navigator.serviceWorker.ready;
+      console.log("[PUSH] SW ready, getting token...");
+      
+      const { getToken } = await import("firebase/messaging");
+      const token = await getToken(messaging, {
+        vapidKey,
+        serviceWorkerRegistration: sw,
+      });
+      
+      console.log("[PUSH] Token:", token ? token.substring(0, 30) + "..." : "NULL");
+      
+      if (!token) {
+        alert("Não foi possível obter o token FCM. Tente novamente.");
+        return;
+      }
+
+      // Save token
+      const { error } = await supabase.from("user_fcm_tokens").upsert(
+        { user_id: user.id, token, device_type: "web", last_active_at: new Date().toISOString() },
+        { onConflict: "token" }
+      );
+      
+      if (error) {
+        alert("Erro ao guardar token: " + error.message);
+        console.error("[PUSH] Save error:", error);
       } else {
-        alert("Não foi possível obter o token FCM. Verifique a consola (F12) para mais detalhes.");
+        setPushStatus("registered");
+        toast.success("Notificações ativadas com sucesso!");
       }
     } catch (err: any) {
       console.error("[PUSH] Error:", err);
-      alert("Erro: " + (err?.message || String(err)));
+      alert("Erro ao ativar notificações: " + (err?.message || String(err)));
     } finally {
       setRequestingPush(false);
     }
@@ -107,10 +120,10 @@ export default function DriverHome() {
       <TachoWidget />
 
       {/* Push Notifications */}
-      {pushPermission !== "granted" && (
+      {pushStatus !== "registered" && pushStatus !== "unsupported" && (
         <Card className="border-warning/50 bg-warning/5">
           <CardContent className="flex items-center gap-3 py-4">
-            {pushPermission === "denied" ? (
+            {pushStatus === "denied" ? (
               <>
                 <BellOff className="h-5 w-5 text-destructive shrink-0" />
                 <div className="flex-1">
