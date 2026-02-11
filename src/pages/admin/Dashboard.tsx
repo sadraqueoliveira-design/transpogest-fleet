@@ -74,7 +74,7 @@ interface Notification {
 }
 
 type ViewMode = "cards" | "map";
-type FilterTab = "all" | "moving" | "stopped" | "alerts";
+type FilterTab = "all" | "moving" | "stopped" | "alerts" | "at_store" | "at_supplier";
 
 export default function Dashboard() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -182,6 +182,18 @@ export default function Dashboard() {
       v.tachograph_calibration_date &&
       new Date(v.tachograph_calibration_date) <= now
     ).length,
+    atStore: vehicles.filter(v => {
+      const h = getNearestHub(v);
+      if (!h || !h.type) return false;
+      const t = h.type.toLowerCase();
+      return ["loja", "supermercado", "hipermercado", "ultra proximidade", "franchising", "partenariado", "mfc"].includes(t);
+    }).length,
+    atSupplier: vehicles.filter(v => {
+      const h = getNearestHub(v);
+      if (!h || !h.type) return false;
+      const t = h.type.toLowerCase();
+      return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
+    }).length,
   };
 
   // Normalize card number: remove prefix "5B.", leading zeros, last 2 digits
@@ -240,6 +252,18 @@ export default function Dashboard() {
     if (filterTab === "moving") return getStatus(v) === "moving";
     if (filterTab === "stopped") return getStatus(v) === "stopped";
     if (filterTab === "alerts") return hasAlert(v);
+    if (filterTab === "at_store") {
+      const h = getNearestHub(v);
+      if (!h || !h.type) return false;
+      const t = h.type.toLowerCase();
+      return ["loja", "supermercado", "hipermercado", "ultra proximidade", "franchising", "partenariado", "mfc"].includes(t);
+    }
+    if (filterTab === "at_supplier") {
+      const h = getNearestHub(v);
+      if (!h || !h.type) return false;
+      const t = h.type.toLowerCase();
+      return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
+    }
     return true;
   });
 
@@ -392,6 +416,8 @@ export default function Dashboard() {
     { label: "Temp. Alta", value: stats.highTemp, icon: Thermometer, variant: "destructive", action: () => setFilterTab("alerts") },
     { label: "Cart. a Vencer", value: stats.cardsExpiring, icon: CreditCard, variant: "default", action: () => setFilterTab("all") },
     { label: "Cart. Vencidos", value: stats.cardsExpired, icon: CreditCard, variant: "default", action: () => setFilterTab("all") },
+    { label: "Em Loja", value: stats.atStore, icon: Store, variant: "success", action: () => setFilterTab("at_store") },
+    { label: "Em Fornecedor", value: stats.atSupplier, icon: Warehouse, variant: "default", action: () => setFilterTab("at_supplier") },
   ];
 
   const variantStyles: Record<string, string> = {
@@ -408,6 +434,8 @@ export default function Dashboard() {
     { key: "moving", label: "Mov." },
     { key: "stopped", label: "Parados" },
     { key: "alerts", label: "Alertas" },
+    { key: "at_store", label: "Em Loja" },
+    { key: "at_supplier", label: "Fornecedor" },
   ];
 
   return (
