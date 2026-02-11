@@ -27,22 +27,40 @@ export async function getFirebaseMessaging() {
 }
 
 export async function requestNotificationPermission(vapidKey: string): Promise<string | null> {
-  const messaging = await getFirebaseMessaging();
-  if (!messaging) return null;
+  try {
+    console.log("[PUSH] Starting requestNotificationPermission...");
+    
+    const messaging = await getFirebaseMessaging();
+    if (!messaging) {
+      console.error("[PUSH] Firebase Messaging not supported");
+      return null;
+    }
+    console.log("[PUSH] Messaging instance obtained");
 
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") {
-    console.warn("Notification permission denied");
-    return null;
+    console.log("[PUSH] Current permission:", Notification.permission);
+    const permission = await Notification.requestPermission();
+    console.log("[PUSH] Permission result:", permission);
+    
+    if (permission !== "granted") {
+      console.warn("[PUSH] Notification permission denied");
+      return null;
+    }
+
+    // Wait for service worker registration
+    console.log("[PUSH] Registering service worker...");
+    const sw = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
+    console.log("[PUSH] Service worker registered, getting token...");
+    
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: sw,
+    });
+    console.log("[PUSH] Token obtained:", token ? token.substring(0, 20) + "..." : "null");
+    return token;
+  } catch (err) {
+    console.error("[PUSH] Error in requestNotificationPermission:", err);
+    throw err;
   }
-
-  // Wait for service worker registration
-  const sw = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-  const token = await getToken(messaging, {
-    vapidKey,
-    serviceWorkerRegistration: sw,
-  });
-  return token;
 }
 
 export { onMessage };
