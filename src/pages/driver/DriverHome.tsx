@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Truck, MapPin, CheckCircle2, ClipboardCheck } from "lucide-react";
+import { Truck, MapPin, CheckCircle2, ClipboardCheck, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import TachoWidget from "@/components/driver/TachoWidget";
 
@@ -37,6 +37,14 @@ export default function DriverHome() {
 
       {/* Legal Status Widget */}
       <TachoWidget />
+
+      {/* Temporary test link */}
+      <Link to="/motorista/tacho-test">
+        <Button variant="outline" className="w-full gap-2 border-dashed">
+          <SlidersHorizontal className="h-4 w-4" />
+          Teste Visual — Tacógrafo (Slider)
+        </Button>
+      </Link>
 
       {/* Assigned Vehicle */}
       <Card>
