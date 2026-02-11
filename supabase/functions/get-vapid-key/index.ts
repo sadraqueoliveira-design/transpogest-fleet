@@ -10,13 +10,15 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const vapidKey = Deno.env.get("FIREBASE_VAPID_KEY");
+  const vapidKey = Deno.env.get("FIREBASE_VAPID_KEY")?.trim();
   if (!vapidKey) {
     return new Response(JSON.stringify({ error: "VAPID key not configured" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
+  console.log("VAPID key length:", vapidKey.length, "starts with:", vapidKey.substring(0, 5));
 
   return new Response(JSON.stringify({ vapidKey }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
