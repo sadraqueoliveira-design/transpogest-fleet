@@ -20,13 +20,18 @@ export type Database = {
           created_at: string
           document_url: string | null
           driver_id: string
+          driver_signature_url: string | null
           gap_end_date: string
           gap_start_date: string
           id: string
           manager_id: string | null
           manager_name: string | null
+          manager_signature_url: string | null
           reason_code: Database["public"]["Enums"]["declaration_reason"] | null
           reason_text: string | null
+          signed_at: string | null
+          signed_ip: string | null
+          signed_pdf_url: string | null
           status: Database["public"]["Enums"]["declaration_status"]
           updated_at: string
         }
@@ -35,13 +40,18 @@ export type Database = {
           created_at?: string
           document_url?: string | null
           driver_id: string
+          driver_signature_url?: string | null
           gap_end_date?: string
           gap_start_date: string
           id?: string
           manager_id?: string | null
           manager_name?: string | null
+          manager_signature_url?: string | null
           reason_code?: Database["public"]["Enums"]["declaration_reason"] | null
           reason_text?: string | null
+          signed_at?: string | null
+          signed_ip?: string | null
+          signed_pdf_url?: string | null
           status?: Database["public"]["Enums"]["declaration_status"]
           updated_at?: string
         }
@@ -50,13 +60,18 @@ export type Database = {
           created_at?: string
           document_url?: string | null
           driver_id?: string
+          driver_signature_url?: string | null
           gap_end_date?: string
           gap_start_date?: string
           id?: string
           manager_id?: string | null
           manager_name?: string | null
+          manager_signature_url?: string | null
           reason_code?: Database["public"]["Enums"]["declaration_reason"] | null
           reason_text?: string | null
+          signed_at?: string | null
+          signed_ip?: string | null
+          signed_pdf_url?: string | null
           status?: Database["public"]["Enums"]["declaration_status"]
           updated_at?: string
         }
@@ -649,6 +664,7 @@ export type Database = {
           last_card_download_at: string | null
           license_number: string | null
           next_card_download_due: string | null
+          saved_signature_url: string | null
           updated_at: string
         }
         Insert: {
@@ -661,6 +677,7 @@ export type Database = {
           last_card_download_at?: string | null
           license_number?: string | null
           next_card_download_due?: string | null
+          saved_signature_url?: string | null
           updated_at?: string
         }
         Update: {
@@ -673,6 +690,7 @@ export type Database = {
           last_card_download_at?: string | null
           license_number?: string | null
           next_card_download_due?: string | null
+          saved_signature_url?: string | null
           updated_at?: string
         }
         Relationships: []

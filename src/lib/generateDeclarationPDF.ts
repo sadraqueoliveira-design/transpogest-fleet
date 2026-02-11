@@ -19,6 +19,10 @@ interface DeclarationPDFData {
   companyFax?: string;
   companyEmail?: string;
   signingLocation?: string;
+  driverSignatureDataUrl?: string;
+  managerSignatureDataUrl?: string;
+  signedAt?: string;
+  signedIP?: string;
 }
 
 const REASON_MAP: Record<string, number> = {
@@ -179,7 +183,16 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const loc = data.signingLocation || "Alverca";
   doc.text(`(17) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
-  doc.text("Assinatura: …………………………………………………………", margin, y);
+  doc.text("Assinatura: ", margin, y);
+
+  // Manager signature image
+  if (data.managerSignatureDataUrl) {
+    try {
+      doc.addImage(data.managerSignatureDataUrl, "PNG", margin + 22, y - 8, 50, 15);
+    } catch (e) { console.warn("Could not add manager signature", e); }
+  } else {
+    doc.text("…………………………………………………………", margin + 22, y);
+  }
   y += 10;
 
   // Signature section - Driver
@@ -192,7 +205,16 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFontSize(9);
   doc.text(`(19) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
-  doc.text("Assinatura do condutor: …………………………………………………………", margin, y);
+  doc.text("Assinatura do condutor: ", margin, y);
+
+  // Driver signature image
+  if (data.driverSignatureDataUrl) {
+    try {
+      doc.addImage(data.driverSignatureDataUrl, "PNG", margin + 42, y - 8, 50, 15);
+    } catch (e) { console.warn("Could not add driver signature", e); }
+  } else {
+    doc.text("…………………………………………………………", margin + 42, y);
+  }
   y += 12;
 
   // Footer
@@ -200,6 +222,18 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFont("helvetica", "italic");
   doc.line(margin, y, W - margin, y);
   y += 3;
+
+  // Digital signature audit trail
+  if (data.signedAt || data.signedIP) {
+    const auditParts: string[] = [];
+    if (data.signedAt) auditParts.push(`Assinado digitalmente em ${data.signedAt}`);
+    if (data.signedIP) auditParts.push(`IP: ${data.signedIP}`);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${auditParts.join(" — ")} via TranspoGest`, margin, y);
+    y += 3;
+    doc.setFont("helvetica", "italic");
+  }
+
   doc.text("¹ A versão electrónica e pronta a imprimir do presente formulário está disponível no seguinte endereço: http://ec.europa.eu.", margin, y);
   y += 3;
   doc.text("² Acordo Europeu relativo ao Trabalho das Tripulações de Veículos que Efectuam Transportes Rodoviários Internacionais.", margin, y);
