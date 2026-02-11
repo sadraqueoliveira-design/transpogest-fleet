@@ -3,15 +3,48 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Truck, MapPin, CheckCircle2, ClipboardCheck } from "lucide-react";
+import { Truck, MapPin, CheckCircle2, ClipboardCheck, Bell, BellOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import TachoWidget from "@/components/driver/TachoWidget";
+import { requestNotificationPermission } from "@/lib/firebase";
+import { toast } from "sonner";
 
 export default function DriverHome() {
   const { user, profile } = useAuth();
   const [vehicle, setVehicle] = useState<any>(null);
   const [route, setRoute] = useState<any>(null);
   const [checklistDone, setChecklistDone] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>(
+    typeof Notification !== "undefined" ? Notification.permission : "default"
+  );
+  const [requestingPush, setRequestingPush] = useState(false);
+
+  const handleRequestPush = async () => {
+    if (!user) return;
+    setRequestingPush(true);
+    try {
+      const vapidKey = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
+      const token = await requestNotificationPermission(vapidKey);
+      if (token) {
+        await supabase.from("user_fcm_tokens").upsert(
+          { user_id: user.id, token, device_type: "web", last_active_at: new Date().toISOString() },
+          { onConflict: "token" }
+        );
+        setPushPermission("granted");
+        toast.success("Notificações ativadas com sucesso!");
+      } else {
+        setPushPermission(Notification.permission);
+        if (Notification.permission === "denied") {
+          toast.error("Notificações bloqueadas. Ative nas definições do browser.");
+        }
+      }
+    } catch (err) {
+      console.error("Push request failed:", err);
+      toast.error("Erro ao ativar notificações");
+    } finally {
+      setRequestingPush(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -37,6 +70,34 @@ export default function DriverHome() {
 
       {/* Legal Status Widget */}
       <TachoWidget />
+
+      {/* Push Notifications */}
+      {pushPermission !== "granted" && (
+        <Card className="border-warning/50 bg-warning/5">
+          <CardContent className="flex items-center gap-3 py-4">
+            {pushPermission === "denied" ? (
+              <>
+                <BellOff className="h-5 w-5 text-destructive shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Notificações bloqueadas</p>
+                  <p className="text-xs text-muted-foreground">Ative nas definições do browser para este site</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <Bell className="h-5 w-5 text-warning shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Ativar notificações</p>
+                  <p className="text-xs text-muted-foreground">Receba alertas importantes em tempo real</p>
+                </div>
+                <Button size="sm" onClick={handleRequestPush} disabled={requestingPush}>
+                  {requestingPush ? "A ativar..." : "Ativar"}
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Assigned Vehicle */}
       <Card>
