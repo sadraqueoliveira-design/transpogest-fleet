@@ -31,12 +31,33 @@ export function usePushNotifications() {
         registered.current = true;
         console.log("FCM token registered");
 
-        // Listen for foreground messages
+        // Listen for foreground messages — show native notification + toast
         const messaging = await getFirebaseMessaging();
         if (messaging) {
           onMessage(messaging, (payload) => {
             console.log("Foreground message:", payload);
             const { title, body } = payload.notification || {};
+            const route = payload.data?.route || "/";
+
+            // Vibrate if supported
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+
+            // Show native notification even in foreground
+            if (Notification.permission === "granted") {
+              const n = new Notification(title || "TranspoGest", {
+                body: body || "",
+                icon: "/pwa-192x192.png",
+                badge: "/pwa-192x192.png",
+                tag: "foreground-" + Date.now(),
+              });
+              n.onclick = () => {
+                window.focus();
+                if (route !== "/") window.location.href = route;
+                n.close();
+              };
+            }
+
+            // Also show in-app toast
             toast.info(title || "Notificação", { description: body });
           });
         }
