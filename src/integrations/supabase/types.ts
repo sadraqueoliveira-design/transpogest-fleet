@@ -481,6 +481,8 @@ export type Database = {
           localidade: string | null
           name: string
           status: string
+          traffic_manager_id: string | null
+          traffic_manager_name: string | null
           type: string | null
           updated_at: string
           zona_vida: string | null
@@ -504,6 +506,8 @@ export type Database = {
           localidade?: string | null
           name: string
           status?: string
+          traffic_manager_id?: string | null
+          traffic_manager_name?: string | null
           type?: string | null
           updated_at?: string
           zona_vida?: string | null
@@ -527,6 +531,8 @@ export type Database = {
           localidade?: string | null
           name?: string
           status?: string
+          traffic_manager_id?: string | null
+          traffic_manager_name?: string | null
           type?: string | null
           updated_at?: string
           zona_vida?: string | null

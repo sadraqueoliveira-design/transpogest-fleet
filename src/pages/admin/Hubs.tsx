@@ -25,12 +25,19 @@ interface Hub {
   lat: number | null;
   lng: number | null;
   status: string;
+  traffic_manager_id: string | null;
+  traffic_manager_name: string | null;
 }
 
 interface Client {
   id: string;
   name: string;
   code: string;
+}
+
+interface ManagerProfile {
+  id: string;
+  full_name: string | null;
 }
 
 const HUB_TYPES = ["hub", "armazém"];
@@ -103,11 +110,12 @@ function parseImportRows(raw: string[][], headerMap: Record<string, number>): Im
 export default function Hubs() {
   const [hubs, setHubs] = useState<Hub[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [managers, setManagers] = useState<ManagerProfile[]>([]);
   const [search, setSearch] = useState("");
   const [clientFilter, setClientFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingHub, setEditingHub] = useState<Hub | null>(null);
-  const [form, setForm] = useState({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "" });
+  const [form, setForm] = useState({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "", traffic_manager_id: "" });
 
   // Import state
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
@@ -116,12 +124,18 @@ export default function Hubs() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchData = async () => {
-    const [{ data: hubsData }, { data: clientsData }] = await Promise.all([
+    const [{ data: hubsData }, { data: clientsData }, { data: roleData }] = await Promise.all([
       supabase.from("hubs").select("*").in("type", HUB_TYPE_FILTER).order("name"),
       supabase.from("clients").select("id, name, code").order("name"),
+      supabase.from("user_roles").select("user_id").in("role", ["admin", "manager"]),
     ]);
     if (clientsData) setClients(clientsData);
     if (hubsData) setHubs(hubsData as Hub[]);
+    if (roleData && roleData.length > 0) {
+      const ids = roleData.map((r) => r.user_id);
+      const { data: profiles } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      if (profiles) setManagers(profiles);
+    }
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -142,11 +156,14 @@ export default function Hubs() {
     if (!form.name || !form.code || !form.client_id) {
       toast.error("Nome, código e cliente são obrigatórios"); return;
     }
+    const selectedManager = managers.find(m => m.id === form.traffic_manager_id);
     const payload = {
       name: form.name, code: form.code, client_id: form.client_id, type: form.type,
       address: form.address || null,
       lat: form.lat ? parseFloat(form.lat) : null,
       lng: form.lng ? parseFloat(form.lng) : null,
+      traffic_manager_id: form.traffic_manager_id || null,
+      traffic_manager_name: selectedManager?.full_name || null,
     };
     if (editingHub) {
       const { error } = await supabase.from("hubs").update(payload).eq("id", editingHub.id);
@@ -159,7 +176,7 @@ export default function Hubs() {
     }
     setDialogOpen(false);
     setEditingHub(null);
-    setForm({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "" });
+    setForm({ name: "", code: "", client_id: "", type: "hub", address: "", lat: "", lng: "", traffic_manager_id: "" });
     fetchData();
   };
 
@@ -175,13 +192,14 @@ export default function Hubs() {
     setForm({
       name: h.name, code: h.code, client_id: h.client_id, type: h.type || "hub",
       address: h.address || "", lat: h.lat?.toString() || "", lng: h.lng?.toString() || "",
+      traffic_manager_id: h.traffic_manager_id || "",
     });
     setDialogOpen(true);
   };
 
   const openNew = () => {
     setEditingHub(null);
-    setForm({ name: "", code: "", client_id: clientFilter || clients[0]?.id || "", type: "hub", address: "", lat: "", lng: "" });
+    setForm({ name: "", code: "", client_id: clientFilter || clients[0]?.id || "", type: "hub", address: "", lat: "", lng: "", traffic_manager_id: "" });
     setDialogOpen(true);
   };
 
@@ -310,6 +328,16 @@ export default function Hubs() {
                     <div><Label>Latitude</Label><Input value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} placeholder="39.043168" /></div>
                     <div><Label>Longitude</Label><Input value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} placeholder="-8.918766" /></div>
                   </div>
+                  <div>
+                    <Label>Responsável de Tráfego</Label>
+                    <Select value={form.traffic_manager_id} onValueChange={v => setForm(f => ({ ...f, traffic_manager_id: v === "none" ? "" : v }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar responsável" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhum</SelectItem>
+                        {managers.map(m => <SelectItem key={m.id} value={m.id}>{m.full_name || "Sem nome"}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button onClick={handleSave} className="w-full">{editingHub ? "Guardar" : "Criar"}</Button>
                 </div>
               </DialogContent>
@@ -362,6 +390,7 @@ export default function Hubs() {
                   <TableHead>Código</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Resp. Tráfego</TableHead>
                   <TableHead>Morada</TableHead>
                   <TableHead>Localização</TableHead>
                   <TableHead className="w-10"></TableHead>
@@ -373,6 +402,7 @@ export default function Hubs() {
                     <TableCell className="font-mono text-sm">{h.code}</TableCell>
                     <TableCell className="font-medium">{h.name}</TableCell>
                     <TableCell className="capitalize text-sm">{h.type || "hub"}</TableCell>
+                    <TableCell className="text-sm">{h.traffic_manager_name || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{h.address || "—"}</TableCell>
                     <TableCell className="text-sm font-mono text-muted-foreground">
                       {h.lat && h.lng ? `${h.lat.toFixed(4)}, ${h.lng.toFixed(4)}` : "—"}
@@ -392,7 +422,7 @@ export default function Hubs() {
                 ))}
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum local encontrado</TableCell>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">Nenhum local encontrado</TableCell>
                   </TableRow>
                 )}
               </TableBody>
