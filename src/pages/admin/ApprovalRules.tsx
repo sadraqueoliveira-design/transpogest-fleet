@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Users, ShieldCheck, Clock, UserPlus } from "lucide-react";
+import { Plus, Trash2, Users, ShieldCheck, Clock, UserPlus, Pencil } from "lucide-react";
 import SignaturePad from "@/components/SignaturePad";
 import { uploadSignature } from "@/lib/signatureUtils";
 
@@ -81,6 +81,7 @@ export default function ApprovalRulesPage() {
   const [pendingRuleId, setPendingRuleId] = useState<string | null>(null);
   const [sigLoading, setSigLoading] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
+  const [editingRule, setEditingRule] = useState<ApprovalRule | null>(null);
 
   // Managers list
   const [managers, setManagers] = useState<DriverProfile[]>([]);
@@ -197,13 +198,47 @@ export default function ApprovalRulesPage() {
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
     } else {
-      // Open signature pad for this rule
       setPendingRuleId((data as any).id);
       setShowNewRule(false);
       setShowRuleSig(true);
       fetchAll();
     }
     setSavingRule(false);
+  };
+
+  const handleUpdateRule = async () => {
+    if (!editingRule || !ruleForm.driver_group_id) return;
+    setSavingRule(true);
+
+    const { error } = await supabase.from("approval_rules" as any)
+      .update({
+        driver_group_id: ruleForm.driver_group_id,
+        allowed_reasons: ruleForm.allowed_reasons,
+        active_hours_start: ruleForm.active_hours_start,
+        active_hours_end: ruleForm.active_hours_end,
+      } as any)
+      .eq("id", editingRule.id);
+
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Regra atualizada" });
+      setEditingRule(null);
+      setShowNewRule(false);
+      fetchAll();
+    }
+    setSavingRule(false);
+  };
+
+  const openEditRule = (rule: ApprovalRule) => {
+    setEditingRule(rule);
+    setRuleForm({
+      driver_group_id: rule.driver_group_id,
+      allowed_reasons: rule.allowed_reasons || [],
+      active_hours_start: rule.active_hours_start,
+      active_hours_end: rule.active_hours_end,
+    });
+    setShowNewRule(true);
   };
 
   const handleRuleSignature = async (dataUrl: string) => {
@@ -290,6 +325,7 @@ export default function ApprovalRulesPage() {
         <TabsContent value="rules" className="space-y-4">
           <div className="flex justify-end">
             <Button onClick={() => {
+              setEditingRule(null);
               setRuleForm({ driver_group_id: "", allowed_reasons: [], active_hours_start: "20:00", active_hours_end: "08:00" });
               setShowNewRule(true);
             }}>
@@ -353,7 +389,10 @@ export default function ApprovalRulesPage() {
                           {r.is_active ? "Ativa" : "Inativa"}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => openEditRule(r)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(r.id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -411,10 +450,12 @@ export default function ApprovalRulesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* New Rule Dialog */}
-      <Dialog open={showNewRule} onOpenChange={setShowNewRule}>
+      {/* New/Edit Rule Dialog */}
+      <Dialog open={showNewRule} onOpenChange={(o) => { if (!o) { setShowNewRule(false); setEditingRule(null); } }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nova Regra de Auto-Aprovação</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editingRule ? "Editar Regra de Auto-Aprovação" : "Nova Regra de Auto-Aprovação"}</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Grupo de motoristas</Label>
@@ -459,12 +500,17 @@ export default function ApprovalRulesPage() {
               </div>
             </div>
 
-            <p className="text-xs text-muted-foreground">Após criar a regra, será pedido para desenhar a assinatura digital do gestor.</p>
+            {!editingRule && (
+              <p className="text-xs text-muted-foreground">Após criar a regra, será pedido para desenhar a assinatura digital do gestor.</p>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewRule(false)}>Cancelar</Button>
-            <Button onClick={handleCreateRule} disabled={savingRule || !ruleForm.driver_group_id}>
-              {savingRule ? "A criar..." : "Criar e Assinar"}
+            <Button variant="outline" onClick={() => { setShowNewRule(false); setEditingRule(null); }}>Cancelar</Button>
+            <Button
+              onClick={editingRule ? handleUpdateRule : handleCreateRule}
+              disabled={savingRule || !ruleForm.driver_group_id}
+            >
+              {savingRule ? "A guardar..." : editingRule ? "Guardar Alterações" : "Criar e Assinar"}
             </Button>
           </DialogFooter>
         </DialogContent>
