@@ -33,7 +33,8 @@ export default function SignaturePad({
 
   const handleConfirm = async () => {
     if (!sigRef.current || sigRef.current.isEmpty()) return;
-    const dataUrl = sigRef.current.getTrimmedCanvas().toDataURL("image/png");
+    const canvas = sigRef.current.getCanvas();
+    const dataUrl = canvas.toDataURL("image/png");
     await onConfirm(dataUrl);
   };
 
