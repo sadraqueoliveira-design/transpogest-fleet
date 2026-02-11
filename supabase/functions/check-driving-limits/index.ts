@@ -40,6 +40,7 @@ async function getFcmAccessToken(serviceAccount: { client_email: string; private
 interface ComplianceStatus {
   driver_id: string;
   driver_name: string | null;
+  card_inserted: boolean;
   current_activity: string | null;
   current_activity_start: string | null;
   continuous_driving_minutes: number;
@@ -112,7 +113,8 @@ Deno.serve(async (req) => {
     }
 
     const { data: vehicleDrivers } = await driversQuery;
-    const driverIds = [...new Set((vehicleDrivers || []).map((v: any) => v.current_driver_id).filter(Boolean))];
+    const activeDriverIds = [...new Set((vehicleDrivers || []).map((v: any) => v.current_driver_id).filter(Boolean))];
+    const driverIds = [...activeDriverIds];
 
     if (driverIds.length === 0) {
       // If targeting a specific driver not currently assigned, still check them
@@ -265,9 +267,12 @@ Deno.serve(async (req) => {
         });
       }
 
+      const cardInserted = activeDriverIds.includes(driverId);
+
       results.push({
         driver_id: driverId,
         driver_name: profileMap.get(driverId) || null,
+        card_inserted: cardInserted,
         current_activity: currentActivity,
         current_activity_start: currentActivityStart,
         continuous_driving_minutes: continuousDriving,
