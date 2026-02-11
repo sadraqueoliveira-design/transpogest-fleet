@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck
+  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ const navItems = [
   { to: "/admin/declaracoes", icon: ShieldAlert, label: "Declarações" },
   { to: "/admin/antram", icon: Settings, label: "ANTRAM" },
   { to: "/admin/compliance", icon: ShieldCheck, label: "Compliance" },
+  { to: "/admin/auto-aprovacao", icon: Zap, label: "Auto-Aprovação" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
