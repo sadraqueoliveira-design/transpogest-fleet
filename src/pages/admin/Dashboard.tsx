@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 import ComplianceWidget from "@/components/admin/ComplianceWidget";
+import ComplianceViolationsPanel from "@/components/admin/ComplianceViolationsPanel";
 
 interface Vehicle {
   id: string;
@@ -497,6 +498,9 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      {/* Compliance Violations Panel */}
+      <ComplianceViolationsPanel />
 
       {/* Search + view toggle + filter tabs */}
       <div className="space-y-3">
