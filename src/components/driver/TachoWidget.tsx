@@ -275,29 +275,49 @@ function ActivityBadge({ activity, since, cardInserted }: { activity: string | n
 // === Main Component ===
 
 export function TachographLiveStatus({ driverStatus }: { driverStatus: DriverStatus }) {
+  const noCard = !driverStatus.cardInserted;
+
   return (
     <Card className="overflow-hidden">
       <CardContent className="p-4 space-y-4">
         {/* Current Activity State */}
         <ActivityBadge activity={driverStatus.currentActivity} since={driverStatus.currentActivityStart} cardInserted={driverStatus.cardInserted} />
 
-        {/* Smart Alerts */}
-        <AlertBanners status={driverStatus} />
+        {noCard ? (
+          /* Card removed — show daily summary only */
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground text-center">Resumo do dia</p>
+            <div className="grid grid-cols-2 gap-2">
+              <MetricCard icon={Clock} label="Condução Hoje">
+                <p className="text-sm font-semibold">{fmt(driverStatus.dailyMinutes)}</p>
+              </MetricCard>
+              <MetricCard icon={Calendar} label="Condução Semanal">
+                <p className="text-sm font-semibold">{fmt(driverStatus.weeklyMinutes)}</p>
+              </MetricCard>
+            </div>
+          </div>
+        ) : (
+          /* Card inserted — full cockpit view */
+          <>
+            {/* Smart Alerts */}
+            <AlertBanners status={driverStatus} />
 
-        {/* Cockpit Ring */}
-        <CockpitRing value={driverStatus.continuousMinutes} max={driverStatus.continuousLimit} />
+            {/* Cockpit Ring */}
+            <CockpitRing value={driverStatus.continuousMinutes} max={driverStatus.continuousLimit} />
 
-        {/* 2x2 Metrics Grid */}
-        <div className="grid grid-cols-2 gap-2">
-          <DailyCard
-            minutes={driverStatus.dailyMinutes}
-            limit={driverStatus.dailyLimit}
-            extensionsUsed={driverStatus.extensionsUsed}
-          />
-          <WeeklyCard minutes={driverStatus.weeklyMinutes} limit={driverStatus.weeklyLimit} />
-          <BiweeklyCard minutes={driverStatus.biweeklyMinutes} limit={driverStatus.biweeklyLimit} />
-          <RestCard />
-        </div>
+            {/* 2x2 Metrics Grid */}
+            <div className="grid grid-cols-2 gap-2">
+              <DailyCard
+                minutes={driverStatus.dailyMinutes}
+                limit={driverStatus.dailyLimit}
+                extensionsUsed={driverStatus.extensionsUsed}
+              />
+              <WeeklyCard minutes={driverStatus.weeklyMinutes} limit={driverStatus.weeklyLimit} />
+              <BiweeklyCard minutes={driverStatus.biweeklyMinutes} limit={driverStatus.biweeklyLimit} />
+              <RestCard />
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
