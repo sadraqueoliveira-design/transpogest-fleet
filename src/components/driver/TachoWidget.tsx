@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle, Truck, Wrench, Coffee, CreditCard } from "lucide-react";
+import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle, Truck, Wrench, Coffee, CreditCard, RefreshCw } from "lucide-react";
 
 // === Types ===
 
@@ -329,40 +329,45 @@ export default function TachoWidget() {
   const { user } = useAuth();
   const [status, setStatus] = useState<DriverStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchCompliance = async (showRefresh = false) => {
+    if (!user) return;
+    if (showRefresh) setRefreshing(true);
+    try {
+      const { data: res, error } = await supabase.functions.invoke("check-driving-limits", {
+        body: { driver_id: user.id },
+      });
+      if (!error && res?.results?.length > 0) {
+        const d = res.results[0];
+        setStatus({
+          currentActivity: d.current_activity || null,
+          currentActivityStart: d.current_activity_start || null,
+          cardInserted: d.card_inserted !== false,
+          continuousMinutes: d.continuous_driving_minutes,
+          dailyMinutes: d.daily_driving_minutes,
+          weeklyMinutes: d.weekly_driving_minutes,
+          biweeklyMinutes: d.biweekly_driving_minutes,
+          extensionsUsed: d.daily_extended_used_this_week,
+          dailyLimit: d.daily_driving_limit,
+          weeklyLimit: d.weekly_driving_limit,
+          biweeklyLimit: d.biweekly_driving_limit,
+          continuousLimit: d.continuous_driving_limit,
+          warnings: d.warnings || [],
+          violations: d.violations || [],
+        });
+      }
+    } catch {
+      // silently fail
+    }
+    setLoading(false);
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     if (!user) return;
-    const fetchCompliance = async () => {
-      try {
-        const { data: res, error } = await supabase.functions.invoke("check-driving-limits", {
-          body: { driver_id: user.id },
-        });
-        if (!error && res?.results?.length > 0) {
-          const d = res.results[0];
-          setStatus({
-            currentActivity: d.current_activity || null,
-            currentActivityStart: d.current_activity_start || null,
-            cardInserted: d.card_inserted !== false,
-            continuousMinutes: d.continuous_driving_minutes,
-            dailyMinutes: d.daily_driving_minutes,
-            weeklyMinutes: d.weekly_driving_minutes,
-            biweeklyMinutes: d.biweekly_driving_minutes,
-            extensionsUsed: d.daily_extended_used_this_week,
-            dailyLimit: d.daily_driving_limit,
-            weeklyLimit: d.weekly_driving_limit,
-            biweeklyLimit: d.biweekly_driving_limit,
-            continuousLimit: d.continuous_driving_limit,
-            warnings: d.warnings || [],
-            violations: d.violations || [],
-          });
-        }
-      } catch {
-        // silently fail
-      }
-      setLoading(false);
-    };
     fetchCompliance();
-    const interval = setInterval(fetchCompliance, 5 * 60 * 1000);
+    const interval = setInterval(() => fetchCompliance(), 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [user]);
 
@@ -386,5 +391,17 @@ export default function TachoWidget() {
     );
   }
 
-  return <TachographLiveStatus driverStatus={status} />;
+  return (
+    <div className="space-y-2">
+      <TachographLiveStatus driverStatus={status} />
+      <button
+        onClick={() => fetchCompliance(true)}
+        disabled={refreshing}
+        className="w-full flex items-center justify-center gap-2 rounded-lg border bg-card/50 px-3 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors active:scale-[0.98] disabled:opacity-50"
+      >
+        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+        {refreshing ? "A atualizar..." : "Atualizar agora"}
+      </button>
+    </div>
+  );
 }
