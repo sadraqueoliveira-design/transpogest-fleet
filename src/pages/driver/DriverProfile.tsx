@@ -37,7 +37,7 @@ export default function DriverProfile() {
     // Check if employee exists and is unlinked (or already linked to this user)
     const { data: emp, error } = await supabase
       .from("employees")
-      .select("id, employee_number, full_name, profile_id")
+      .select("id, employee_number, full_name, profile_id, license_number")
       .eq("employee_number", num)
       .maybeSingle();
 
@@ -70,8 +70,16 @@ export default function DriverProfile() {
     if (linkErr) {
       toast.error("Erro ao associar: " + linkErr.message);
     } else {
+      // Auto-fill profile fields from employee data
+      setFullName(emp.full_name);
+      if (emp.license_number) setLicenseNumber(emp.license_number);
+      // Save to profiles table
+      await supabase.from("profiles").update({
+        full_name: emp.full_name,
+        license_number: emp.license_number || licenseNumber,
+      }).eq("id", user.id);
       setLinkedEmployee({ employee_number: emp.employee_number, full_name: emp.full_name });
-      toast.success(`Associado ao funcionário ${emp.full_name} (nº ${emp.employee_number})`);
+      toast.success(`Associado ao funcionário ${emp.full_name} (nº ${emp.employee_number}) — perfil atualizado`);
     }
     setLinking(false);
   };
