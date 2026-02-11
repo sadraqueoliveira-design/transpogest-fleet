@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Truck, MapPin, CheckCircle2, ClipboardCheck } from "lucide-react";
 import { Link } from "react-router-dom";
+import TachoWidget from "@/components/driver/TachoWidget";
 
 export default function DriverHome() {
   const { user, profile } = useAuth();
@@ -33,6 +34,9 @@ export default function DriverHome() {
         <h1 className="text-xl font-bold">Olá, {profile?.full_name?.split(" ")[0] || "Motorista"} 👋</h1>
         <p className="text-sm text-muted-foreground">Bem-vindo ao TranspoGest</p>
       </div>
+
+      {/* Legal Status Widget */}
+      <TachoWidget />
 
       {/* Assigned Vehicle */}
       <Card>

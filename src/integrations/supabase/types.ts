@@ -173,6 +173,69 @@ export type Database = {
         }
         Relationships: []
       }
+      compliance_rules: {
+        Row: {
+          description: string | null
+          id: string
+          rule_key: string
+          updated_at: string
+          updated_by: string | null
+          value_minutes: number
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          rule_key: string
+          updated_at?: string
+          updated_by?: string | null
+          value_minutes: number
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          rule_key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value_minutes?: number
+        }
+        Relationships: []
+      }
+      compliance_violations: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          details: Json | null
+          detected_at: string
+          driver_id: string
+          id: string
+          severity: string
+          violation_type: string
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          details?: Json | null
+          detected_at?: string
+          driver_id: string
+          id?: string
+          severity?: string
+          violation_type: string
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          details?: Json | null
+          detected_at?: string
+          driver_id?: string
+          id?: string
+          severity?: string
+          violation_type?: string
+        }
+        Relationships: []
+      }
       driver_activities: {
         Row: {
           activity_type: string

@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.check-tacho-gaps]
 verify_jwt = false
+
+[functions.check-driving-limits]
+verify_jwt = false
