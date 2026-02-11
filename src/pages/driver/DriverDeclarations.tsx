@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { FileText, Clock, CheckCircle2 } from "lucide-react";
+import { FileText, Clock, CheckCircle2, ShieldAlert, Zap } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import SignaturePad from "@/components/SignaturePad";
@@ -24,6 +25,7 @@ interface Declaration {
   reason_text: string | null;
   company_name: string;
   created_at: string;
+  manager_name?: string | null;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -34,6 +36,8 @@ const REASON_LABELS: Record<string, string> = {
   other_work: "Trabalho não relacionado com condução",
   other: "Disponível",
 };
+
+const LIABILITY_TEXT = "Declaro sob compromisso de honra que estive em repouso. Assumo inteira responsabilidade legal por esta informação.";
 
 export default function DriverDeclarations() {
   const { user, profile } = useAuth();
@@ -47,6 +51,12 @@ export default function DriverDeclarations() {
   const [showSignature, setShowSignature] = useState(false);
   const [pendingDecl, setPendingDecl] = useState<Declaration | null>(null);
   const [sigLoading, setSigLoading] = useState(false);
+  // Liability waiver
+  const [showLiability, setShowLiability] = useState(false);
+  const [liabilityAccepted, setLiabilityAccepted] = useState(false);
+  const [autoApproving, setAutoApproving] = useState(false);
+  const [pendingAutoDecl, setPendingAutoDecl] = useState<Declaration | null>(null);
+  const [pendingSigUrl, setPendingSigUrl] = useState<string | null>(null);
 
   const fetchDeclarations = async () => {
     if (!user) return;
@@ -134,7 +144,49 @@ export default function DriverDeclarations() {
         signature_url: signatureUrl,
       });
 
-      toast.success(`Declaração assinada! ID: ${verificationId}`);
+      // Now attempt auto-approval
+      try {
+        const { data: autoResult, error: autoError } = await supabase.functions.invoke(
+          "auto-approve-declaration",
+          {
+            body: {
+              declaration_id: pendingDecl.id,
+              reason_code: reasonCode,
+              reason_text: reasonText || null,
+              driver_signature_url: signatureUrl,
+              gps_lat: metadata.gps_lat,
+              gps_lng: metadata.gps_lng,
+              device_info: metadata.device_info,
+              ip_address: metadata.ip_address,
+              liability_accepted: true, // We'll show waiver first if needed
+            },
+          }
+        );
+
+        if (!autoError && autoResult?.auto_approved === false && autoResult?.reason !== "manager_online") {
+          // No rule found or no signature - show waiver anyway for future
+          toast.success(`Declaração assinada! ID: ${verificationId}. Aguarda aprovação do gestor.`);
+        } else if (!autoError && autoResult?.auto_approved === false && autoResult?.reason === "manager_online") {
+          toast.success(`Declaração assinada! ID: ${verificationId}. Gestor notificado.`);
+        } else if (!autoError && autoResult?.auto_approved) {
+          // Auto-approved but we need to check if liability was shown
+          // Actually, we need to present the waiver BEFORE auto-approving
+          // Let's show the liability dialog
+          setPendingSigUrl(signatureUrl);
+          setPendingAutoDecl(pendingDecl);
+          setShowSignature(false);
+          setPendingDecl(null);
+          setShowLiability(true);
+          setSigLoading(false);
+          return;
+        } else {
+          toast.success(`Declaração assinada! ID: ${verificationId}. Aguarda aprovação do gestor.`);
+        }
+      } catch {
+        // Auto-approval check failed, continue with standard flow
+        toast.success(`Declaração assinada! ID: ${verificationId}. Aguarda aprovação do gestor.`);
+      }
+
       setShowSignature(false);
       setPendingDecl(null);
       fetchDeclarations();
@@ -142,6 +194,50 @@ export default function DriverDeclarations() {
       toast.error("Erro ao assinar: " + err.message);
     } finally {
       setSigLoading(false);
+    }
+  };
+
+  const handleLiabilityConfirm = async () => {
+    if (!pendingAutoDecl || !user || !pendingSigUrl) return;
+    setAutoApproving(true);
+
+    try {
+      const metadata = await collectSigningMetadata(user.id);
+
+      const { data: result, error } = await supabase.functions.invoke(
+        "auto-approve-declaration",
+        {
+          body: {
+            declaration_id: pendingAutoDecl.id,
+            reason_code: reasonCode,
+            reason_text: reasonText || null,
+            driver_signature_url: pendingSigUrl,
+            gps_lat: metadata.gps_lat,
+            gps_lng: metadata.gps_lng,
+            device_info: metadata.device_info,
+            ip_address: metadata.ip_address,
+            liability_accepted: true,
+          },
+        }
+      );
+
+      if (error) throw error;
+
+      if (result?.auto_approved) {
+        toast.success(`Declaração auto-aprovada! ID: ${result.verification_id}`);
+      } else {
+        toast.info(result?.message || "Aguarda aprovação do gestor.");
+      }
+
+      setShowLiability(false);
+      setPendingAutoDecl(null);
+      setPendingSigUrl(null);
+      setLiabilityAccepted(false);
+      fetchDeclarations();
+    } catch (err: any) {
+      toast.error("Erro: " + err.message);
+    } finally {
+      setAutoApproving(false);
     }
   };
 
@@ -214,9 +310,16 @@ export default function DriverDeclarations() {
                 <Card key={d.id}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
-                      <Badge variant={d.status === "signed" ? "default" : "secondary"}>
-                        {d.status === "signed" ? "Assinada" : "Arquivada"}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={d.status === "signed" ? "default" : "secondary"}>
+                          {d.status === "signed" ? "Assinada" : "Arquivada"}
+                        </Badge>
+                        {d.manager_name?.includes("(Auto)") && (
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Zap className="h-3 w-3" /> Auto
+                          </Badge>
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground">{formatDate(d.created_at)}</span>
                     </div>
                     <div className="text-sm mt-2 space-y-1">
@@ -298,6 +401,72 @@ export default function DriverDeclarations() {
         onConfirm={handleSignatureConfirm}
         loading={sigLoading}
       />
+
+      {/* Liability Waiver Dialog */}
+      <Dialog open={showLiability} onOpenChange={(o) => {
+        if (!o) {
+          setShowLiability(false);
+          setPendingAutoDecl(null);
+          setPendingSigUrl(null);
+          setLiabilityAccepted(false);
+          fetchDeclarations();
+        }
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-amber-500" />
+              Declaração de Responsabilidade
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+              <p className="text-sm font-medium">
+                Nenhum gestor está disponível neste momento. A sua declaração pode ser aprovada automaticamente.
+              </p>
+            </div>
+
+            <div className="rounded-lg border p-3 text-sm space-y-1 bg-muted/50">
+              <p className="font-medium text-xs text-muted-foreground uppercase tracking-wide mb-2">Compromisso de Honra</p>
+              <p className="text-sm italic">{LIABILITY_TEXT}</p>
+            </div>
+
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="liability"
+                checked={liabilityAccepted}
+                onCheckedChange={(c) => setLiabilityAccepted(c === true)}
+                className="mt-0.5"
+              />
+              <Label htmlFor="liability" className="text-sm cursor-pointer leading-relaxed">
+                Li e aceito a declaração acima. Assumo inteira responsabilidade.
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setShowLiability(false);
+              setPendingAutoDecl(null);
+              setPendingSigUrl(null);
+              setLiabilityAccepted(false);
+              fetchDeclarations();
+            }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleLiabilityConfirm}
+              disabled={!liabilityAccepted || autoApproving}
+              size="lg"
+              className="gap-2"
+            >
+              <Zap className="h-4 w-4" />
+              {autoApproving ? "A processar..." : "Confirmar Auto-Aprovação"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
