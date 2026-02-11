@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { FileText, Clock, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
+import SignaturePad from "@/components/SignaturePad";
+import { uploadSignature, getUserIP } from "@/lib/signatureUtils";
 
 interface Declaration {
   id: string;
@@ -41,6 +43,10 @@ export default function DriverDeclarations() {
   const [reasonCode, setReasonCode] = useState("vacation");
   const [reasonText, setReasonText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Signature flow
+  const [showSignature, setShowSignature] = useState(false);
+  const [pendingDecl, setPendingDecl] = useState<Declaration | null>(null);
+  const [sigLoading, setSigLoading] = useState(false);
 
   const fetchDeclarations = async () => {
     if (!user) return;
@@ -77,12 +83,46 @@ export default function DriverDeclarations() {
 
     if (error) {
       toast.error(error.message);
-    } else {
-      toast.success("Justificação enviada com sucesso!");
-      setSelected(null);
-      fetchDeclarations();
+      setSubmitting(false);
+      return;
     }
+
+    // After saving reason, open signature pad
+    setPendingDecl(selected);
+    setSelected(null);
+    setShowSignature(true);
     setSubmitting(false);
+  };
+
+  const handleSignatureConfirm = async (dataUrl: string) => {
+    if (!pendingDecl || !user) return;
+    setSigLoading(true);
+
+    try {
+      const [signatureUrl, ip] = await Promise.all([
+        uploadSignature(dataUrl, user.id, "driver"),
+        getUserIP(),
+      ]);
+
+      const { error } = await supabase
+        .from("activity_declarations")
+        .update({
+          driver_signature_url: signatureUrl,
+          signed_ip: ip,
+        } as any)
+        .eq("id", pendingDecl.id);
+
+      if (error) throw error;
+
+      toast.success("Declaração assinada com sucesso!");
+      setShowSignature(false);
+      setPendingDecl(null);
+      fetchDeclarations();
+    } catch (err: any) {
+      toast.error("Erro ao assinar: " + err.message);
+    } finally {
+      setSigLoading(false);
+    }
   };
 
   const formatDate = (d: string) => format(new Date(d), "dd/MM/yyyy HH:mm", { locale: pt });
@@ -135,11 +175,11 @@ export default function DriverDeclarations() {
                       size="lg"
                       onClick={() => {
                         setSelected(d);
-                        setReasonCode("vacation");
-                        setReasonText("");
+                        setReasonCode(d.reason_code || "vacation");
+                        setReasonText(d.reason_text || "");
                       }}
                     >
-                      <FileText className="h-4 w-4 mr-2" /> Justificar Ausência
+                      <FileText className="h-4 w-4 mr-2" /> Justificar e Assinar
                     </Button>
                   </CardContent>
                 </Card>
@@ -216,11 +256,28 @@ export default function DriverDeclarations() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setSelected(null)}>Cancelar</Button>
             <Button onClick={handleSubmit} disabled={submitting} size="lg">
-              {submitting ? "A enviar..." : "Confirmar"}
+              {submitting ? "A enviar..." : "Seguinte — Assinar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Signature modal */}
+      <SignaturePad
+        open={showSignature}
+        onOpenChange={(o) => { if (!o) { setShowSignature(false); setPendingDecl(null); } }}
+        title="Assinar Declaração"
+        subtitle="Confirme com a sua assinatura digital"
+        summaryContent={pendingDecl && (
+          <>
+            <p><strong>De:</strong> {formatDate(pendingDecl.gap_start_date)}</p>
+            <p><strong>Até:</strong> {formatDate(pendingDecl.gap_end_date)}</p>
+            <p><strong>Motivo:</strong> {REASON_LABELS[reasonCode] || reasonCode}</p>
+          </>
+        )}
+        onConfirm={handleSignatureConfirm}
+        loading={sigLoading}
+      />
     </div>
   );
 }

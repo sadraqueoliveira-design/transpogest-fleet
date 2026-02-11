@@ -12,10 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil } from "lucide-react";
+import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil, PenTool } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
+import SignaturePad from "@/components/SignaturePad";
+import { uploadSignature, uploadSignedPDF, getUserIP } from "@/lib/signatureUtils";
 
 interface Declaration {
   id: string;
@@ -28,6 +30,9 @@ interface Declaration {
   company_name: string;
   manager_name: string | null;
   document_url: string | null;
+  driver_signature_url?: string | null;
+  manager_signature_url?: string | null;
+  signed_pdf_url?: string | null;
   created_at: string;
   driver_name?: string;
   license_number?: string;
@@ -75,7 +80,28 @@ export default function Declarations() {
     gapEndDate: "",
   });
   const { toast } = useToast();
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+
+  // Manager signature states
+  const [showManagerSig, setShowManagerSig] = useState(false);
+  const [managerSigLoading, setManagerSigLoading] = useState(false);
+  const [savedManagerSig, setSavedManagerSig] = useState<string | null>(null);
+  const [showSaveSignature, setShowSaveSignature] = useState(false);
+
+  // Load saved manager signature
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("profiles")
+      .select("saved_signature_url")
+      .eq("id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if ((data as any)?.saved_signature_url) {
+          setSavedManagerSig((data as any).saved_signature_url);
+        }
+      });
+  }, [user]);
 
   const fetchDeclarations = async () => {
     setLoading(true);
@@ -90,7 +116,6 @@ export default function Declarations() {
       return;
     }
 
-    // Enrich with driver names
     const driverIds = [...new Set((data || []).map((d: any) => d.driver_id))];
     const { data: profiles } = await supabase
       .from("profiles")
@@ -132,77 +157,189 @@ export default function Declarations() {
     }
   };
 
-  const handleSign = async () => {
-    if (!selectedDecl) return;
+  /** Generate PDF with signatures and upload */
+  const generateAndUploadPDF = async (
+    decl: Declaration,
+    managerSignatureDataUrl: string,
+    managerName: string
+  ) => {
+    const ip = await getUserIP();
+    const signedAt = format(new Date(), "dd/MM/yyyy HH:mm:ss", { locale: pt });
+
+    // Fetch driver signature data URL if available
+    let driverSigDataUrl: string | undefined;
+    if (decl.driver_signature_url) {
+      try {
+        const res = await fetch(decl.driver_signature_url);
+        const blob = await res.blob();
+        driverSigDataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) { console.warn("Could not fetch driver signature", e); }
+    }
+
+    const pdf = generateDeclarationPDF({
+      driverName: driverFields.driverName || decl.driver_name || "Desconhecido",
+      licenseNumber: driverFields.licenseNumber || decl.license_number || "",
+      birthDate: driverFields.birthDate || decl.birth_date,
+      hireDate: driverFields.hireDate || decl.hire_date,
+      gapStartDate: driverFields.gapStartDate || decl.gap_start_date,
+      gapEndDate: driverFields.gapEndDate || decl.gap_end_date,
+      reasonCode: reasonCode || decl.reason_code || "other",
+      reasonText: reasonText || decl.reason_text || undefined,
+      managerName: managerName,
+      companyName: decl.company_name,
+      driverSignatureDataUrl: driverSigDataUrl,
+      managerSignatureDataUrl: managerSignatureDataUrl,
+      signedAt,
+      signedIP: ip,
+      ...editFields,
+    });
+
+    // Upload PDF
+    const pdfBlob = pdf.output("blob");
+    const pdfUrl = await uploadSignedPDF(pdfBlob, decl.id);
+
+    return { pdfUrl, ip, signedAt };
+  };
+
+  const handleSignWithSaved = async () => {
+    if (!selectedDecl || !savedManagerSig || !user) return;
     setSigning(true);
 
-    // Try to find the traffic manager from the driver's hub
-    let managerName = profile?.full_name || null;
     try {
-      // Look up driver's vehicle -> client -> hub with traffic manager
-      const { data: vehicle } = await supabase
-        .from("vehicles")
-        .select("client_id")
-        .eq("current_driver_id", selectedDecl.driver_id)
-        .maybeSingle();
-      
-      if (vehicle?.client_id) {
-        const { data: hub } = await supabase
-          .from("hubs")
-          .select("traffic_manager_name")
-          .eq("client_id", vehicle.client_id)
-          .not("traffic_manager_name", "is", null)
-          .limit(1)
-          .maybeSingle();
-        
-        if (hub?.traffic_manager_name) {
-          managerName = hub.traffic_manager_name;
-        }
-      }
-    } catch (e) {
-      console.warn("Could not fetch hub manager:", e);
-    }
-
-    const { error } = await supabase
-      .from("activity_declarations")
-      .update({
-        status: "signed",
-        reason_code: reasonCode as any,
-        reason_text: reasonText || null,
-        manager_name: managerName,
-      })
-      .eq("id", selectedDecl.id);
-
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } else {
-      // Generate and download PDF
+      let managerName = profile?.full_name || null;
+      // Try to get hub manager
       try {
-        const pdf = generateDeclarationPDF({
-          driverName: driverFields.driverName || "Desconhecido",
-          licenseNumber: driverFields.licenseNumber || "",
-          birthDate: driverFields.birthDate || null,
-          hireDate: driverFields.hireDate || null,
-          gapStartDate: driverFields.gapStartDate || selectedDecl.gap_start_date,
-          gapEndDate: driverFields.gapEndDate || selectedDecl.gap_end_date,
-          reasonCode,
-          reasonText: reasonText || undefined,
-          managerName: managerName || "—",
-          companyName: selectedDecl.company_name,
-          ...editFields,
-        });
-        const driverSlug = (driverFields.driverName || "motorista").replace(/\s+/g, "_");
-        const dateSlug = format(new Date(selectedDecl.gap_start_date), "yyyyMMdd");
-        pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
-      } catch (pdfErr) {
-        console.error("PDF generation error:", pdfErr);
-      }
+        const { data: vehicle } = await supabase
+          .from("vehicles")
+          .select("client_id")
+          .eq("current_driver_id", selectedDecl.driver_id)
+          .maybeSingle();
+        if (vehicle?.client_id) {
+          const { data: hub } = await supabase
+            .from("hubs")
+            .select("traffic_manager_name")
+            .eq("client_id", vehicle.client_id)
+            .not("traffic_manager_name", "is", null)
+            .limit(1)
+            .maybeSingle();
+          if (hub?.traffic_manager_name) managerName = hub.traffic_manager_name;
+        }
+      } catch (e) { console.warn("Could not fetch hub manager:", e); }
 
-      toast({ title: "Declaração assinada", description: "PDF gerado e descarregado." });
+      // Fetch saved signature as data URL
+      const res = await fetch(savedManagerSig);
+      const blob = await res.blob();
+      const managerSigDataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      const { pdfUrl, ip } = await generateAndUploadPDF(selectedDecl, managerSigDataUrl, managerName || "—");
+
+      const { error } = await supabase
+        .from("activity_declarations")
+        .update({
+          status: "signed",
+          reason_code: reasonCode as any,
+          reason_text: reasonText || null,
+          manager_name: managerName,
+          manager_signature_url: savedManagerSig,
+          signed_pdf_url: pdfUrl,
+          signed_at: new Date().toISOString(),
+          signed_ip: ip,
+        } as any)
+        .eq("id", selectedDecl.id);
+
+      if (error) throw error;
+
+      toast({ title: "Declaração assinada", description: "PDF gerado com assinatura digital." });
       setSelectedDecl(null);
       fetchDeclarations();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSigning(false);
     }
-    setSigning(false);
+  };
+
+  const handleManagerSignatureConfirm = async (dataUrl: string) => {
+    if (!selectedDecl || !user) return;
+    setManagerSigLoading(true);
+
+    try {
+      const managerSigUrl = await uploadSignature(dataUrl, user.id, "manager");
+
+      let managerName = profile?.full_name || null;
+      try {
+        const { data: vehicle } = await supabase
+          .from("vehicles")
+          .select("client_id")
+          .eq("current_driver_id", selectedDecl.driver_id)
+          .maybeSingle();
+        if (vehicle?.client_id) {
+          const { data: hub } = await supabase
+            .from("hubs")
+            .select("traffic_manager_name")
+            .eq("client_id", vehicle.client_id)
+            .not("traffic_manager_name", "is", null)
+            .limit(1)
+            .maybeSingle();
+          if (hub?.traffic_manager_name) managerName = hub.traffic_manager_name;
+        }
+      } catch (e) { console.warn("Could not fetch hub manager:", e); }
+
+      const { pdfUrl, ip } = await generateAndUploadPDF(selectedDecl, dataUrl, managerName || "—");
+
+      const { error } = await supabase
+        .from("activity_declarations")
+        .update({
+          status: "signed",
+          reason_code: reasonCode as any,
+          reason_text: reasonText || null,
+          manager_name: managerName,
+          manager_signature_url: managerSigUrl,
+          signed_pdf_url: pdfUrl,
+          signed_at: new Date().toISOString(),
+          signed_ip: ip,
+        } as any)
+        .eq("id", selectedDecl.id);
+
+      if (error) throw error;
+
+      toast({ title: "Declaração assinada", description: "PDF gerado com assinatura digital." });
+      setShowManagerSig(false);
+      setSelectedDecl(null);
+      fetchDeclarations();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setManagerSigLoading(false);
+    }
+  };
+
+  const handleSaveManagerSignature = async (dataUrl: string) => {
+    if (!user) return;
+    setManagerSigLoading(true);
+    try {
+      const sigUrl = await uploadSignature(dataUrl, user.id, "saved");
+      const { error } = await supabase
+        .from("profiles")
+        .update({ saved_signature_url: sigUrl } as any)
+        .eq("id", user.id);
+      if (error) throw error;
+      setSavedManagerSig(sigUrl);
+      setShowSaveSignature(false);
+      toast({ title: "Assinatura guardada", description: "Será usada automaticamente nas próximas aprovações." });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setManagerSigLoading(false);
+    }
   };
 
   const handleArchive = async (id: string) => {
@@ -234,11 +371,31 @@ export default function Declarations() {
           <h1 className="text-2xl font-bold">Declarações de Atividade</h1>
           <p className="text-sm text-muted-foreground">Regulamento (CE) n.º 561/2006 — Gestão de lacunas de tacógrafo</p>
         </div>
-        <Button onClick={runCheck} disabled={checking}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${checking ? "animate-spin" : ""}`} />
-          Verificar Lacunas
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowSaveSignature(true)}>
+            <PenTool className="h-4 w-4 mr-2" />
+            {savedManagerSig ? "Atualizar Assinatura" : "Guardar Assinatura"}
+          </Button>
+          <Button onClick={runCheck} disabled={checking}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${checking ? "animate-spin" : ""}`} />
+            Verificar Lacunas
+          </Button>
+        </div>
       </div>
+
+      {/* Saved signature indicator */}
+      {savedManagerSig && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-3 flex items-center gap-3">
+            <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Assinatura guardada</p>
+              <p className="text-xs text-muted-foreground">Pode aprovar declarações com um clique usando a sua assinatura guardada.</p>
+            </div>
+            <img src={savedManagerSig} alt="Assinatura" className="h-10 rounded border bg-white px-2" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -316,8 +473,8 @@ export default function Declarations() {
                           {d.status === "draft" && (
                             <Button size="sm" variant="outline" onClick={() => {
                               setSelectedDecl(d);
-                              setReasonCode("vacation");
-                              setReasonText("");
+                              setReasonCode(d.reason_code || "vacation");
+                              setReasonText(d.reason_text || "");
                               setDriverFields({
                                 driverName: d.driver_name || "",
                                 licenseNumber: d.license_number || "",
@@ -327,32 +484,40 @@ export default function Declarations() {
                                 gapEndDate: d.gap_end_date ? d.gap_end_date.slice(0, 16) : "",
                               });
                             }}>
-                              <FileText className="h-3 w-3 mr-1" /> Gerar
+                              <FileText className="h-3 w-3 mr-1" /> Assinar
                             </Button>
                           )}
                           {d.status === "signed" && (
                             <>
-                              <Button size="sm" variant="outline" onClick={() => {
-                                try {
-                                  const pdf = generateDeclarationPDF({
-                                    driverName: d.driver_name || "Desconhecido",
-                                    licenseNumber: d.license_number || "",
-                                    birthDate: d.birth_date,
-                                    hireDate: d.hire_date,
-                                    gapStartDate: d.gap_start_date,
-                                    gapEndDate: d.gap_end_date,
-                                    reasonCode: d.reason_code || "other",
-                                    reasonText: d.reason_text || undefined,
-                                    managerName: d.manager_name || "—",
-                                    companyName: d.company_name,
-                                  });
-                                  const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
-                                  const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
-                                  pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
-                                } catch (err) { console.error(err); }
-                              }}>
-                                <Download className="h-3 w-3 mr-1" /> PDF
-                              </Button>
+                              {d.signed_pdf_url ? (
+                                <Button size="sm" variant="outline" asChild>
+                                  <a href={d.signed_pdf_url} target="_blank" rel="noopener noreferrer">
+                                    <Download className="h-3 w-3 mr-1" /> PDF Assinado
+                                  </a>
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" onClick={() => {
+                                  try {
+                                    const pdf = generateDeclarationPDF({
+                                      driverName: d.driver_name || "Desconhecido",
+                                      licenseNumber: d.license_number || "",
+                                      birthDate: d.birth_date,
+                                      hireDate: d.hire_date,
+                                      gapStartDate: d.gap_start_date,
+                                      gapEndDate: d.gap_end_date,
+                                      reasonCode: d.reason_code || "other",
+                                      reasonText: d.reason_text || undefined,
+                                      managerName: d.manager_name || "—",
+                                      companyName: d.company_name,
+                                    });
+                                    const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
+                                    const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
+                                    pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
+                                  } catch (err) { console.error(err); }
+                                }}>
+                                  <Download className="h-3 w-3 mr-1" /> PDF
+                                </Button>
+                              )}
                               <Button size="sm" variant="ghost" onClick={() => handleArchive(d.id)}>
                                 <Archive className="h-3 w-3 mr-1" /> Arquivar
                               </Button>
@@ -373,7 +538,7 @@ export default function Declarations() {
       <Dialog open={!!selectedDecl} onOpenChange={(o) => !o && setSelectedDecl(null)}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Gerar Declaração de Atividade</DialogTitle>
+            <DialogTitle>Gerar e Assinar Declaração</DialogTitle>
           </DialogHeader>
 
           {selectedDecl && (
@@ -381,6 +546,12 @@ export default function Declarations() {
               <div className="rounded-lg border p-3 space-y-1 text-sm">
                 <p><strong>Empresa:</strong> {selectedDecl.company_name}</p>
                 <p><strong>Gestor:</strong> {profile?.full_name || "—"}</p>
+                {selectedDecl.driver_signature_url && (
+                  <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                    <CheckCircle2 className="h-4 w-4 text-primary" />
+                    <span className="text-xs text-primary font-medium">Motorista já assinou</span>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -483,14 +654,54 @@ export default function Declarations() {
             </div>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedDecl(null)}>Cancelar</Button>
-            <Button onClick={handleSign} disabled={signing}>
-              {signing ? "A processar..." : "Assinar Declaração"}
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <div className="flex gap-2 w-full">
+              <Button variant="outline" onClick={() => setSelectedDecl(null)} className="flex-1">Cancelar</Button>
+              {savedManagerSig ? (
+                <Button onClick={handleSignWithSaved} disabled={signing} className="flex-1">
+                  {signing ? "A processar..." : (
+                    <><CheckCircle2 className="h-4 w-4 mr-1" /> Aprovar (assinatura guardada)</>
+                  )}
+                </Button>
+              ) : null}
+            </div>
+            <Button
+              variant={savedManagerSig ? "outline" : "default"}
+              onClick={() => setShowManagerSig(true)}
+              disabled={signing}
+              className="w-full"
+            >
+              <PenTool className="h-4 w-4 mr-1" /> Assinar Manualmente
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Manager manual signature pad */}
+      <SignaturePad
+        open={showManagerSig}
+        onOpenChange={(o) => !o && setShowManagerSig(false)}
+        title="Assinatura do Gestor"
+        subtitle="Assine para aprovar esta declaração"
+        summaryContent={selectedDecl && (
+          <>
+            <p><strong>Motorista:</strong> {selectedDecl.driver_name}</p>
+            <p><strong>Período:</strong> {formatDate(selectedDecl.gap_start_date)} — {formatDate(selectedDecl.gap_end_date)}</p>
+          </>
+        )}
+        onConfirm={handleManagerSignatureConfirm}
+        loading={managerSigLoading}
+      />
+
+      {/* Save manager signature pad */}
+      <SignaturePad
+        open={showSaveSignature}
+        onOpenChange={(o) => !o && setShowSaveSignature(false)}
+        title="Guardar Assinatura"
+        subtitle="Esta assinatura será usada automaticamente ao aprovar declarações com um clique"
+        onConfirm={handleSaveManagerSignature}
+        loading={managerSigLoading}
+      />
     </div>
   );
 }
