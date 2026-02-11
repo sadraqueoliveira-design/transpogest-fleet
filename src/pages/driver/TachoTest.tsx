@@ -39,6 +39,7 @@ export default function TachoTest() {
   const status = {
     currentActivity: "driving" as string | null,
     currentActivityStart: new Date().toISOString() as string | null,
+    cardInserted: true,
     continuousMinutes: continuous,
     dailyMinutes: daily,
     weeklyMinutes: weekly,

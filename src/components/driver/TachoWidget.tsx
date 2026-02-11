@@ -3,13 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle, Truck, Wrench, Coffee } from "lucide-react";
+import { BedDouble, Clock, Calendar, CalendarRange, AlertTriangle, Truck, Wrench, Coffee, CreditCard } from "lucide-react";
 
 // === Types ===
 
 interface DriverStatus {
   currentActivity: string | null;
   currentActivityStart: string | null;
+  cardInserted: boolean;
   continuousMinutes: number;
   dailyMinutes: number;
   weeklyMinutes: number;
@@ -241,7 +242,19 @@ const ACTIVITY_CONFIG: Record<string, { label: string; icon: any; className: str
   rest: { label: "Em Repouso", icon: BedDouble, className: "bg-muted text-muted-foreground border-muted-foreground/20" },
 };
 
-function ActivityBadge({ activity, since }: { activity: string | null; since: string | null }) {
+function ActivityBadge({ activity, since, cardInserted }: { activity: string | null; since: string | null; cardInserted: boolean }) {
+  if (!cardInserted) {
+    return (
+      <div className="flex items-center justify-between rounded-lg px-3 py-2 border bg-destructive/10 text-destructive border-destructive/30">
+        <div className="flex items-center gap-2">
+          <CreditCard className="h-4 w-4" />
+          <span className="text-sm font-semibold">Sem Cartão</span>
+        </div>
+        <span className="text-xs opacity-75">Cartão não inserido</span>
+      </div>
+    );
+  }
+
   const config = activity ? ACTIVITY_CONFIG[activity] : null;
   if (!config) return null;
 
@@ -266,7 +279,7 @@ export function TachographLiveStatus({ driverStatus }: { driverStatus: DriverSta
     <Card className="overflow-hidden">
       <CardContent className="p-4 space-y-4">
         {/* Current Activity State */}
-        <ActivityBadge activity={driverStatus.currentActivity} since={driverStatus.currentActivityStart} />
+        <ActivityBadge activity={driverStatus.currentActivity} since={driverStatus.currentActivityStart} cardInserted={driverStatus.cardInserted} />
 
         {/* Smart Alerts */}
         <AlertBanners status={driverStatus} />
@@ -309,6 +322,7 @@ export default function TachoWidget() {
           setStatus({
             currentActivity: d.current_activity || null,
             currentActivityStart: d.current_activity_start || null,
+            cardInserted: d.card_inserted !== false,
             continuousMinutes: d.continuous_driving_minutes,
             dailyMinutes: d.daily_driving_minutes,
             weeklyMinutes: d.weekly_driving_minutes,
