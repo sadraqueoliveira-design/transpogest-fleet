@@ -35,7 +35,14 @@ export default function DriverHome() {
         return;
       }
 
-      const vapidKey = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
+      // Fetch VAPID key from backend
+      const { data: vapidData, error: vapidError } = await supabase.functions.invoke("get-vapid-key");
+      if (vapidError || !vapidData?.vapidKey) {
+        alert("Erro ao obter VAPID key: " + (vapidError?.message || "não configurada"));
+        return;
+      }
+      const vapidKey = vapidData.vapidKey;
+      console.log("[PUSH] VAPID key obtained, length:", vapidKey.length);
       
       // Get messaging instance
       const { getFirebaseMessaging } = await import("@/lib/firebase");
