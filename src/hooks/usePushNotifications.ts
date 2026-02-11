@@ -4,18 +4,22 @@ import { requestNotificationPermission, getFirebaseMessaging, onMessage } from "
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-const VAPID_KEY = "VUC53U5NLEnv77O6HngJrhg0-uEsUZ1_hi6pyKGKFAU";
-
 export function usePushNotifications() {
   const { user } = useAuth();
   const registered = useRef(false);
 
   useEffect(() => {
-    if (!user || registered.current || !VAPID_KEY) return;
+    if (!user || registered.current) return;
 
     const register = async () => {
       try {
-        const token = await requestNotificationPermission(VAPID_KEY);
+        // Fetch VAPID key from backend
+        const { data: vapidData, error: vapidError } = await supabase.functions.invoke("get-vapid-key");
+        if (vapidError || !vapidData?.vapidKey) {
+          console.error("Failed to get VAPID key:", vapidError);
+          return;
+        }
+        const token = await requestNotificationPermission(vapidData.vapidKey);
         if (!token) return;
 
         // Upsert token in database
