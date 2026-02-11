@@ -300,6 +300,44 @@ Deno.serve(async (req) => {
           };
           const nowISO = new Date().toISOString();
 
+          // === CLOSE ORPHAN SESSIONS ===
+          // When a driver's card is removed (current_driver_id becomes null),
+          // close any open activities for drivers that were previously assigned
+          const driversWithOpenSessions = new Set<string>();
+          const currentlyAssignedDrivers = new Set(
+            vehicleRecords.filter((r: any) => r.current_driver_id).map((r: any) => r.current_driver_id)
+          );
+
+          // Find all open activities for drivers linked to vehicles in this sync
+          const allPlates = vehicleRecords.map((r: any) => r.plate);
+          const { data: vehicleIds } = await supabaseAdmin
+            .from("vehicles")
+            .select("id, current_driver_id")
+            .in("plate", allPlates);
+
+          // Get previously assigned drivers (those with open activities on these vehicles)
+          const vehicleIdList = (vehicleIds || []).map((v: any) => v.id).filter(Boolean);
+          if (vehicleIdList.length > 0) {
+            const { data: orphanActivities } = await supabaseAdmin
+              .from("driver_activities")
+              .select("id, driver_id, start_time, vehicle_id")
+              .in("vehicle_id", vehicleIdList)
+              .is("end_time", null);
+
+            for (const oa of orphanActivities || []) {
+              if (!currentlyAssignedDrivers.has(oa.driver_id)) {
+                // This driver is no longer assigned — close their session
+                const startTime = new Date(oa.start_time);
+                const durationMin = Math.round((Date.now() - startTime.getTime()) / 60000);
+                await supabaseAdmin
+                  .from("driver_activities")
+                  .update({ end_time: nowISO, duration_minutes: durationMin })
+                  .eq("id", oa.id);
+                console.log(`Closed orphan activity for driver ${oa.driver_id} (card removed)`);
+              }
+            }
+          }
+
           for (const v of filteredVehicles) {
             const d = v.data || {};
             const drs = d.drs || {};
