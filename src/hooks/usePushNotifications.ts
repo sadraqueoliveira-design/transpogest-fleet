@@ -9,27 +9,18 @@ export function usePushNotifications() {
   const registered = useRef(false);
   const listenerSet = useRef(false);
 
-  // Foreground message listener — always set up, independent of token registration
   useEffect(() => {
-    if (listenerSet.current) return;
-
-    const setupListener = async () => {
-      try {
-        const messaging = await getFirebaseMessaging();
+    // Always set up foreground listener (independent of user/token)
+    if (!listenerSet.current) {
+      listenerSet.current = true;
+      getFirebaseMessaging().then((messaging) => {
         if (!messaging) return;
-
-        listenerSet.current = true;
         console.log("[PUSH] Foreground listener registered");
-
         onMessage(messaging, (payload) => {
           console.log("[PUSH] Foreground message received:", payload);
           const { title, body } = payload.notification || {};
           const route = payload.data?.route || "/";
-
-          // Vibrate if supported
           if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-
-          // Show native notification even in foreground
           if (Notification.permission === "granted") {
             const n = new Notification(title || "TranspoGest", {
               body: body || "",
@@ -43,20 +34,12 @@ export function usePushNotifications() {
               n.close();
             };
           }
-
-          // Also show in-app toast
           toast.info(title || "Notificação", { description: body });
         });
-      } catch (err) {
-        console.error("[PUSH] Foreground listener error:", err);
-      }
-    };
+      }).catch((err) => console.error("[PUSH] Foreground listener error:", err));
+    }
 
-    setupListener();
-  }, []);
-
-  // Token registration
-  useEffect(() => {
+    // Token registration (needs user)
     if (!user || registered.current) return;
 
     const register = async () => {
