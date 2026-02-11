@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, RefreshCw, Shield, Search, Calendar } from "lucide-react";
+import { AlertTriangle, RefreshCw, Shield, Search, Calendar, Download, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
 import { toast } from "sonner";
 import ComplianceViolationsPanel from "@/components/admin/ComplianceViolationsPanel";
 
@@ -121,6 +122,42 @@ export default function Compliance() {
     drivers: new Set(filtered.map(v => v.driver_id)).size,
   };
 
+  const exportRows = () =>
+    filtered.map(v => ({
+      "Data/Hora": new Date(v.detected_at).toLocaleString("pt-PT"),
+      Motorista: driverName(v.driver_id),
+      Tipo: violationLabels[v.violation_type] || v.violation_type,
+      Severidade: v.severity,
+      "Minutos": v.details?.minutes ?? "",
+      "Limite": v.details?.limit ?? "",
+      Estado: v.acknowledged ? "Reconhecida" : "Pendente",
+    }));
+
+  const exportCSV = () => {
+    const rows = exportRows();
+    if (!rows.length) return toast.error("Sem dados para exportar");
+    const headers = Object.keys(rows[0]);
+    const csv = [headers.join(";"), ...rows.map(r => headers.map(h => `"${r[h as keyof typeof r] ?? ""}"`).join(";"))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `violacoes_compliance_${dateFrom}_${dateTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("CSV exportado");
+  };
+
+  const exportExcel = () => {
+    const rows = exportRows();
+    if (!rows.length) return toast.error("Sem dados para exportar");
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Violações");
+    XLSX.writeFile(wb, `violacoes_compliance_${dateFrom}_${dateTo}.xlsx`);
+    toast.success("Excel exportado");
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -212,6 +249,12 @@ export default function Compliance() {
             </div>
             <Button variant="outline" size="icon" onClick={fetchData} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportCSV} className="gap-1.5">
+              <Download className="h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportExcel} className="gap-1.5">
+              <FileSpreadsheet className="h-4 w-4" /> Excel
             </Button>
           </div>
 
