@@ -152,16 +152,6 @@ Deno.serve(async (req) => {
                   title: payload.title,
                   body: payload.body,
                   route: payload.data?.route || "/",
-                  ...(payload.data || {}),
-                },
-                webpush: {
-                  notification: {
-                    title: payload.title,
-                    body: payload.body,
-                    icon: "/pwa-192x192.png",
-                    badge: "/pwa-192x192.png",
-                  },
-                  fcm_options: { link: payload.data?.route || "/" },
                 },
               },
             }),
