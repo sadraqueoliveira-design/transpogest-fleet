@@ -7,6 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { AlertTriangle, MapPin, Camera, X } from "lucide-react";
+import VoiceRecorder from "@/components/driver/VoiceRecorder";
+import { hapticSuccess, hapticError } from "@/lib/haptics";
 
 export default function Occurrence() {
   const { user } = useAuth();
@@ -14,6 +16,8 @@ export default function Occurrence() {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getLocation = () => {
@@ -35,20 +39,27 @@ export default function Occurrence() {
       const ext = photo.name.split(".").pop();
       const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
       const { error } = await supabase.storage.from("occurrence-photos").upload(path, photo);
-      if (error) {
-        toast.error("Erro ao enviar foto: " + error.message);
-        continue;
-      }
+      if (error) { toast.error("Erro ao enviar foto: " + error.message); continue; }
       const { data } = supabase.storage.from("occurrence-photos").getPublicUrl(path);
       urls.push(data.publicUrl);
     }
     return urls;
   };
 
+  const uploadAudio = async (): Promise<string | null> => {
+    if (!user || !audioBlob) return null;
+    const path = `${user.id}/${Date.now()}-voice.webm`;
+    const { error } = await supabase.storage.from("occurrence-photos").upload(path, audioBlob);
+    if (error) { toast.error("Erro ao enviar áudio: " + error.message); return null; }
+    const { data } = supabase.storage.from("occurrence-photos").getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const photoUrls = await uploadPhotos();
+    const [photoUrls, audioUrlUploaded] = await Promise.all([uploadPhotos(), uploadAudio()]);
+    const allMedia = [...photoUrls, ...(audioUrlUploaded ? [audioUrlUploaded] : [])];
     const { data: vehicle } = await supabase.from("vehicles").select("id").eq("current_driver_id", user?.id || "").maybeSingle();
     const { error } = await supabase.from("occurrences").insert({
       driver_id: user?.id,
@@ -56,20 +67,28 @@ export default function Occurrence() {
       description,
       lat: location?.lat || null,
       lng: location?.lng || null,
-      photos: photoUrls.length > 0 ? photoUrls : null,
+      photos: allMedia.length > 0 ? allMedia : null,
     });
-    if (error) toast.error(error.message);
+    if (error) { toast.error(error.message); hapticError(); }
     else {
       toast.success("Ocorrência registada!");
+      hapticSuccess();
       setDescription("");
       setLocation(null);
       setPhotos([]);
+      setAudioBlob(null);
+      setAudioUrl(null);
     }
     setLoading(false);
   };
 
   const removePhoto = (index: number) => {
     setPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAudioRecorded = (blob: Blob) => {
+    setAudioBlob(blob);
+    setAudioUrl(URL.createObjectURL(blob));
   };
 
   return (
@@ -83,13 +102,23 @@ export default function Occurrence() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label>Descrição *</Label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} required placeholder="Descreva o incidente..." rows={4} />
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} required placeholder="Descreva o incidente..." rows={4} className="text-base min-h-[120px]" />
+            </div>
+
+            {/* Voice note */}
+            <div className="space-y-2">
+              <Label>Nota de Voz</Label>
+              <VoiceRecorder
+                onRecorded={handleAudioRecorded}
+                audioUrl={audioUrl}
+                onClear={() => { setAudioBlob(null); setAudioUrl(null); }}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Localização</Label>
-              <Button type="button" variant="outline" className="w-full" onClick={getLocation}>
-                <MapPin className="mr-2 h-4 w-4" />
+              <Button type="button" variant="outline" className="w-full min-h-[52px] text-base" onClick={getLocation}>
+                <MapPin className="mr-2 h-5 w-5" />
                 {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "Obter Localização Atual"}
               </Button>
             </div>
@@ -108,8 +137,8 @@ export default function Occurrence() {
                   if (e.target.files) setPhotos((prev) => [...prev, ...Array.from(e.target.files!)]);
                 }}
               />
-              <Button type="button" variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()}>
-                <Camera className="mr-2 h-4 w-4" />
+              <Button type="button" variant="outline" className="w-full min-h-[52px] text-base" onClick={() => fileInputRef.current?.click()}>
+                <Camera className="mr-2 h-5 w-5" />
                 Tirar Foto / Anexar Imagens
               </Button>
               {photos.length > 0 && (
@@ -126,7 +155,7 @@ export default function Occurrence() {
               )}
             </div>
 
-            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+            <Button type="submit" className="w-full min-h-[56px] text-lg font-semibold" disabled={loading}>
               {loading ? "A registar..." : "Registar Ocorrência"}
             </Button>
           </form>

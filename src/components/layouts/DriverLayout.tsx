@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Home, Fuel, FileText, AlertTriangle, User, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { hapticTap } from "@/lib/haptics";
+import InstallPrompt from "@/components/driver/InstallPrompt";
 
 const navItems = [
   { to: "/motorista", icon: Home, label: "Início" },
@@ -18,6 +20,12 @@ const navItems = [
 export default function DriverLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { profile, user } = useAuth();
+
+  // Force dark mode on driver app
+  useEffect(() => {
+    document.documentElement.classList.add("dark");
+    return () => { document.documentElement.classList.remove("dark"); };
+  }, []);
 
   // Realtime: notify driver when a route is assigned to them
   useEffect(() => {
@@ -61,26 +69,30 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
       </header>
 
       {/* Content */}
-      <main className="flex-1 p-4 pb-24">
+      <main className="flex-1 p-4 pb-28">
         {children}
       </main>
 
-      {/* Bottom nav */}
+      {/* Install prompt */}
+      <InstallPrompt />
+
+      {/* Bottom nav – big touch targets */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-driver-nav safe-area-pb">
-        <div className="flex items-center justify-around py-2">
+        <div className="flex items-center justify-around py-1">
           {navItems.map((item) => {
             const active = pathname === item.to;
             return (
               <Link
                 key={item.to}
                 to={item.to}
+                onClick={() => hapticTap()}
                 className={cn(
-                  "flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                  "flex flex-col items-center gap-0.5 rounded-lg px-3 py-2 min-h-[52px] min-w-[52px] justify-center text-xs font-medium transition-colors",
                   active ? "text-driver-nav-active" : "text-driver-nav-foreground"
                 )}
               >
-                <item.icon className={cn("h-5 w-5", active && "text-driver-nav-active")} />
-                <span>{item.label}</span>
+                <item.icon className={cn("h-6 w-6", active && "text-driver-nav-active")} />
+                <span className="text-[11px]">{item.label}</span>
               </Link>
             );
           })}
