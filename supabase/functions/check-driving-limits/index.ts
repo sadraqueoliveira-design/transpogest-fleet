@@ -6,6 +6,37 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// FCM OAuth2 helper
+async function getFcmAccessToken(serviceAccount: { client_email: string; private_key: string; token_uri: string }): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claim = btoa(JSON.stringify({
+    iss: serviceAccount.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: serviceAccount.token_uri,
+    iat: now, exp: now + 3600,
+  }));
+  const textEncoder = new TextEncoder();
+  const inputData = textEncoder.encode(`${header}.${claim}`);
+  const pemContents = serviceAccount.private_key
+    .replace(/-----BEGIN PRIVATE KEY-----/, "")
+    .replace(/-----END PRIVATE KEY-----/, "")
+    .replace(/\n/g, "");
+  const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey("pkcs8", binaryKey, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, inputData);
+  const sig = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const jwt = `${header}.${claim}.${sig}`;
+  const tokenRes = await fetch(serviceAccount.token_uri, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  const tokenData = await tokenRes.json();
+  if (!tokenData.access_token) throw new Error("FCM token error: " + JSON.stringify(tokenData));
+  return tokenData.access_token;
+}
+
 interface ComplianceStatus {
   driver_id: string;
   driver_name: string | null;
@@ -227,7 +258,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Log new violations (avoid duplicates within last hour)
+    // Log new violations and send push notifications (avoid duplicates within last hour)
+    const pushMessages: Array<{ driver_id: string; title: string; body: string; link: string }> = [];
+
+    // Also send warnings as push (not just violations)
+    for (const r of results) {
+      if (r.warnings.includes("CONTINUOUS_LIMIT_NEAR")) {
+        pushMessages.push({
+          driver_id: r.driver_id,
+          title: "⚠️ Pausa Obrigatória em Breve",
+          body: `Condução contínua: ${Math.floor(r.continuous_driving_minutes / 60)}h${(r.continuous_driving_minutes % 60).toString().padStart(2, "0")}. Procure um local para parar.`,
+          link: "/motorista",
+        });
+      }
+      if (r.warnings.includes("DAILY_LIMIT_NEAR")) {
+        pushMessages.push({
+          driver_id: r.driver_id,
+          title: "⚠️ Fim de Turno Aproxima-se",
+          body: `Condução diária: ${Math.floor(r.daily_driving_minutes / 60)}h${(r.daily_driving_minutes % 60).toString().padStart(2, "0")} / ${Math.floor(r.daily_driving_limit / 60)}h.`,
+          link: "/motorista",
+        });
+      }
+    }
+
     for (const v of newViolations) {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       const { data: existing } = await supabaseAdmin
@@ -240,6 +293,121 @@ Deno.serve(async (req) => {
 
       if (!existing || existing.length === 0) {
         await supabaseAdmin.from("compliance_violations").insert(v);
+
+        // Map violation to push message
+        const msgMap: Record<string, { title: string; body: string }> = {
+          continuous_limit_exceeded: { title: "🚨 PAUSA DE 45 MIN NECESSÁRIA AGORA!", body: "Excedeste o limite de condução contínua de 4h30." },
+          daily_limit_exceeded: { title: "🚨 Limite Diário Excedido!", body: "Excedeste o limite de condução diária. Para imediatamente." },
+          weekly_limit_exceeded: { title: "🚨 Limite Semanal de 56h Excedido!", body: "Excedeste o limite semanal de condução." },
+          biweekly_limit_exceeded: { title: "🚨 Limite Bi-Semanal de 90h Excedido!", body: "Excedeste o limite de 90h em duas semanas." },
+        };
+        const msg = msgMap[v.violation_type];
+        if (msg) {
+          pushMessages.push({ driver_id: v.driver_id, ...msg, link: "/motorista" });
+        }
+      }
+    }
+
+    // Send push notifications via FCM
+    if (pushMessages.length > 0) {
+      const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
+      if (serviceAccountJson) {
+        try {
+          const serviceAccount = JSON.parse(serviceAccountJson);
+          const accessToken = await getFcmAccessToken(serviceAccount);
+          const projectId = serviceAccount.project_id;
+
+          // Deduplicate by driver_id (keep most severe)
+          const byDriver = new Map<string, typeof pushMessages[0]>();
+          for (const msg of pushMessages) {
+            const existing = byDriver.get(msg.driver_id);
+            if (!existing || msg.title.includes("🚨")) {
+              byDriver.set(msg.driver_id, msg);
+            }
+          }
+
+          for (const [driverId, msg] of byDriver) {
+            // Check if we already sent a push to this driver in last 10 min
+            const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+            const { data: recentViolation } = await supabaseAdmin
+              .from("compliance_violations")
+              .select("id")
+              .eq("driver_id", driverId)
+              .gte("detected_at", tenMinAgo)
+              .limit(2);
+            // Skip if we already logged 2+ violations in last 10 min (avoid spam)
+            if (recentViolation && recentViolation.length >= 2) continue;
+
+            const { data: tokens } = await supabaseAdmin
+              .from("user_fcm_tokens")
+              .select("token")
+              .eq("user_id", driverId);
+
+            for (const { token } of tokens || []) {
+              try {
+                await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    message: {
+                      token,
+                      notification: { title: msg.title, body: msg.body },
+                      data: { link: msg.link },
+                      webpush: { fcm_options: { link: msg.link } },
+                    },
+                  }),
+                });
+              } catch (e) {
+                console.error("Push send error:", e);
+              }
+            }
+          }
+
+          // Also notify admins about violations
+          if (newViolations.length > 0) {
+            const { data: adminRoles } = await supabaseAdmin
+              .from("user_roles")
+              .select("user_id")
+              .in("role", ["admin", "manager"]);
+
+            const adminIds = (adminRoles || []).map((r: any) => r.user_id);
+            if (adminIds.length > 0) {
+              const { data: adminTokens } = await supabaseAdmin
+                .from("user_fcm_tokens")
+                .select("token")
+                .in("user_id", adminIds);
+
+              const violationSummary = newViolations.map(v => {
+                const name = profileMap.get(v.driver_id) || v.driver_id.slice(0, 8);
+                return `${name}: ${v.violation_type.replace(/_/g, " ")}`;
+              }).join(", ");
+
+              for (const { token } of adminTokens || []) {
+                try {
+                  await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      message: {
+                        token,
+                        notification: {
+                          title: `🚨 ${newViolations.length} Violação(ões) de Compliance`,
+                          body: violationSummary,
+                        },
+                        data: { link: "/admin" },
+                        webpush: { fcm_options: { link: "/admin" } },
+                      },
+                    }),
+                  });
+                } catch (e) {
+                  console.error("Admin push error:", e);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("FCM setup error:", e);
+        }
       }
     }
 
