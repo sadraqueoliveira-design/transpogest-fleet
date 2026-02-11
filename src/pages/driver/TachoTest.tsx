@@ -37,6 +37,8 @@ export default function TachoTest() {
   if (biweekly >= LIMITS.biweekly) violations.push("BIWEEKLY_LIMIT_EXCEEDED");
 
   const status = {
+    currentActivity: "driving" as string | null,
+    currentActivityStart: new Date().toISOString() as string | null,
     continuousMinutes: continuous,
     dailyMinutes: daily,
     weeklyMinutes: weekly,
