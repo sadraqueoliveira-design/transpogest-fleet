@@ -125,7 +125,18 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   // Fields 1-5
   fieldRow("1", "Nome da empresa", data.companyName);
-  fieldRow("2", "Morada, código postal, localidade, país", data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal");
+  
+  // Field 2 - address: label on one line, value on the next (long text)
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.text("(2)", margin + 2, y);
+  doc.text("Morada, código postal, localidade, país:", textX, y);
+  y += 4;
+  const addressVal = data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal";
+  const addressLines = doc.splitTextToSize(addressVal, cw - numCol);
+  doc.text(addressLines, textX, y);
+  y += addressLines.length * 4 + 1;
+
   fieldRow("3", "Número de telefone (incluindo o prefixo internacional)", data.companyPhone || "+351 219667000");
   fieldRow("4", "Número de fax (incluindo o prefixo internacional)", data.companyFax || "+351 219667009");
   fieldRow("5", "Endereço de correio electrónico", data.companyEmail || "florencio.silva@tfs.pt");
