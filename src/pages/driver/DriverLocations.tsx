@@ -162,9 +162,9 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            // Android intent — opens RoadLords (Eurowag) directly; falls back to Play Store if not installed
-                            // Note: only works on real Android device/PWA, not in desktop browser preview
-                            window.location.href = `intent://navigate?lat=${h.lat}&lon=${h.lng}#Intent;scheme=roadlords;package=com.roadlords.android;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.roadlords.android`)};end`;
+                            // Android intent with geo: data targeting RoadLords (Eurowag) package
+                            // Uses ACTION_VIEW with geo: URI and explicit package — opens the app directly
+                            window.location.href = `intent://geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})#Intent;action=android.intent.action.VIEW;package=com.roadlords.android;scheme=geo;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.roadlords.android`)};end`;
                           }}>
                             <Navigation className="h-4 w-4 mr-2" />Abrir no GPS (Eurowag/outro)
                           </DropdownMenuItem>
