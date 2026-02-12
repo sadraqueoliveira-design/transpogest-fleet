@@ -758,6 +758,7 @@ export type Database = {
           avatar_url: string | null
           birth_date: string | null
           created_at: string
+          fcm_token: string | null
           full_name: string | null
           hire_date: string | null
           id: string
@@ -771,6 +772,7 @@ export type Database = {
           avatar_url?: string | null
           birth_date?: string | null
           created_at?: string
+          fcm_token?: string | null
           full_name?: string | null
           hire_date?: string | null
           id: string
@@ -784,6 +786,7 @@ export type Database = {
           avatar_url?: string | null
           birth_date?: string | null
           created_at?: string
+          fcm_token?: string | null
           full_name?: string | null
           hire_date?: string | null
           id?: string
@@ -792,6 +795,45 @@ export type Database = {
           next_card_download_due?: string | null
           saved_signature_url?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      push_notifications_log: {
+        Row: {
+          body: string
+          created_at: string
+          data: Json | null
+          error_message: string | null
+          id: string
+          recipient_user_id: string
+          sender_user_id: string | null
+          sent_at: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          data?: Json | null
+          error_message?: string | null
+          id?: string
+          recipient_user_id: string
+          sender_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          data?: Json | null
+          error_message?: string | null
+          id?: string
+          recipient_user_id?: string
+          sender_user_id?: string | null
+          sent_at?: string | null
+          status?: string
+          title?: string
         }
         Relationships: []
       }

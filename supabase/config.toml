@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.morning-digest]
 verify_jwt = false
+
+[functions.send-fcm]
+verify_jwt = false
