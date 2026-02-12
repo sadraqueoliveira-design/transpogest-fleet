@@ -135,28 +135,14 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   y += 1;
 
-  // "declaro que o conductor:"
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text("declaro que o conductor:", margin + 2, y);
-  y += 5;
-
-  // Fields 8-11
+  // Fields 8-11 (continue directly, no separate header)
   fieldRow("8", "Apelido e nome", data.driverName);
   fieldRow("9", "Data de nascimento (dia/mês/ano)", data.birthDate ? format(new Date(data.birthDate), "dd-MM-yyyy") : "___-___-______");
   fieldRow("10", "Número de carta de condução, de bilhete de identidade ou de passaporte", data.licenseNumber || "N/D");
   fieldRow("11", "que começou a trabalhar na empresa em (dia/mês/ano)", data.hireDate ? format(new Date(data.hireDate), "dd-MM-yyyy") : "___-___-______");
 
-  y += 1;
-
-  // "no período:"
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text("no período:", margin + 2, y);
-  y += 5;
-
-  // Fields 12-13
-  fieldRow("12", "de (hora/dia/mês/ano)", formatDT(data.gapStartDate));
+  // Fields 12-13 ("no período" is part of field 12 label)
+  fieldRow("12", "no período (hora/dia/mês/ano)", formatDT(data.gapStartDate));
   fieldRow("13", "até (hora/dia/mês/ano)", formatDT(data.gapEndDate));
 
   y += 1;
