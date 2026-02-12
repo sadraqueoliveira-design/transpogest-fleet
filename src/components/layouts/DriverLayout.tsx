@@ -2,7 +2,7 @@ import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Home, Fuel, FileText, AlertTriangle, User, ClipboardList, FolderOpen } from "lucide-react";
+import { Home, Fuel, FileText, AlertTriangle, User, ClipboardList, FolderOpen, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
@@ -14,6 +14,7 @@ import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 const navItems = [
   { to: "/motorista", icon: Home, label: "Início" },
   { to: "/motorista/abastecer", icon: Fuel, label: "Abastecer" },
+  { to: "/motorista/locais", icon: Store, label: "Locais" },
   { to: "/motorista/solicitacoes", icon: FileText, label: "Pedidos" },
   { to: "/motorista/ocorrencia", icon: AlertTriangle, label: "Ocorrência" },
   { to: "/motorista/declaracoes", icon: ClipboardList, label: "Declarações" },

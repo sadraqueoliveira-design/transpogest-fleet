@@ -41,6 +41,7 @@ import DriverProfile from "./pages/driver/DriverProfile";
 import DriverDocuments from "./pages/driver/DriverDocuments";
 import DriverDeclarations from "./pages/driver/DriverDeclarations";
 import TachoTest from "./pages/driver/TachoTest";
+import DriverLocations from "./pages/driver/DriverLocations";
 
 const queryClient = new QueryClient();
 
@@ -96,6 +97,7 @@ const App = () => (
             <Route path="/motorista/declaracoes" element={<DriverRoute><DriverDeclarations /></DriverRoute>} />
             <Route path="/motorista/perfil" element={<DriverRoute><DriverProfile /></DriverRoute>} />
             <Route path="/motorista/tacho-test" element={<DriverRoute><TachoTest /></DriverRoute>} />
+            <Route path="/motorista/locais" element={<DriverRoute><DriverLocations /></DriverRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
