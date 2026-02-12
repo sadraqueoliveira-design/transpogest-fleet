@@ -80,22 +80,22 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.line(W / 2 - falseW / 2, y + 0.8, W / 2 + falseW / 2, y + 0.8);
   y += 5;
 
-  // "Parte a preencher pela empresa" - ABOVE the border line
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "bold");
-  doc.text("Parte a preencher pela empresa", margin + 2, y);
-  y += 4;
-
   // ── Start bordered form area ──
   const borderTop = y;
   const borderX = margin;
   const borderW = cw;
 
-  y += 3;
+  y += 4;
+
+  // "Parte a preencher pela empresa" - BELOW the border line
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("Parte a preencher pela empresa", margin + 2, y);
+  y += 5;
 
   // Helper: field row with (num) in left column, label: value in right column
-  const fieldRow = (num: string, label: string, value: string, valueFontSize = 8) => {
-    doc.setFontSize(7.5);
+  const fieldRow = (num: string, label: string, value: string, valueFontSize = 9) => {
+    doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
     doc.text(`(${num})`, margin + 2, y);
     
@@ -103,7 +103,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     const labelText = `${label}:`;
     doc.text(labelText, textX, y);
     
-    // Value (bold, slightly larger)
+    // Value
     const labelW = doc.getTextWidth(labelText);
     doc.setFontSize(valueFontSize);
     doc.setFont("helvetica", "normal");
@@ -111,7 +111,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     const availW = cw - numCol - labelW - 2;
     const valueLines = doc.splitTextToSize(value, availW);
     doc.text(valueLines, textX + labelW + 1, y);
-    y += valueLines.length > 1 ? valueLines.length * 3.8 + 1 : 4.8;
+    y += valueLines.length > 1 ? valueLines.length * 4 + 1 : 5;
   };
 
   // Fields 1-5
@@ -124,10 +124,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 1;
 
   // "Eu, abaixo assinado:"
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
   doc.text("Eu, abaixo assinado:", margin + 2, y);
-  y += 4.5;
+  y += 5;
 
   // Fields 6-7
   fieldRow("6", "Apelido e nome", data.managerName);
@@ -136,10 +136,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 1;
 
   // "declaro que o conductor:"
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
   doc.text("declaro que o conductor:", margin + 2, y);
-  y += 4.5;
+  y += 5;
 
   // Fields 8-11
   fieldRow("8", "Apelido e nome", data.driverName);
@@ -150,10 +150,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 1;
 
   // "no período:"
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.setFont("helvetica", "bold");
   doc.text("no período:", margin + 2, y);
-  y += 4.5;
+  y += 5;
 
   // Fields 12-13
   fieldRow("12", "de (hora/dia/mês/ano)", formatDT(data.gapStartDate));
@@ -173,7 +173,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   const selectedIdx = REASON_MAP[data.reasonCode];
 
-  doc.setFontSize(7.5);
+  doc.setFontSize(8);
   for (const r of reasons) {
     const isSelected = parseInt(r.num) === selectedIdx;
     
@@ -184,11 +184,11 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     // Checkbox
     const cbX = textX;
     doc.setLineWidth(0.3);
-    doc.rect(cbX, y - 2.8, 3, 3);
+    doc.rect(cbX, y - 3, 3.5, 3.5);
     if (isSelected) {
       doc.setLineWidth(0.5);
-      doc.line(cbX + 0.4, y - 2.4, cbX + 2.6, y + 0.0);
-      doc.line(cbX + 2.6, y - 2.4, cbX + 0.4, y + 0.0);
+      doc.line(cbX + 0.5, y - 2.5, cbX + 3, y + 0.0);
+      doc.line(cbX + 3, y - 2.5, cbX + 0.5, y + 0.0);
       doc.setLineWidth(0.3);
     }
     
@@ -196,7 +196,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     doc.setFont("helvetica", "normal");
     const reasonLines = doc.splitTextToSize(r.text, cw - numCol - 6);
     doc.text(reasonLines, cbX + 5, y);
-    y += reasonLines.length * 3.5 + 1;
+    y += reasonLines.length * 3.8 + 1;
   }
 
   if (data.reasonCode === "other" && data.reasonText) {
@@ -211,15 +211,15 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const today = data.signedAt ? formatD(data.signedAt) : formatD(new Date().toISOString());
   const loc = data.signingLocation || "Azambuja";
   
-  doc.setFontSize(7.5);
+  doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text("(20)", margin + 2, y);
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.text(`Localidade: ${loc}`, textX, y);
   doc.text(`Data: ${today}`, textX + 55, y);
   y += 5.5;
 
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.text("Assinatura:…………………………………………………", margin + 2, y);
 
   if (data.managerSignatureDataUrl) {
@@ -230,24 +230,24 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 10;
 
   // (21) Driver declaration
-  doc.setFontSize(7.5);
+  doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text("(21)", margin + 2, y);
   const driverDecl = "Eu, abaixo assinado, o conductor, confirmo que, no período acima mencionado, não conduzi nenhum veículo abrangido pelo âmbito de aplicação do regulamento (CE) N.º561/2006 ou pelo AETR.";
   const declLines = doc.splitTextToSize(driverDecl, cw - numCol);
   doc.text(declLines, textX, y);
-  y += declLines.length * 3.5 + 3;
+  y += declLines.length * 3.8 + 3;
 
   // (22) Driver signature
-  doc.setFontSize(7.5);
+  doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text("(22)", margin + 2, y);
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.text(`Localidade: ${loc}`, textX, y);
   doc.text(`Data: ${today}`, textX + 55, y);
-  y += 4.5;
+  y += 5;
 
-  doc.setFontSize(8);
+  doc.setFontSize(9);
   doc.text("Assinatura do conductor:…………………………………………………", margin + 2, y);
 
   if (data.driverSignatureDataUrl) {
