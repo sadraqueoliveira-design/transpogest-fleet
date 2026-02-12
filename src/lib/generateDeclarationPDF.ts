@@ -49,8 +49,12 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const W = 210;
   const margin = 20;
   const cw = W - 2 * margin;
-  const numCol = 12; // width for the (N) number column
+  const numCol = 14; // width for the (N) number column
   const textX = margin + numCol; // x position for label+value text
+
+  const LABEL_SIZE = 8;
+  const VALUE_SIZE = 11;
+  const HEADER_SIZE = 9;
 
   const formatDT = (d: string) => format(new Date(d), "H:mm'-'dd'-'MM'-'yyyy", { locale: pt });
   const formatD = (d: string) => format(new Date(d), "dd/MM/yyyy", { locale: pt });
@@ -58,14 +62,13 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   let y = 18;
 
   // ── Header (outside the border) ──
-  doc.setFontSize(11);
+  doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  // "ANEXO" underlined
   const anexoW = doc.getTextWidth("ANEXO");
   doc.text("ANEXO", W / 2, y, { align: "center" });
   doc.setLineWidth(0.4);
   doc.line(W / 2 - anexoW / 2, y + 0.8, W / 2 + anexoW / 2, y + 0.8);
-  y += 6;
+  y += 7;
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
@@ -83,7 +86,6 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFontSize(7);
   doc.setFont("helvetica", "bold");
   doc.text("AS FALSAS DECLARAÇÕES CONSTITUEM UMA INFRACÇÃO", W / 2, y, { align: "center" });
-  // Small caps style line underneath
   const falseW = doc.getTextWidth("AS FALSAS DECLARAÇÕES CONSTITUEM UMA INFRACÇÃO");
   doc.setLineWidth(0.3);
   doc.line(W / 2 - falseW / 2, y + 0.8, W / 2 + falseW / 2, y + 0.8);
@@ -96,47 +98,35 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   y += 4;
 
-  // "Parte a preencher pela empresa" - BELOW the border line
-  doc.setFontSize(9);
+  // "Parte a preencher pela empresa"
+  doc.setFontSize(HEADER_SIZE);
   doc.setFont("helvetica", "bold");
   doc.text("Parte a preencher pela empresa", margin + 2, y);
-  y += 5;
+  y += 6;
 
-  // Helper: field row with (num) in left column, label: value in right column
-  const fieldRow = (num: string, label: string, value: string, valueFontSize = 9) => {
-    doc.setFontSize(8);
+  // Helper: field row — label in small font, value in larger font on same line
+  const fieldRow = (num: string, label: string, value: string) => {
+    doc.setFontSize(LABEL_SIZE);
     doc.setFont("helvetica", "normal");
     doc.text(`(${num})`, margin + 2, y);
-    
-    // Label
+
     const labelText = `${label}:`;
     doc.text(labelText, textX, y);
-    
-    // Value
     const labelW = doc.getTextWidth(labelText);
-    doc.setFontSize(valueFontSize);
+
+    doc.setFontSize(VALUE_SIZE);
     doc.setFont("helvetica", "normal");
-    
-    const availW = cw - numCol - labelW - 2;
+
+    const valueX = textX + labelW + 1;
+    const availW = margin + cw - valueX - 2;
     const valueLines = doc.splitTextToSize(value, availW);
-    doc.text(valueLines, textX + labelW + 1, y);
-    y += valueLines.length > 1 ? valueLines.length * 4 + 1 : 5;
+    doc.text(valueLines, valueX, y);
+    y += valueLines.length > 1 ? valueLines.length * 4.5 + 1 : 6;
   };
 
   // Fields 1-5
   fieldRow("1", "Nome da empresa", data.companyName);
-  
-  // Field 2 - address: label on one line, value on the next (long text)
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.text("(2)", margin + 2, y);
-  doc.text("Morada, código postal, localidade, país:", textX, y);
-  y += 4;
-  const addressVal = data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal";
-  const addressLines = doc.splitTextToSize(addressVal, cw - numCol);
-  doc.text(addressLines, textX, y);
-  y += addressLines.length * 4 + 1;
-
+  fieldRow("2", "Morada, código postal, localidade, país", data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal");
   fieldRow("3", "Número de telefone (incluindo o prefixo internacional)", data.companyPhone || "+351 219667000");
   fieldRow("4", "Número de fax (incluindo o prefixo internacional)", data.companyFax || "+351 219667009");
   fieldRow("5", "Endereço de correio electrónico", data.companyEmail || "florencio.silva@tfs.pt");
@@ -144,22 +134,20 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 1;
 
   // "Eu, abaixo assinado:"
-  doc.setFontSize(9);
+  doc.setFontSize(HEADER_SIZE);
   doc.setFont("helvetica", "bold");
   doc.text("Eu, abaixo assinado:", margin + 2, y);
-  y += 5;
+  y += 6;
 
   // Fields 6-7
   fieldRow("6", "Apelido e nome", toSurnameFirst(data.managerName));
   fieldRow("7", "Funções na empresa", data.managerPosition || "Responsável de Trafego");
 
-  y += 1;
-
   // "declaro que o conductor:"
-  doc.setFontSize(9);
+  doc.setFontSize(HEADER_SIZE);
   doc.setFont("helvetica", "bold");
   doc.text("declaro que o conductor:", margin + 2, y);
-  y += 5;
+  y += 6;
 
   // Fields 8-11
   fieldRow("8", "Apelido e nome", toSurnameFirst(data.driverName));
@@ -167,13 +155,11 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   fieldRow("10", "Número de carta de condução, de bilhete de identidade ou de passaporte", data.licenseNumber || "N/D");
   fieldRow("11", "que começou a trabalhar na empresa em (dia/mês/ano)", data.hireDate ? format(new Date(data.hireDate), "dd-MM-yyyy") : "___-___-______");
 
-  y += 1;
-
   // "no período:"
-  doc.setFontSize(9);
+  doc.setFontSize(HEADER_SIZE);
   doc.setFont("helvetica", "bold");
   doc.text("no período:", margin + 2, y);
-  y += 5;
+  y += 6;
 
   // Fields 12-13
   fieldRow("12", "de (hora/dia/mês/ano)", formatDT(data.gapStartDate));
@@ -193,30 +179,29 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   const selectedIdx = REASON_MAP[data.reasonCode];
 
-  doc.setFontSize(8);
+  doc.setFontSize(LABEL_SIZE);
   for (const r of reasons) {
     const isSelected = parseInt(r.num) === selectedIdx;
-    
-    // Number
+
     doc.setFont("helvetica", "normal");
     doc.text(`(${r.num})`, margin + 2, y);
-    
+
     // Checkbox
     const cbX = textX;
     doc.setLineWidth(0.3);
     doc.rect(cbX, y - 3, 3.5, 3.5);
     if (isSelected) {
       doc.setLineWidth(0.5);
+      // Draw X mark
       doc.line(cbX + 0.5, y - 2.5, cbX + 3, y + 0.0);
       doc.line(cbX + 3, y - 2.5, cbX + 0.5, y + 0.0);
       doc.setLineWidth(0.3);
     }
-    
-    // Text
+
     doc.setFont("helvetica", "normal");
     const reasonLines = doc.splitTextToSize(r.text, cw - numCol - 6);
     doc.text(reasonLines, cbX + 5, y);
-    y += reasonLines.length * 3.8 + 1;
+    y += reasonLines.length * 3.8 + 1.5;
   }
 
   if (data.reasonCode === "other" && data.reasonText) {
@@ -229,21 +214,22 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   // (20) Signature section - Company
   const today = data.signedAt ? formatD(data.signedAt) : formatD(new Date().toISOString());
-  const loc = data.signingLocation || "Milharado";
-  
-  doc.setFontSize(8);
+  const loc = data.signingLocation || "Azambuja";
+
+  doc.setFontSize(LABEL_SIZE);
   doc.setFont("helvetica", "normal");
   doc.text("(20)", margin + 2, y);
-  doc.setFontSize(9);
-  const locDateW = cw - numCol;
-  const locText20 = `Localidade: ${loc}`;
-  const dateText20 = `Data: ${today}`;
-  doc.text(locText20, textX, y);
-  doc.text(dateText20, textX + locDateW - 2, y, { align: "right" });
-  y += 5.5;
+  doc.setFontSize(VALUE_SIZE);
+  doc.text(`Localidade:`, textX, y);
+  const locLabelW = doc.getTextWidth("Localidade:");
+  doc.text(loc, textX + locLabelW + 1, y);
+  doc.text(`Data:`, textX + 80, y);
+  const dateLabelW = doc.getTextWidth("Data:");
+  doc.text(today, textX + 80 + dateLabelW + 1, y);
+  y += 6;
 
-  doc.setFontSize(9);
-  doc.text("Assinatura:…………………………………………………", margin + 2, y);
+  doc.setFontSize(LABEL_SIZE);
+  doc.text("Assinatura:…………………………………………………...", margin + 2, y);
 
   if (data.managerSignatureDataUrl) {
     try {
@@ -253,27 +239,27 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 10;
 
   // (21) Driver declaration
-  doc.setFontSize(8);
+  doc.setFontSize(LABEL_SIZE);
   doc.setFont("helvetica", "normal");
   doc.text("(21)", margin + 2, y);
   const driverDecl = "Eu, abaixo assinado, o conductor, confirmo que, no período acima mencionado, não conduzi nenhum veículo abrangido pelo âmbito de aplicação do regulamento (CE) N.º561/2006 ou pelo AETR.";
   const declLines = doc.splitTextToSize(driverDecl, cw - numCol);
   doc.text(declLines, textX, y);
-  y += declLines.length * 3.8 + 3;
+  y += declLines.length * 3.8 + 4;
 
   // (22) Driver signature
-  doc.setFontSize(8);
+  doc.setFontSize(LABEL_SIZE);
   doc.setFont("helvetica", "normal");
   doc.text("(22)", margin + 2, y);
-  doc.setFontSize(9);
-  const locText22 = `Localidade: ${loc}`;
-  const dateText22 = `Data: ${today}`;
-  doc.text(locText22, textX, y);
-  doc.text(dateText22, textX + locDateW - 2, y, { align: "right" });
-  y += 5;
+  doc.setFontSize(VALUE_SIZE);
+  doc.text(`Localidade:`, textX, y);
+  doc.text(loc, textX + locLabelW + 1, y);
+  doc.text(`Data:`, textX + 80, y);
+  doc.text(today, textX + 80 + dateLabelW + 1, y);
+  y += 6;
 
-  doc.setFontSize(9);
-  doc.text("Assinatura do conductor:…………………………………………………", margin + 2, y);
+  doc.setFontSize(LABEL_SIZE);
+  doc.text("Assinatura do conductor:…………………………………………………...", margin + 2, y);
 
   if (data.driverSignatureDataUrl) {
     try {
@@ -290,7 +276,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   y += 8;
 
-  // ── Digital signature audit trail (between border and footnotes) ──
+  // ── Digital signature audit trail ──
   if (data.signedAt || data.signedIP || data.verificationId) {
     doc.setFontSize(6.5);
     doc.setFont("helvetica", "bold");
@@ -307,7 +293,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   // ── Footnotes ──
   doc.setDrawColor(0);
   doc.setLineWidth(0.3);
-  doc.line(margin, y, margin + 50, y); // short line before footnotes
+  doc.line(margin, y, margin + 50, y);
   y += 4;
 
   doc.setFontSize(7);
