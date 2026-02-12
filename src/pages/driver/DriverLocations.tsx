@@ -162,11 +162,11 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            // Android intent to open Eurowag (RoadLords) app; falls back to Play Store
-                            const intentUri = `intent://navigate?lat=${h.lat}&lon=${h.lng}#Intent;scheme=roadlords;package=com.roadlords.android;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.roadlords.android`)};end`;
-                            window.location.href = intentUri;
+                            // Use geo: URI which Android lets user pick nav app (Eurowag/RoadLords, Google Maps, etc.)
+                            const geoUri = `geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})`;
+                            window.open(geoUri, "_self");
                           }}>
-                            <ExternalLink className="h-4 w-4 mr-2" />Eurowag GPS Truck
+                            <ExternalLink className="h-4 w-4 mr-2" />Abrir no GPS (Eurowag/outro)
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => window.open(`https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`, "_blank")}>
                             <ExternalLink className="h-4 w-4 mr-2" />OsmAnd
