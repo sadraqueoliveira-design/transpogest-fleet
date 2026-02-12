@@ -162,11 +162,10 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            // Use geo: URI which Android lets user pick nav app (Eurowag/RoadLords, Google Maps, etc.)
-                            const geoUri = `geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})`;
-                            window.open(geoUri, "_self");
+                            // Google Maps with place name — on Android the user can redirect to their preferred nav app
+                            window.open(`https://www.google.com/maps/search/?api=1&query=${h.lat},${h.lng}&query_place_id=${encodeURIComponent(h.name)}`, "_blank");
                           }}>
-                            <ExternalLink className="h-4 w-4 mr-2" />Abrir no GPS (Eurowag/outro)
+                            <Navigation className="h-4 w-4 mr-2" />Abrir no GPS (Eurowag/outro)
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => window.open(`https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`, "_blank")}>
                             <ExternalLink className="h-4 w-4 mr-2" />OsmAnd
