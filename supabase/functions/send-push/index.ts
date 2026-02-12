@@ -135,60 +135,80 @@ Deno.serve(async (req) => {
     let failed = 0;
     const errors: string[] = [];
 
-    for (const { token: fcmToken, user_id: recipientId } of tokens) {
-      try {
-        const res = await fetch(
-          `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message: {
-                token: fcmToken,
-                data: {
-                  title: payload.title,
-                  body: payload.body,
-                  route: payload.data?.route || "/",
-                },
-              },
-            }),
-          }
-        );
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY_MS = 1500;
 
-        if (res.ok) {
-          sent++;
-          await supabase.from("push_notifications_log").insert({
-            recipient_user_id: recipientId,
-            sender_user_id: caller.id,
-            title: payload.title,
-            body: payload.body,
-            data: payload.data || {},
-            status: "sent",
-            sent_at: new Date().toISOString(),
-          });
-        } else {
-          const errBody = await res.text();
-          failed++;
-          errors.push(errBody);
-          await supabase.from("push_notifications_log").insert({
-            recipient_user_id: recipientId,
-            sender_user_id: caller.id,
-            title: payload.title,
-            body: payload.body,
-            data: payload.data || {},
-            status: "failed",
-            error_message: errBody.substring(0, 500),
-          });
-          if (errBody.includes("UNREGISTERED") || errBody.includes("INVALID_ARGUMENT")) {
-            await supabase.from("user_fcm_tokens").delete().eq("token", fcmToken);
+    for (const { token: fcmToken, user_id: recipientId } of tokens) {
+      let lastError = "";
+      let success = false;
+
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * attempt));
+            console.log(`Retry ${attempt}/${MAX_RETRIES} for token ${fcmToken.substring(0, 8)}...`);
           }
+
+          const res = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                message: {
+                  token: fcmToken,
+                  data: {
+                    title: payload.title,
+                    body: payload.body,
+                    route: payload.data?.route || "/",
+                  },
+                },
+              }),
+            }
+          );
+
+          if (res.ok) {
+            sent++;
+            success = true;
+            await supabase.from("push_notifications_log").insert({
+              recipient_user_id: recipientId,
+              sender_user_id: caller.id,
+              title: payload.title,
+              body: payload.body,
+              data: payload.data || {},
+              status: "sent",
+              sent_at: new Date().toISOString(),
+            });
+            break;
+          } else {
+            lastError = await res.text();
+            // Non-retryable errors: invalid token
+            if (lastError.includes("UNREGISTERED") || lastError.includes("INVALID_ARGUMENT")) {
+              await supabase.from("user_fcm_tokens").delete().eq("token", fcmToken);
+              break;
+            }
+            // Retryable: continue loop
+          }
+        } catch (e) {
+          lastError = e instanceof Error ? e.message : String(e);
         }
-      } catch (e) {
+      }
+
+      if (!success) {
         failed++;
-        errors.push(e instanceof Error ? e.message : String(e));
+        errors.push(lastError);
+        await supabase.from("push_notifications_log").insert({
+          recipient_user_id: recipientId,
+          sender_user_id: caller.id,
+          title: payload.title,
+          body: payload.body,
+          data: payload.data || {},
+          status: "failed",
+          error_message: lastError.substring(0, 500),
+        });
       }
     }
 
