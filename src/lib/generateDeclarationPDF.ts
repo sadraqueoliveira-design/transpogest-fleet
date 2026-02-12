@@ -134,7 +134,41 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   // Fields 1-5
   fieldRow("1", "Nome da empresa", data.companyName);
-  fieldRow("2", "Morada, código postal, localidade, país", data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal");
+  
+  // Field 2 - special handling: full text wraps across entire width
+  {
+    const address = data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal";
+    doc.setFontSize(LABEL_SIZE);
+    doc.setFont("helvetica", "normal");
+    doc.text("(2)", margin + 2, y);
+    const label2 = "Morada, código postal, localidade, país:";
+    doc.text(label2, textX, y);
+    const label2W = doc.getTextWidth(label2);
+    
+    // Render value starting right after label, wrapping across the full content width
+    doc.setFontSize(VALUE_SIZE);
+    doc.setFont("helvetica", "normal");
+    const val2X = textX + label2W + 1;
+    const firstLineW = margin + cw - val2X - 2;
+    const fullLineW = margin + cw - textX - 2;
+    
+    // Split first line manually, then remaining text wraps at full width
+    const firstChunk = doc.splitTextToSize(address, firstLineW);
+    doc.text(firstChunk[0], val2X, y);
+    
+    if (firstChunk.length > 1) {
+      // Get remaining text after first line
+      const remaining = address.substring(firstChunk[0].length).trim();
+      if (remaining) {
+        const restLines = doc.splitTextToSize(remaining, fullLineW);
+        for (const line of restLines) {
+          y += 4.5;
+          doc.text(line, textX, y);
+        }
+      }
+    }
+    y += 6;
+  }
   fieldRow("3", "Número de telefone (incluindo o prefixo internacional)", data.companyPhone || "+351 219667000");
   fieldRow("4", "Número de fax (incluindo o prefixo internacional)", data.companyFax || "+351 219667009");
   fieldRow("5", "Endereço de correio electrónico", data.companyEmail || "florencio.silva@tfs.pt");
