@@ -227,7 +227,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const locDateW = cw - numCol;
   const locText20 = `Localidade: ${loc}`;
   const dateText20 = `Data: ${today}`;
-  doc.text(locText20, textX + locDateW / 2, y, { align: "center" });
+  doc.text(locText20, textX, y);
   doc.text(dateText20, textX + locDateW - 2, y, { align: "right" });
   y += 5.5;
 
@@ -257,7 +257,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFontSize(9);
   const locText22 = `Localidade: ${loc}`;
   const dateText22 = `Data: ${today}`;
-  doc.text(locText22, textX + locDateW / 2, y, { align: "center" });
+  doc.text(locText22, textX, y);
   doc.text(dateText22, textX + locDateW - 2, y, { align: "right" });
   y += 5;
 
