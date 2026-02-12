@@ -162,8 +162,9 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            const geoUri = `geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})`;
-                            window.location.href = geoUri;
+                            // Android intent to open Eurowag app; falls back to Play Store
+                            const intentUri = `intent://navigate?lat=${h.lat}&lon=${h.lng}#Intent;scheme=eurowag;package=com.eurowag.navigation;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.eurowag.navigation`)};end`;
+                            window.location.href = intentUri;
                           }}>
                             <ExternalLink className="h-4 w-4 mr-2" />Eurowag GPS Truck
                           </DropdownMenuItem>
