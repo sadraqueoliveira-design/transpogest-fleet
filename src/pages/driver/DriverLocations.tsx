@@ -161,17 +161,10 @@ export default function DriverLocations() {
                           <DropdownMenuItem onClick={() => { window.location.href = `https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            // Copy coordinates to clipboard so driver can paste in Eurowag/RoadLords search
-                            const coords = `${h.lat}, ${h.lng}`;
-                            navigator.clipboard.writeText(coords).then(() => {
-                              toast.success(`Coordenadas copiadas: ${coords}`, {
-                                description: "Abre o Eurowag Navigation e cola na pesquisa",
-                                duration: 5000,
-                              });
-                            });
-                          }}>
-                            <Copy className="h-4 w-4 mr-2" />Eurowag Navigation (copiar coords)
+                          <DropdownMenuItem asChild>
+                            <a href={`geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})`}>
+                              <Navigation className="h-4 w-4 mr-2" />Eurowag / GPS Truck
+                            </a>
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => { window.location.href = `https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />OsmAnd
