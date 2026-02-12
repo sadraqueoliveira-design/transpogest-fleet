@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Bell, CheckCircle2, XCircle, Clock } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Bell, CheckCircle2, XCircle, Clock, CalendarIcon, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { formatDistanceToNow, format, startOfDay, endOfDay, isWithinInterval } from "date-fns";
 import { pt } from "date-fns/locale";
 
 interface NotificationLog {
@@ -22,15 +26,21 @@ interface NotificationLog {
 interface Props {
   /** admin = shows all sent notifications; driver = shows only own */
   mode: "admin" | "driver";
-  /** Max items to show */
+  /** Max items to fetch */
   limit?: number;
 }
 
-export default function NotificationHistory({ mode, limit = 20 }: Props) {
+const PAGE_SIZE = 10;
+
+export default function NotificationHistory({ mode, limit = 100 }: Props) {
   const { user } = useAuth();
   const [logs, setLogs] = useState<NotificationLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [senderNames, setSenderNames] = useState<Record<string, string>>({});
+  const [page, setPage] = useState(0);
+  const [dateFrom, setDateFrom] = useState<Date | undefined>();
+  const [dateTo, setDateTo] = useState<Date | undefined>();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!user) return;
@@ -51,7 +61,6 @@ export default function NotificationHistory({ mode, limit = 20 }: Props) {
       if (data) {
         setLogs(data as NotificationLog[]);
 
-        // Resolve sender names for admin mode
         if (mode === "admin") {
           const senderIds = [...new Set(data.filter(d => d.sender_user_id).map(d => d.sender_user_id!))];
           if (senderIds.length > 0) {
@@ -72,7 +81,6 @@ export default function NotificationHistory({ mode, limit = 20 }: Props) {
 
     fetchLogs();
 
-    // Realtime subscription
     const channel = supabase
       .channel(`notif-history-${mode}`)
       .on("postgres_changes", {
@@ -87,6 +95,28 @@ export default function NotificationHistory({ mode, limit = 20 }: Props) {
 
     return () => { supabase.removeChannel(channel); };
   }, [user, mode, limit]);
+
+  const filtered = useMemo(() => {
+    let result = logs;
+    if (statusFilter !== "all") {
+      result = result.filter(l => l.status === statusFilter);
+    }
+    if (dateFrom) {
+      const start = startOfDay(dateFrom);
+      result = result.filter(l => new Date(l.created_at) >= start);
+    }
+    if (dateTo) {
+      const end = endOfDay(dateTo);
+      result = result.filter(l => new Date(l.created_at) <= end);
+    }
+    return result;
+  }, [logs, statusFilter, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const paged = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  useEffect(() => { setPage(0); }, [statusFilter, dateFrom, dateTo]);
 
   const statusIcon = (status: string) => {
     switch (status) {
@@ -124,23 +154,72 @@ export default function NotificationHistory({ mode, limit = 20 }: Props) {
     );
   }
 
+  const hasFilters = statusFilter !== "all" || dateFrom || dateTo;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <Bell className="h-4 w-4 text-primary" />
           Histórico de Notificações
-          {logs.length > 0 && (
-            <Badge variant="secondary" className="ml-auto text-xs">{logs.length}</Badge>
+          {filtered.length > 0 && (
+            <Badge variant="secondary" className="ml-auto text-xs">{filtered.length}</Badge>
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        {logs.length === 0 ? (
+      <CardContent className="space-y-3">
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px] h-8 text-xs">
+              <Filter className="h-3 w-3 mr-1" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="sent">Enviados</SelectItem>
+              <SelectItem value="failed">Falhados</SelectItem>
+              <SelectItem value="pending">Pendentes</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
+                <CalendarIcon className="h-3 w-3" />
+                {dateFrom ? format(dateFrom, "dd/MM", { locale: pt }) : "De"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} locale={pt} />
+            </PopoverContent>
+          </Popover>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1">
+                <CalendarIcon className="h-3 w-3" />
+                {dateTo ? format(dateTo, "dd/MM", { locale: pt }) : "Até"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={dateTo} onSelect={setDateTo} locale={pt} />
+            </PopoverContent>
+          </Popover>
+
+          {hasFilters && (
+            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setStatusFilter("all"); setDateFrom(undefined); setDateTo(undefined); }}>
+              Limpar
+            </Button>
+          )}
+        </div>
+
+        {/* List */}
+        {paged.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-6">Nenhuma notificação encontrada</p>
         ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {logs.map((log) => (
+          <div className="space-y-2">
+            {paged.map((log) => (
               <div
                 key={log.id}
                 className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/30"
@@ -168,6 +247,24 @@ export default function NotificationHistory({ mode, limit = 20 }: Props) {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-muted-foreground">
+              {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} de {filtered.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={safePage === 0} onClick={() => setPage(p => p - 1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-xs min-w-[3ch] text-center">{safePage + 1}/{totalPages}</span>
+              <Button variant="ghost" size="icon" className="h-7 w-7" disabled={safePage >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         )}
       </CardContent>
