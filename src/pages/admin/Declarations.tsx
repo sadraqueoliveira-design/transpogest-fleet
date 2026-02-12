@@ -432,6 +432,32 @@ export default function Declarations() {
           <p className="text-sm text-muted-foreground">Regulamento (CE) n.º 561/2006 — Gestão de lacunas de tacógrafo</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => {
+            const pdf = generateDeclarationPDF({
+              driverName: "JOÃO COSTA",
+              licenseNumber: "C-1234567",
+              birthDate: "1985-03-15",
+              hireDate: "2018-06-01",
+              gapStartDate: "2025-01-20T08:00:00Z",
+              gapEndDate: "2025-02-03T06:00:00Z",
+              reasonCode: "rest",
+              managerName: "Carlos Silva",
+              managerPosition: "Responsável de Tráfego",
+              companyName: "Florêncio e Silva, Lda",
+              companyAddress: "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal",
+              companyPhone: "+351 219667000",
+              companyFax: "+351 219667009",
+              companyEmail: "florencio.silva@tfs.pt",
+              signingLocation: "Azambuja",
+              signedAt: new Date().toISOString(),
+              signedIP: "192.168.1.1",
+              verificationId: "TEST-VERIFY-001",
+            });
+            pdf.save("Declaracao_Teste_JOAO_COSTA.pdf");
+          }}>
+            <FileText className="h-4 w-4 mr-2" />
+            PDF Teste
+          </Button>
           <Button variant="outline" onClick={() => setShowSaveSignature(true)}>
             <PenTool className="h-4 w-4 mr-2" />
             {savedManagerSig ? "Atualizar Assinatura" : "Guardar Assinatura"}
