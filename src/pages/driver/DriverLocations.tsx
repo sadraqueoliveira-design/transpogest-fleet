@@ -161,7 +161,10 @@ export default function DriverLocations() {
                           <DropdownMenuItem onClick={() => window.open(`https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`, "_blank")}>
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`https://navigation.eurowag.com/navigate?lat=${h.lat}&lon=${h.lng}`, "_blank")}>
+                          <DropdownMenuItem onClick={() => {
+                            const geoUri = `geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})`;
+                            window.location.href = geoUri;
+                          }}>
                             <ExternalLink className="h-4 w-4 mr-2" />Eurowag GPS Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => window.open(`https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`, "_blank")}>
