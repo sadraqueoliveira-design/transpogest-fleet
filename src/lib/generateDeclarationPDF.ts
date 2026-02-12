@@ -27,21 +27,21 @@ interface DeclarationPDFData {
 }
 
 const REASON_MAP: Record<string, number> = {
-  sick_leave: 11,
-  vacation: 12,
-  rest: 13,
-  exempt_vehicle: 14,
-  other_work: 15,
-  other: 16,
+  sick_leave: 14,
+  vacation: 15,
+  rest: 16,
+  exempt_vehicle: 17,
+  other_work: 18,
+  other: 19,
 };
 
 export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
   const margin = 20;
-  const cw = W - 2 * margin; // content width
+  const cw = W - 2 * margin;
 
-  const formatDT = (d: string) => format(new Date(d), "HH:mm/dd/MM/yyyy", { locale: pt });
+  const formatDT = (d: string) => format(new Date(d), "HH:mm'-'dd'-'MM'-'yyyy", { locale: pt });
   const formatD = (d: string) => format(new Date(d), "dd/MM/yyyy", { locale: pt });
 
   let y = 18;
@@ -54,11 +54,11 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text("DECLARAÇÃO DE ACTIVIDADE", W / 2, y, { align: "center" });
+  doc.text("DECLARAÇÃO DE ACTIVIDADE¹", W / 2, y, { align: "center" });
   y += 7;
 
   doc.setFontSize(10);
-  doc.text("(REGULAMENTO (CE) N.º 561/2006 OU AETR)", W / 2, y, { align: "center" });
+  doc.text("(REGULAMENTO (CE) Nº561/2006 OU AETR²)", W / 2, y, { align: "center" });
   y += 8;
 
   doc.setFontSize(7.5);
@@ -90,16 +90,17 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   const field = (num: string, label: string, value: string) => {
     doc.setFont("helvetica", "normal");
-    doc.text(`(${num}) ${label}: `, margin, y);
+    const prefix = `(${num}) ${label}: `;
+    doc.text(prefix, margin, y);
     doc.setFont("helvetica", "bold");
-    doc.text(value, margin + doc.getTextWidth(`(${num}) ${label}: `), y);
+    doc.text(value, margin + doc.getTextWidth(prefix), y);
     y += 5.5;
   };
 
   field("1", "Nome da empresa", data.companyName);
-  field("2", "Morada", data.companyAddress || "Rua, Vale Casal, 42, Edf. Florêncio e Silva. Vale Casal, 2665-379 Milharado, Portugal");
-  field("3", "Número de telefone", data.companyPhone || "+351 219667000");
-  field("4", "Número de fax", data.companyFax || "+351 219667009");
+  field("2", "Morada, código postal, localidade, país", data.companyAddress || "Rua Vale Casal, 42, Edf. Florêncio E Silva. Vale Casal, 2665-379, Milharado, Portugal");
+  field("3", "Número de telefone (incluindo o prefixo internacional)", data.companyPhone || "+351 219667000");
+  field("4", "Número de fax (incluindo o prefixo internacional)", data.companyFax || "+351 219667009");
   field("5", "Endereço de correio electrónico", data.companyEmail || "florencio.silva@tfs.pt");
 
   y += 4;
@@ -109,56 +110,39 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 6;
 
   field("6", "Apelido e nome", data.managerName);
-  field("7", "Funções na empresa", data.managerPosition || "Responsável de Tráfego");
+  field("7", "Funções na empresa", data.managerPosition || "Responsável de Trafego");
 
   y += 3;
+  doc.setFont("helvetica", "normal");
   doc.text("declaro que o condutor:", margin, y);
   y += 6;
 
-  doc.setFont("helvetica", "normal");
-  doc.text("Apelido e nome: ", margin, y);
-  doc.setFont("helvetica", "bold");
-  doc.text(data.driverName, margin + doc.getTextWidth("Apelido e nome: "), y);
-  y += 6;
+  field("8", "Apelido e nome", data.driverName);
+  field("9", "Data de nascimento (dia/mês/ano)", data.birthDate ? format(new Date(data.birthDate), "dd-MM-yyyy") : "___-___-______");
+  field("10", "Número de carta de condução, de bilhete de identidade ou de passaporte", data.licenseNumber || "N/D");
+  field("11", "que começou a trabalhar na empresa em (dia/mês/ano)", data.hireDate ? format(new Date(data.hireDate), "dd-MM-yyyy") : "___-___-______");
 
-  field("8", "Data de nascimento (dia/mês/ano)", data.birthDate ? format(new Date(data.birthDate), "dd/MM/yyyy") : "___/___/______");
+  y += 2;
 
-  doc.setFont("helvetica", "normal");
-  doc.text("Número de carta de condução, de bilhete de identidade ou de passaporte: ", margin, y);
-  doc.setFont("helvetica", "bold");
-  doc.text(data.licenseNumber || "N/D", margin + doc.getTextWidth("Número de carta de condução, de bilhete de identidade ou de passaporte: "), y);
-  y += 6;
-
-  doc.setFont("helvetica", "normal");
-  const hireDateStr = data.hireDate ? format(new Date(data.hireDate), "dd/MM/yyyy") : "___/___/______";
-  doc.text(`que começou a trabalhar na empresa em (dia/mês/ano): `, margin, y);
-  doc.setFont("helvetica", "bold");
-  doc.text(hireDateStr, margin + doc.getTextWidth("que começou a trabalhar na empresa em (dia/mês/ano): "), y);
-  y += 7;
-
-  doc.text("no período:", margin, y);
-  y += 6;
-
-  field("9", "de (hora/dia/mês/ano)", formatDT(data.gapStartDate));
-  field("10", "até (hora/dia/mês/ano)", formatDT(data.gapEndDate));
+  field("12", "no período", formatDT(data.gapStartDate));
+  field("13", "até (hora/dia/mês/ano)", formatDT(data.gapEndDate));
 
   y += 3;
 
-  // Reason checkboxes
+  // Reason checkboxes (14-19)
   const reasons = [
-    { num: "11", text: "estava de baixa por doença ou lesão" },
-    { num: "12", text: "gozava férias anuais" },
-    { num: "13", text: "gozava de baixa ou de um período de repouso" },
-    { num: "14", text: "conduzia um veículo não abrangido pelo Regulamento (CE) n.º 561/2006 ou pelo AETR" },
-    { num: "15", text: "realizava outras actividades profissionais distintas da condução" },
-    { num: "16", text: "estava disponível" },
+    { num: "14", text: "estava de baixa por doença***" },
+    { num: "15", text: "gozava férias anuais***" },
+    { num: "16", text: "gozava de baixa ou de um período de repouso***" },
+    { num: "17", text: "conduzia veículo não abrangido pelo Regulamento (CE) Nº561/2006 ou pelo AETR***" },
+    { num: "18", text: "realizava outras actividades profissionais distintas da condução***" },
+    { num: "19", text: "estava disponível***" },
   ];
 
   const selectedIdx = REASON_MAP[data.reasonCode];
 
   for (const r of reasons) {
     const isSelected = parseInt(r.num) === selectedIdx;
-    // Draw checkbox
     doc.setLineWidth(0.3);
     doc.rect(margin, y - 3.2, 3.5, 3.5);
     if (isSelected) {
@@ -166,8 +150,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
       doc.text("X", margin + 0.7, y);
     }
     doc.setFont("helvetica", "normal");
-    doc.text(`(${r.num}) ${r.text}`, margin + 5.5, y);
-    y += 5.5;
+    const reasonText = `(${r.num}) ${r.text}`;
+    const reasonLines = doc.splitTextToSize(reasonText, cw - 6);
+    doc.text(reasonLines, margin + 5.5, y);
+    y += reasonLines.length * 4 + 1.5;
   }
 
   if (data.reasonCode === "other" && data.reasonText) {
@@ -178,43 +164,39 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   y += 5;
 
-  // Signature section - Company
+  // (20) Signature section - Company
   doc.setFont("helvetica", "normal");
-  const today = formatD(new Date().toISOString());
-  const loc = data.signingLocation || "Alverca";
-  doc.text(`(17) Localidade: ${loc}     Data: ${today}`, margin, y);
+  const today = data.signedAt ? formatD(data.signedAt) : formatD(new Date().toISOString());
+  const loc = data.signingLocation || "Azambuja";
+  doc.text(`(20) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
-  doc.text("Assinatura: ", margin, y);
+  doc.text("Assinatura:………………………………………………...", margin, y);
 
-  // Manager signature image
   if (data.managerSignatureDataUrl) {
     try {
       doc.addImage(data.managerSignatureDataUrl, "PNG", margin + 22, y - 8, 50, 15);
     } catch (e) { console.warn("Could not add manager signature", e); }
-  } else {
-    doc.text("…………………………………………………………", margin + 22, y);
   }
-  y += 10;
+  y += 12;
 
-  // Signature section - Driver
+  // (21) Driver declaration
   doc.setFontSize(8);
-  const driverDecl = "Eu, abaixo assinado, o condutor, confirmo que, no período acima mencionado, não conduzi nenhum veículo abrangido pelo âmbito de aplicação do Regulamento (CE) n.º 561/2006 ou pelo AETR.";
-  const declLines = doc.splitTextToSize(`(18) ${driverDecl}`, cw);
+  doc.setFont("helvetica", "normal");
+  const driverDecl = "Eu, abaixo assinado, o condutor, confirmo que, no período acima mencionado, não conduzi nenhum veículo abrangido pelo âmbito de aplicação do Regulamento (CE) N.º561/2006 ou pelo AETR.";
+  const declLines = doc.splitTextToSize(`(21) ${driverDecl}`, cw);
   doc.text(declLines, margin, y);
   y += declLines.length * 4 + 4;
 
+  // (22) Driver signature
   doc.setFontSize(9);
-  doc.text(`(19) Localidade: ${loc}     Data: ${today}`, margin, y);
+  doc.text(`(22) Localidade: ${loc}     Data: ${today}`, margin, y);
   y += 6;
-  doc.text("Assinatura do condutor: ", margin, y);
+  doc.text("Assinatura do condutor:………………………………………………...", margin, y);
 
-  // Driver signature image
   if (data.driverSignatureDataUrl) {
     try {
       doc.addImage(data.driverSignatureDataUrl, "PNG", margin + 42, y - 8, 50, 15);
     } catch (e) { console.warn("Could not add driver signature", e); }
-  } else {
-    doc.text("…………………………………………………………", margin + 42, y);
   }
   y += 12;
 
@@ -238,9 +220,9 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     doc.setFont("helvetica", "italic");
   }
 
-  doc.text("¹ A versão electrónica e pronta a imprimir do presente formulário está disponível no seguinte endereço: http://ec.europa.eu.", margin, y);
+  doc.text("¹ A versão electrónica e pronta a imprimir do presente formulário está disponível no seguinte endereço: http://ec.europa.eu", margin, y);
   y += 3;
-  doc.text("² Acordo Europeu relativo ao Trabalho das Tripulações de Veículos que Efectuam Transportes Rodoviários Internacionais.", margin, y);
+  doc.text("² Acordo Europeu relativo ao Trabalho das Tripulações dos Veículos que Efectuam Transportes Rodoviários Internacionais.", margin, y);
   y += 3;
   doc.text("*** Escolha apenas uma casa.", margin, y);
   y += 5;
