@@ -136,7 +136,7 @@ export default function DriverLocations() {
                         variant="default"
                         size="sm"
                         className="h-8 gap-1 text-xs"
-                        onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`, "_blank")}
+                        onClick={() => { window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`; }}
                       >
                         <Navigation className="h-3.5 w-3.5" />
                         Navegar
@@ -149,25 +149,22 @@ export default function DriverLocations() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-52">
-                          <DropdownMenuItem onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`, "_blank")}>
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />Google Maps
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`https://waze.com/ul?ll=${h.lat},${h.lng}&navigate=yes`, "_blank")}>
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://waze.com/ul?ll=${h.lat},${h.lng}&navigate=yes`; }}>
                             <Navigation className="h-4 w-4 mr-2" />Waze
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`https://share.here.com/l/${h.lat},${h.lng}`, "_blank")}>
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://share.here.com/l/${h.lat},${h.lng}`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />HERE Go
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`, "_blank")}>
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://www.sygic.com/gps-navigation/maps/point?coordinate=${h.lat}|${h.lng}`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => {
-                            // Opens Google Maps navigation — Android shows app chooser where user can pick Eurowag/RoadLords
-                            window.open(`https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}&travelmode=driving`, "_blank");
-                          }}>
-                            <Navigation className="h-4 w-4 mr-2" />Eurowag / GPS Truck
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://dispatcher.roadlords.com/?lat=${h.lat}&lng=${h.lng}`; }}>
+                            <Navigation className="h-4 w-4 mr-2" />Eurowag / RoadLords
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => window.open(`https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`, "_blank")}>
+                          <DropdownMenuItem onClick={() => { window.location.href = `https://osmand.net/go?lat=${h.lat}&lon=${h.lng}&z=15`; }}>
                             <ExternalLink className="h-4 w-4 mr-2" />OsmAnd
                           </DropdownMenuItem>
 
