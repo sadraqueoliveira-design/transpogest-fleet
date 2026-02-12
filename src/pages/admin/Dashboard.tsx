@@ -18,6 +18,7 @@ import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 import ComplianceWidget from "@/components/admin/ComplianceWidget";
 import ComplianceViolationsPanel from "@/components/admin/ComplianceViolationsPanel";
+import NotificationHistory from "@/components/NotificationHistory";
 
 interface Vehicle {
   id: string;
@@ -749,6 +750,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      <NotificationHistory mode="admin" limit={30} />
 
       <ComplianceWidget />
 

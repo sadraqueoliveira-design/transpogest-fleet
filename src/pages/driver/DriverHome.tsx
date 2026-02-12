@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Truck, MapPin, CheckCircle2, ClipboardCheck, Bell, BellOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import TachoWidget from "@/components/driver/TachoWidget";
+import NotificationHistory from "@/components/NotificationHistory";
 import { requestNotificationPermission } from "@/lib/firebase";
 import { toast } from "sonner";
 
@@ -218,6 +219,9 @@ export default function DriverHome() {
           )}
         </CardContent>
       </Card>
+
+      {/* Notification History */}
+      <NotificationHistory mode="driver" limit={15} />
     </div>
   );
 }
