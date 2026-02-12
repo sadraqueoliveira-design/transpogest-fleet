@@ -53,7 +53,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   const textX = margin + numCol; // x position for label+value text
 
   const LABEL_SIZE = 8;
-  const VALUE_SIZE = 11;
+  const VALUE_SIZE = 10;
   const HEADER_SIZE = 9;
 
   const formatDT = (d: string) => format(new Date(d), "H:mm'-'dd'-'MM'-'yyyy", { locale: pt });
@@ -220,12 +220,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.text("(20)", margin + 2, y);
   doc.setFontSize(VALUE_SIZE);
-  doc.text(`Localidade:`, textX, y);
-  const locLabelW = doc.getTextWidth("Localidade:");
-  doc.text(loc, textX + locLabelW + 1, y);
-  doc.text(`Data:`, textX + 80, y);
-  const dateLabelW = doc.getTextWidth("Data:");
-  doc.text(today, textX + 80 + dateLabelW + 1, y);
+  const locDateText20 = `Localidade:${loc}  Data:${today}`;
+  doc.text(locDateText20, textX, y);
   y += 6;
 
   doc.setFontSize(LABEL_SIZE);
@@ -252,10 +248,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.text("(22)", margin + 2, y);
   doc.setFontSize(VALUE_SIZE);
-  doc.text(`Localidade:`, textX, y);
-  doc.text(loc, textX + locLabelW + 1, y);
-  doc.text(`Data:`, textX + 80, y);
-  doc.text(today, textX + 80 + dateLabelW + 1, y);
+  const locDateText22 = `Localidade:${loc}  Data:${today}`;
+  doc.text(locDateText22, textX, y);
   y += 6;
 
   doc.setFontSize(LABEL_SIZE);
