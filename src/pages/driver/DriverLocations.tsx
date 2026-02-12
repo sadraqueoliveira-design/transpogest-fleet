@@ -162,7 +162,7 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
-                            <a href={`geo:${h.lat},${h.lng}`}>
+                            <a href={`geo:0,0?q=${h.lat},${h.lng}`}>
                               <Navigation className="h-4 w-4 mr-2" />Eurowag / GPS Truck
                             </a>
                           </DropdownMenuItem>
