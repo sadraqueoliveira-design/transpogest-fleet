@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
     let failed = 0;
     const errors: string[] = [];
 
-    for (const { token: fcmToken } of tokens) {
+    for (const { token: fcmToken, user_id: recipientId } of tokens) {
       try {
         const res = await fetch(
           `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
@@ -160,11 +160,28 @@ Deno.serve(async (req) => {
 
         if (res.ok) {
           sent++;
+          await supabase.from("push_notifications_log").insert({
+            recipient_user_id: recipientId,
+            sender_user_id: caller.id,
+            title: payload.title,
+            body: payload.body,
+            data: payload.data || {},
+            status: "sent",
+            sent_at: new Date().toISOString(),
+          });
         } else {
           const errBody = await res.text();
           failed++;
           errors.push(errBody);
-          // Remove invalid tokens
+          await supabase.from("push_notifications_log").insert({
+            recipient_user_id: recipientId,
+            sender_user_id: caller.id,
+            title: payload.title,
+            body: payload.body,
+            data: payload.data || {},
+            status: "failed",
+            error_message: errBody.substring(0, 500),
+          });
           if (errBody.includes("UNREGISTERED") || errBody.includes("INVALID_ARGUMENT")) {
             await supabase.from("user_fcm_tokens").delete().eq("token", fcmToken);
           }
