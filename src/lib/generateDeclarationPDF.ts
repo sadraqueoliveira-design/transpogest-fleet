@@ -120,8 +120,16 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
     const valueX = textX + labelW + 1;
     const availW = margin + cw - valueX - 2;
     const valueLines = doc.splitTextToSize(value, availW);
-    doc.text(valueLines, valueX, y);
-    y += valueLines.length > 1 ? valueLines.length * 4.5 + 1 : 6;
+    // First line on same row as label
+    if (valueLines.length > 0) {
+      doc.text(valueLines[0], valueX, y);
+    }
+    // Subsequent lines wrap below, aligned to valueX
+    for (let i = 1; i < valueLines.length; i++) {
+      y += 4.5;
+      doc.text(valueLines[i], valueX, y);
+    }
+    y += 6;
   };
 
   // Fields 1-5
