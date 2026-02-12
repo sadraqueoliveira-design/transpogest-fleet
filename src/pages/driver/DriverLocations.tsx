@@ -162,9 +162,14 @@ export default function DriverLocations() {
                             <ExternalLink className="h-4 w-4 mr-2" />Sygic Truck
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => {
-                            // Android intent with geo: data targeting RoadLords (Eurowag) package
-                            // Uses ACTION_VIEW with geo: URI and explicit package — opens the app directly
-                            window.location.href = `intent://geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})#Intent;action=android.intent.action.VIEW;package=com.roadlords.android;scheme=geo;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.roadlords.android`)};end`;
+                            // Create temporary <a> to bypass PWA intent:// restrictions
+                            const intentUri = `intent://geo:${h.lat},${h.lng}?q=${h.lat},${h.lng}(${encodeURIComponent(h.name)})#Intent;action=android.intent.action.VIEW;package=com.roadlords.android;scheme=geo;S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=com.roadlords.android`)};end`;
+                            const a = document.createElement("a");
+                            a.href = intentUri;
+                            a.style.display = "none";
+                            document.body.appendChild(a);
+                            a.click();
+                            setTimeout(() => document.body.removeChild(a), 100);
                           }}>
                             <Navigation className="h-4 w-4 mr-2" />Abrir no GPS (Eurowag/outro)
                           </DropdownMenuItem>
