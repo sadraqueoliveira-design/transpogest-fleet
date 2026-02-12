@@ -2,6 +2,15 @@ import jsPDF from "jspdf";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 
+// Helper to convert "Nome Apelido" to "Apelido, Nome" format
+function toSurnameFirst(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length <= 1) return name;
+  const surname = parts[parts.length - 1];
+  const given = parts.slice(0, -1).join(" ");
+  return `${surname}, ${given}`;
+}
+
 interface DeclarationPDFData {
   driverName: string;
   licenseNumber: string;
@@ -130,19 +139,33 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   y += 5;
 
   // Fields 6-7
-  fieldRow("6", "Apelido e nome", data.managerName);
+  fieldRow("6", "Apelido e nome", toSurnameFirst(data.managerName));
   fieldRow("7", "Funções na empresa", data.managerPosition || "Responsável de Trafego");
 
   y += 1;
 
-  // Fields 8-11 (continue directly, no separate header)
-  fieldRow("8", "Apelido e nome", data.driverName);
+  // "declaro que o conductor:"
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("declaro que o conductor:", margin + 2, y);
+  y += 5;
+
+  // Fields 8-11
+  fieldRow("8", "Apelido e nome", toSurnameFirst(data.driverName));
   fieldRow("9", "Data de nascimento (dia/mês/ano)", data.birthDate ? format(new Date(data.birthDate), "dd-MM-yyyy") : "___-___-______");
   fieldRow("10", "Número de carta de condução, de bilhete de identidade ou de passaporte", data.licenseNumber || "N/D");
   fieldRow("11", "que começou a trabalhar na empresa em (dia/mês/ano)", data.hireDate ? format(new Date(data.hireDate), "dd-MM-yyyy") : "___-___-______");
 
-  // Fields 12-13 ("no período" is part of field 12 label)
-  fieldRow("12", "no período (hora/dia/mês/ano)", formatDT(data.gapStartDate));
+  y += 1;
+
+  // "no período:"
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.text("no período:", margin + 2, y);
+  y += 5;
+
+  // Fields 12-13
+  fieldRow("12", "de (hora/dia/mês/ano)", formatDT(data.gapStartDate));
   fieldRow("13", "até (hora/dia/mês/ano)", formatDT(data.gapEndDate));
 
   y += 1;
@@ -195,14 +218,17 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
 
   // (20) Signature section - Company
   const today = data.signedAt ? formatD(data.signedAt) : formatD(new Date().toISOString());
-  const loc = data.signingLocation || "Azambuja";
+  const loc = data.signingLocation || "Milharado";
   
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.text("(20)", margin + 2, y);
   doc.setFontSize(9);
-  doc.text(`Localidade: ${loc}`, textX, y);
-  doc.text(`Data: ${today}`, textX + 55, y);
+  const locDateW = cw - numCol;
+  const locText20 = `Localidade: ${loc}`;
+  const dateText20 = `Data: ${today}`;
+  doc.text(locText20, textX + locDateW / 2, y, { align: "center" });
+  doc.text(dateText20, textX + locDateW - 2, y, { align: "right" });
   y += 5.5;
 
   doc.setFontSize(9);
@@ -229,8 +255,10 @@ export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.text("(22)", margin + 2, y);
   doc.setFontSize(9);
-  doc.text(`Localidade: ${loc}`, textX, y);
-  doc.text(`Data: ${today}`, textX + 55, y);
+  const locText22 = `Localidade: ${loc}`;
+  const dateText22 = `Data: ${today}`;
+  doc.text(locText22, textX + locDateW / 2, y, { align: "center" });
+  doc.text(dateText22, textX + locDateW - 2, y, { align: "right" });
   y += 5;
 
   doc.setFontSize(9);
