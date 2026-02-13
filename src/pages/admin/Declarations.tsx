@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil, PenTool } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
@@ -88,6 +89,8 @@ export default function Declarations() {
   const [managerSigLoading, setManagerSigLoading] = useState(false);
   const [savedManagerSig, setSavedManagerSig] = useState<string | null>(null);
   const [showSaveSignature, setShowSaveSignature] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   // Load saved manager signature (from private manager-signatures bucket)
   useEffect(() => {
@@ -424,6 +427,67 @@ export default function Declarations() {
 
   const pendingCount = declarations.filter((d) => d.status === "draft").length;
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === declarations.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(declarations.map((d) => d.id)));
+    }
+  };
+
+  const buildPdfForDecl = (d: Declaration) => ({
+    driverName: d.driver_name || "Desconhecido",
+    licenseNumber: d.license_number || "",
+    birthDate: d.birth_date,
+    hireDate: d.hire_date,
+    gapStartDate: d.gap_start_date,
+    gapEndDate: d.gap_end_date,
+    reasonCode: d.reason_code || "other",
+    reasonText: d.reason_text || undefined,
+    managerName: d.manager_name || "—",
+    companyName: d.company_name,
+    ...editFields,
+  });
+
+  const handleBulkDownload = () => {
+    const selected = declarations.filter((d) => selectedIds.has(d.id));
+    if (selected.length === 0) return;
+
+    try {
+      // First declaration creates the doc
+      const doc = generateDeclarationPDF(buildPdfForDecl(selected[0]));
+      // Subsequent declarations append pages
+      for (let i = 1; i < selected.length; i++) {
+        generateDeclarationPDF(buildPdfForDecl(selected[i]), { existingDoc: doc });
+      }
+      const dateSlug = format(new Date(), "yyyyMMdd");
+      doc.save(`Declaracoes_Lote_${dateSlug}.pdf`);
+      setSelectedIds(new Set());
+      toast({ title: "Download concluído", description: `${selected.length} declarações exportadas.` });
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleSingleDownload = (d: Declaration) => {
+    try {
+      const pdf = generateDeclarationPDF(buildPdfForDecl(d));
+      const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
+      const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
+      pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -516,8 +580,13 @@ export default function Declarations() {
 
       {/* Table */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Todas as Declarações</CardTitle>
+          {selectedIds.size > 0 && (
+            <Button size="sm" onClick={handleBulkDownload}>
+              <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -529,8 +598,14 @@ export default function Declarations() {
           ) : (
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
+                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={declarations.length > 0 && selectedIds.size === declarations.length}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
                     <TableHead>Motorista</TableHead>
                     <TableHead>Início</TableHead>
                     <TableHead>Fim</TableHead>
@@ -545,6 +620,12 @@ export default function Declarations() {
                     const cfg = STATUS_CONFIG[d.status] || STATUS_CONFIG.draft;
                     return (
                       <TableRow key={d.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(d.id)}
+                            onCheckedChange={() => toggleSelect(d.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{d.driver_name}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.gap_start_date)}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.gap_end_date)}</TableCell>
@@ -582,25 +663,7 @@ export default function Declarations() {
                                   </a>
                                 </Button>
                               ) : (
-                                <Button size="sm" variant="outline" onClick={() => {
-                                  try {
-                                    const pdf = generateDeclarationPDF({
-                                      driverName: d.driver_name || "Desconhecido",
-                                      licenseNumber: d.license_number || "",
-                                      birthDate: d.birth_date,
-                                      hireDate: d.hire_date,
-                                      gapStartDate: d.gap_start_date,
-                                      gapEndDate: d.gap_end_date,
-                                      reasonCode: d.reason_code || "other",
-                                      reasonText: d.reason_text || undefined,
-                                      managerName: d.manager_name || "—",
-                                      companyName: d.company_name,
-                                    });
-                                    const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
-                                    const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
-                                    pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
-                                  } catch (err) { console.error(err); }
-                                }}>
+                                <Button size="sm" variant="outline" onClick={() => handleSingleDownload(d)}>
                                   <Download className="h-3 w-3 mr-1" /> PDF
                                 </Button>
                               )}

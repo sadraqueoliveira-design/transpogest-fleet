@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { FileText, Clock, CheckCircle2, ShieldAlert, Zap } from "lucide-react";
+import { FileText, Clock, CheckCircle2, ShieldAlert, Zap, Download } from "lucide-react";
+import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import SignaturePad from "@/components/SignaturePad";
@@ -328,6 +329,33 @@ export default function DriverDeclarations() {
                         <p><span className="text-muted-foreground">Motivo:</span> {REASON_LABELS[d.reason_code] || d.reason_code}</p>
                       )}
                     </div>
+                    {d.status === "signed" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-3"
+                        onClick={() => {
+                          try {
+                            const pdf = generateDeclarationPDF({
+                              driverName: profile?.full_name || "Motorista",
+                              licenseNumber: profile?.license_number || "",
+                              birthDate: null,
+                              hireDate: null,
+                              gapStartDate: d.gap_start_date,
+                              gapEndDate: d.gap_end_date,
+                              reasonCode: d.reason_code || "other",
+                              reasonText: d.reason_text || undefined,
+                              managerName: d.manager_name || "—",
+                              companyName: d.company_name,
+                            });
+                            const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
+                            pdf.save(`Declaracao_${dateSlug}.pdf`);
+                          } catch (err) { console.error(err); }
+                        }}
+                      >
+                        <Download className="h-4 w-4 mr-2" /> Download PDF
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))}
