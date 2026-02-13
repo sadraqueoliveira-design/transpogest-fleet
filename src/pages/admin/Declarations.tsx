@@ -17,6 +17,7 @@ import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, Ch
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
+import { loadStampDataUrl } from "@/lib/stampUtils";
 import SignaturePad from "@/components/SignaturePad";
 import { uploadSignature, uploadSignedPDF, collectSigningMetadata, createAuditLog } from "@/lib/signatureUtils";
 import { fetchManagerSignatureForPDF } from "@/lib/managerSignature";
@@ -91,6 +92,10 @@ export default function Declarations() {
   const [showSaveSignature, setShowSaveSignature] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [stampDataUrl, setStampDataUrl] = useState<string | null>(null);
+
+  // Preload stamp image
+  useEffect(() => { loadStampDataUrl().then(setStampDataUrl).catch(() => {}); }, []);
 
   // Load saved manager signature (from private manager-signatures bucket)
   useEffect(() => {
@@ -211,6 +216,7 @@ export default function Declarations() {
       signedAt,
       signedIP: metadata.ip_address,
       verificationId,
+      _stampDataUrl: stampDataUrl || undefined,
       ...editFields,
     });
 
@@ -484,6 +490,7 @@ export default function Declarations() {
     reasonText: d.reason_text || undefined,
     managerName: d.manager_name || "—",
     companyName: d.company_name,
+    _stampDataUrl: stampDataUrl || undefined,
     ...editFields,
   });
 
@@ -546,6 +553,7 @@ export default function Declarations() {
               signedAt: new Date().toISOString(),
               signedIP: "192.168.1.1",
               verificationId: "TEST-VERIFY-001",
+              _stampDataUrl: stampDataUrl || undefined,
             });
             pdf.save("Declaracao_Teste_JOAO_COSTA.pdf");
           }}>

@@ -33,6 +33,7 @@ interface DeclarationPDFData {
   signedAt?: string;
   signedIP?: string;
   verificationId?: string;
+  _stampDataUrl?: string;
 }
 
 interface GenerateOptions {
@@ -52,6 +53,10 @@ const REASON_MAP: Record<string, number> = {
 export function generateDeclarationPDF(data: DeclarationPDFData, options?: GenerateOptions): jsPDF {
   const doc = options?.existingDoc ?? new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   if (options?.existingDoc) doc.addPage();
+
+  // ── Stamp image (embedded as base64 for reliability) ──
+  // Will be loaded and applied at the end of the page rendering
+  const stampDataUrl = data._stampDataUrl;
   const W = 210;
   const margin = 20;
   const cw = W - 2 * margin;
@@ -357,6 +362,25 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.text("1", W / 2, footerY, { align: "center" });
+
+  // ── Company stamp (realistic placement with random variation) ──
+  if (stampDataUrl) {
+    try {
+      // Random offsets to simulate a hand-placed stamp
+      const randX = (Math.random() - 0.5) * 8;  // ±4mm horizontal
+      const randY = (Math.random() - 0.5) * 6;  // ±3mm vertical
+
+      const stampW = 45;
+      const stampH = 19;
+      // Position: over/near the company signature area (field 20)
+      const baseX = margin + 55 + randX;
+      const baseY = borderBottom - 55 + randY;
+
+      doc.addImage(stampDataUrl, "JPEG", baseX, baseY, stampW, stampH);
+    } catch (e) {
+      console.warn("Could not add stamp to PDF", e);
+    }
+  }
 
   return doc;
 }
