@@ -1,4 +1,5 @@
 let cachedStampDataUrl: string | null = null;
+// v2: more aggressive background removal
 
 /**
  * Remove white/light background from an image, making it transparent.
@@ -26,13 +27,18 @@ function removeWhiteBackground(img: HTMLImageElement): string {
     const saturation = maxChannel === 0 ? 0 : (maxChannel - minChannel) / maxChannel;
 
     // If pixel is light and low saturation → make transparent
-    if (brightness > 180 && saturation < 0.25) {
-      // Gradual fade for semi-white pixels
-      const alpha = Math.max(0, Math.min(255, (255 - brightness) * 4));
-      data[i + 3] = alpha;
-    } else if (brightness > 140 && saturation < 0.15) {
-      // Partial transparency for near-white areas
-      data[i + 3] = Math.round((255 - brightness) * 2);
+    if (brightness > 140 && saturation < 0.35) {
+      // Fully transparent for very white pixels
+      if (brightness > 200) {
+        data[i + 3] = 0;
+      } else {
+        // Gradual fade for semi-white pixels
+        const alpha = Math.max(0, Math.min(255, (255 - brightness) * 3));
+        data[i + 3] = alpha;
+      }
+    } else if (brightness > 100 && saturation < 0.2) {
+      // Partial transparency for grayish areas
+      data[i + 3] = Math.round((255 - brightness) * 1.5);
     }
   }
 
