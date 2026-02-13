@@ -35,6 +35,11 @@ interface DeclarationPDFData {
   verificationId?: string;
 }
 
+interface GenerateOptions {
+  /** Pass an existing jsPDF doc to append a new page instead of creating a new document */
+  existingDoc?: jsPDF;
+}
+
 const REASON_MAP: Record<string, number> = {
   sick_leave: 14,
   vacation: 15,
@@ -44,8 +49,9 @@ const REASON_MAP: Record<string, number> = {
   other: 19,
 };
 
-export function generateDeclarationPDF(data: DeclarationPDFData): jsPDF {
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+export function generateDeclarationPDF(data: DeclarationPDFData, options?: GenerateOptions): jsPDF {
+  const doc = options?.existingDoc ?? new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  if (options?.existingDoc) doc.addPage();
   const W = 210;
   const margin = 20;
   const cw = W - 2 * margin;
