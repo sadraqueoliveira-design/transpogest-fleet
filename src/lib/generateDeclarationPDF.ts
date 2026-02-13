@@ -376,7 +376,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
       const baseX = margin + 55 + randX;
       const baseY = borderBottom - 55 + randY;
 
-      doc.addImage(stampDataUrl, "JPEG", baseX, baseY, stampW, stampH);
+      doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
     } catch (e) {
       console.warn("Could not add stamp to PDF", e);
     }
