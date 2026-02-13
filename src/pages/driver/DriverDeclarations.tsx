@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { FileText, Clock, CheckCircle2, ShieldAlert, Zap, Download } from "lucide-react";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
+import { loadStampDataUrl } from "@/lib/stampUtils";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import SignaturePad from "@/components/SignaturePad";
@@ -58,6 +59,10 @@ export default function DriverDeclarations() {
   const [autoApproving, setAutoApproving] = useState(false);
   const [pendingAutoDecl, setPendingAutoDecl] = useState<Declaration | null>(null);
   const [pendingSigUrl, setPendingSigUrl] = useState<string | null>(null);
+  const [stampDataUrl, setStampDataUrl] = useState<string | null>(null);
+
+  // Preload stamp image
+  useEffect(() => { loadStampDataUrl().then(setStampDataUrl).catch(() => {}); }, []);
 
   const fetchDeclarations = async () => {
     if (!user) return;
@@ -347,6 +352,7 @@ export default function DriverDeclarations() {
                               reasonText: d.reason_text || undefined,
                               managerName: d.manager_name || "—",
                               companyName: d.company_name,
+                              _stampDataUrl: stampDataUrl || undefined,
                             });
                             const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
                             pdf.save(`Declaracao_${dateSlug}.pdf`);
