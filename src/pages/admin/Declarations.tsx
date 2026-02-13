@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil, PenTool } from "lucide-react";
+import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil, PenTool, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
@@ -419,6 +419,36 @@ export default function Declarations() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm("Tem a certeza que deseja apagar esta declaração? Esta ação é irreversível.")) return;
+    const { error } = await supabase
+      .from("activity_declarations")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Declaração apagada" });
+      fetchDeclarations();
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Tem a certeza que deseja apagar ${selectedIds.size} declaração(ões)? Esta ação é irreversível.`)) return;
+    const { error } = await supabase
+      .from("activity_declarations")
+      .delete()
+      .in("id", Array.from(selectedIds));
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Declarações apagadas", description: `${selectedIds.size} declaração(ões) removidas.` });
+      setSelectedIds(new Set());
+      fetchDeclarations();
+    }
+  };
+
   const formatDate = (d: string) => format(new Date(d), "dd/MM/yyyy HH:mm", { locale: pt });
   const gapDays = (start: string, end: string) => {
     const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -583,9 +613,14 @@ export default function Declarations() {
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">Todas as Declarações</CardTitle>
           {selectedIds.size > 0 && (
-            <Button size="sm" onClick={handleBulkDownload}>
-              <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleBulkDownload}>
+                <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
+              </Button>
+              <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
+                <Trash2 className="h-4 w-4 mr-1" /> Apagar ({selectedIds.size})
+              </Button>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -672,6 +707,9 @@ export default function Declarations() {
                               </Button>
                             </>
                           )}
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(d.id)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
