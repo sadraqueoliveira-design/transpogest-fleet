@@ -90,7 +90,7 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
 
       {/* Bottom nav – big touch targets */}
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-driver-nav safe-area-pb">
-        <div className="flex items-center justify-around py-1">
+        <div className="flex items-center overflow-x-auto scrollbar-hide py-1 px-1 gap-0.5">
           {navItems.map((item) => {
             const active = pathname === item.to;
             return (
