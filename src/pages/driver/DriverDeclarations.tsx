@@ -126,11 +126,15 @@ export default function DriverDeclarations() {
         return;
       }
 
+      // Fallback: update gap_end_date to current timestamp at signing time
+      const currentTimestamp = new Date().toISOString();
+
       const { error } = await supabase
         .from("activity_declarations")
         .update({
           driver_signature_url: signatureUrl,
           signed_ip: metadata.ip_address,
+          gap_end_date: currentTimestamp,
         } as any)
         .eq("id", pendingDecl.id);
 

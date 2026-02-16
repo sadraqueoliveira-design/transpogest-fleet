@@ -472,6 +472,48 @@ Deno.serve(async (req) => {
             }
           }
 
+          // === UPDATE gap_end_date ON DRAFT DECLARATIONS ===
+          // When new activity is detected for a driver with open draft declarations,
+          // update gap_end_date to the start_time of the first new activity (real card insertion time)
+          const driversWithNewActivity = new Set(
+            vehicleRecords
+              .filter((r: any) => r.current_driver_id)
+              .map((r: any) => r.current_driver_id)
+          );
+
+          if (driversWithNewActivity.size > 0) {
+            const driverIdsArray = Array.from(driversWithNewActivity);
+            const { data: draftDeclarations } = await supabaseAdmin
+              .from("activity_declarations")
+              .select("id, driver_id, gap_end_date")
+              .in("driver_id", driverIdsArray)
+              .eq("status", "draft");
+
+            for (const decl of draftDeclarations || []) {
+              // Find the earliest new activity start_time for this driver
+              const { data: latestActivity } = await supabaseAdmin
+                .from("driver_activities")
+                .select("start_time")
+                .eq("driver_id", decl.driver_id)
+                .order("start_time", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (latestActivity?.start_time) {
+                const { error: updateDeclErr } = await supabaseAdmin
+                  .from("activity_declarations")
+                  .update({ gap_end_date: latestActivity.start_time })
+                  .eq("id", decl.id);
+
+                if (updateDeclErr) {
+                  console.error(`[SYNC] Error updating gap_end_date for declaration ${decl.id}:`, updateDeclErr.message);
+                } else {
+                  console.log(`[SYNC] Updated gap_end_date for declaration ${decl.id} to ${latestActivity.start_time}`);
+                }
+              }
+            }
+          }
+
           if (upsertError) {
             console.error(`Erro ao salvar veículos de ${client.name}:`, upsertError);
             results.push({ client: client.name, status: "error", message: upsertError.message });

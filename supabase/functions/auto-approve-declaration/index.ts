@@ -179,7 +179,7 @@ Deno.serve(async (req) => {
 
     const verificationId = auditLog.verification_id;
 
-    // Update the declaration
+    // Update the declaration (including gap_end_date to current timestamp)
     const { error: updateError } = await supabaseAdmin
       .from("activity_declarations")
       .update({
@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
         manager_id: matchingRule.manager_id,
         signed_at: new Date().toISOString(),
         signed_ip: ip_address,
+        gap_end_date: new Date().toISOString(),
       })
       .eq("id", declaration_id);
 
