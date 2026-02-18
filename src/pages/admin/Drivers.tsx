@@ -151,13 +151,16 @@ export default function Drivers() {
   };
 
   // Import config
-  const importColumns = ["employee_number", "full_name", "company", "nif", "hire_date", "category_code", "category_description", "card_number", "card_start_date", "card_expiry_date"];
+  const importColumns = ["employee_number", "full_name", "company", "nif", "birth_date", "hire_date", "license_number", "category_code", "category_description", "card_number", "card_issue_date", "card_start_date", "card_expiry_date"];
   const importAliases: Record<string, string[]> = {
     employee_number: ["funcionário", "funcionario", "nº func", "num func", "employee"],
     full_name: ["nome", "name"], company: ["encarregado", "empresa", "company"], nif: ["contribuinte", "nif"],
+    birth_date: ["data nascimento", "nascimento", "birth date"],
     hire_date: ["data contratação", "data contratacao", "hire date"],
+    license_number: ["carta condução", "carta conducao", "carta", "license"],
     category_code: ["categoria", "category"], category_description: ["descrição cat", "descricao cat", "description"],
     card_number: ["cartão condutor", "cartao condutor", "card number"],
+    card_issue_date: ["emissão", "emissao", "issue date"],
     card_start_date: ["data início", "data inicio", "start date"],
     card_expiry_date: ["data validade", "validade", "expiry"],
   };
@@ -176,9 +179,11 @@ export default function Drivers() {
   const handleImport = async (rows: Record<string, string>[]) => {
     const toInsert = rows.map(r => ({
       employee_number: Number(r.employee_number), full_name: r.full_name, company: r.company || "ARV",
-      nif: r.nif || null, hire_date: parseDate(r.hire_date), category_code: r.category_code || null,
+      nif: r.nif || null, birth_date: parseDate(r.birth_date), hire_date: parseDate(r.hire_date),
+      license_number: r.license_number || null, category_code: r.category_code || null,
       category_description: r.category_description || null, card_number: r.card_number || null,
-      card_start_date: parseDate(r.card_start_date), card_expiry_date: parseDate(r.card_expiry_date),
+      card_issue_date: parseDate(r.card_issue_date), card_start_date: parseDate(r.card_start_date),
+      card_expiry_date: parseDate(r.card_expiry_date),
     }));
     const { error } = await supabase.from("employees").upsert(toInsert, { onConflict: "employee_number" });
     if (error) throw error;
@@ -220,8 +225,8 @@ export default function Drivers() {
               return { valid: true };
             }}
             onImport={handleImport}
-            templateHeader="Funcionário;Nome;Encarregado;Contribuinte;Data Contratação;Categoria;Descrição Cat.;Cartão Condutor;Data Início;Data Validade"
-            templateExample="1234;João Silva;ARV;123456789;01/01/2020;83320;Motorista de Pesados;5B.000001234;01/01/2025;01/01/2030"
+            templateHeader="Funcionário;Nome;Encarregado;Contribuinte;Data Nascimento;Data Contratação;Carta Condução;Categoria;Descrição Cat.;Cartão Condutor;Emissão;Data Início;Data Validade"
+            templateExample="1234;João Silva;ARV;123456789;15/03/1985;01/01/2020;L-123456;83320;Motorista de Pesados;5B.000001234;01/06/2020;01/01/2025;01/01/2030"
             templateFilename="modelo_funcionarios.csv"
           />
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
