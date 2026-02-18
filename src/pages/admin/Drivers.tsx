@@ -197,8 +197,11 @@ export default function Drivers() {
 
   const exportData = filtered.map(e => ({
     "Nº Func.": e.employee_number, Nome: e.full_name, Empresa: e.company || "", NIF: e.nif || "",
-    "Data Contratação": formatDate(e.hire_date), Categoria: e.category_description || "",
-    "Cartão Condutor": e.card_number || "", "Validade Cartão": formatDate(e.card_expiry_date),
+    "Data Nascimento": formatDate(e.birth_date), "Data Contratação": formatDate(e.hire_date),
+    "Carta Condução": e.license_number || "", "Código Categoria": e.category_code || "",
+    "Descrição Categoria": e.category_description || "",
+    "Cartão Condutor": e.card_number || "", "Emissão Cartão": formatDate(e.card_issue_date),
+    "Início Cartão": formatDate(e.card_start_date), "Validade Cartão": formatDate(e.card_expiry_date),
   }));
 
   return (
