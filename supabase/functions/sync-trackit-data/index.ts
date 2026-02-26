@@ -289,20 +289,74 @@ Deno.serve(async (req) => {
           }
 
           // === CARD INSERTION TRACKING ===
-          // Detect card state changes and set card_inserted_at accordingly
-          // Use the tachograph telemetry timestamp (drs.tmx) as the insertion time,
-          // NOT the sync execution time, so the displayed time reflects when the card
-          // was actually inserted according to the vehicle unit.
+          // Detect card state changes and set card_inserted_at accordingly.
+          // For new insertions and backfills, query the Trackit /ws/events endpoint
+          // for event 45 (Driver Card Inserted Slot 1) to get the real insertion time.
+          // Falls back to drs.tmx if events are unavailable.
+
+          // Helper: fetch the most recent card insertion event timestamp for a vehicle
+          const fetchCardInsertionTime = async (vehicleMid: number): Promise<string | null> => {
+            try {
+              // Query last 24h of events for this vehicle, event 45 = card inserted slot 1
+              const now = new Date();
+              const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+
+              const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
+                method: "POST",
+                headers: {
+                  Authorization: `Basic ${credentials}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  vehicles: [vehicleMid],
+                  events: [45],
+                  dateBegin: fmt(yesterday),
+                  dateEnd: fmt(now),
+                }),
+              });
+
+              if (!eventsRes.ok) {
+                console.log(`[CARD-EVENTS] Failed to fetch events for mid=${vehicleMid}: HTTP ${eventsRes.status}`);
+                await eventsRes.text(); // consume body
+                return null;
+              }
+
+              const eventsJson = await eventsRes.json();
+              if (eventsJson.error) {
+                console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message}`);
+                return null;
+              }
+
+              const events = eventsJson.data || [];
+              if (events.length === 0) {
+                console.log(`[CARD-EVENTS] No event 45 found for mid=${vehicleMid} in last 24h`);
+                return null;
+              }
+
+              // Get the most recent event 45 (card inserted) — eventStatus=1 means active
+              const activeEvents = events
+                .filter((e: any) => e.eventStatus === 1)
+                .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+              const mostRecent = activeEvents[0] || events[events.length - 1];
+              const eventTimestamp = mostRecent.timestamp;
+              console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${events.length}`);
+              return eventTimestamp ? new Date(eventTimestamp).toISOString() : null;
+            } catch (err) {
+              console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
+              return null;
+            }
+          };
+
           const EMPTY_CARD_VAL = "0000000000000000";
+          // Collect vehicles that need event-based timestamp lookup
+          const cardEventLookups: Array<{ idx: number; vehicleMid: number; plate: string; isBackfill: boolean }> = [];
+
           for (let idx = 0; idx < vehicleRecords.length; idx++) {
             const rec = vehicleRecords[idx];
             const existing = existingMap.get(rec.trackit_id);
             if (!existing) continue;
-
-            // Get the tachograph telemetry timestamp from the original trackit data
-            const origVehicle = filteredVehicles[idx];
-            const origDrs = origVehicle?.data?.drs || {};
-            const tachoTimestamp = origDrs.tmx || origVehicle?.data?.pos?.tmx || null;
 
             // Parse old dc1 from existing tachograph_status
             let oldDc1: string | null = null;
@@ -324,15 +378,9 @@ Deno.serve(async (req) => {
             }
             const newHasCard = newDc1 && newDc1 !== "" && newDc1 !== EMPTY_CARD_VAL && newDc1 !== "0";
 
-            // Use telemetry timestamp if available, otherwise fallback to current time
-            const insertionTime = tachoTimestamp
-              ? new Date(tachoTimestamp).toISOString()
-              : new Date().toISOString();
-
             if (!oldHasCard && newHasCard) {
-              // Card just inserted → use telemetry timestamp
-              (rec as any).card_inserted_at = insertionTime;
-              console.log(`[CARD-INSERT] ${rec.plate}: card inserted (${newDc1}), tmx=${tachoTimestamp}, card_inserted_at=${insertionTime}`);
+              // Card just inserted → need event timestamp
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false });
             } else if (oldHasCard && !newHasCard) {
               // Card removed → clear timestamp
               (rec as any).card_inserted_at = null;
@@ -341,11 +389,39 @@ Deno.serve(async (req) => {
               // Card still inserted → preserve existing timestamp
               (rec as any).card_inserted_at = existing.card_inserted_at;
             } else if (newHasCard && !existing.card_inserted_at) {
-              // Card present but no timestamp recorded yet → use telemetry timestamp
-              (rec as any).card_inserted_at = insertionTime;
-              console.log(`[CARD-BACKFILL] ${rec.plate}: card present but no timestamp, tmx=${tachoTimestamp}, card_inserted_at=${insertionTime}`);
+              // Card present but no timestamp recorded yet (backfill) → need event timestamp
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true });
             }
-            // If no card on both sides, card_inserted_at stays null (not included in rec)
+            // If no card on both sides, card_inserted_at stays null
+          }
+
+          // Batch fetch event timestamps for vehicles that need it (max 5 concurrent)
+          const EVENT_BATCH = 5;
+          for (let i = 0; i < cardEventLookups.length; i += EVENT_BATCH) {
+            const batch = cardEventLookups.slice(i, i + EVENT_BATCH);
+            const results = await Promise.all(
+              batch.map(async (lookup) => {
+                const eventTime = await fetchCardInsertionTime(lookup.vehicleMid);
+                return { ...lookup, eventTime };
+              })
+            );
+
+            for (const result of results) {
+              const rec = vehicleRecords[result.idx];
+              const origVehicle = filteredVehicles[result.idx];
+              const origDrs = origVehicle?.data?.drs || {};
+              const tachoTimestamp = origDrs.tmx || origVehicle?.data?.pos?.tmx || null;
+
+              // Priority: event timestamp > telemetry timestamp > current time
+              const insertionTime = result.eventTime
+                || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
+                || new Date().toISOString();
+
+              (rec as any).card_inserted_at = insertionTime;
+              const source = result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now");
+              const label = result.isBackfill ? "CARD-BACKFILL" : "CARD-INSERT";
+              console.log(`[${label}] ${rec.plate}: card_inserted_at=${insertionTime} (source=${source})`);
+            }
           }
 
           // Upsert vehicles
