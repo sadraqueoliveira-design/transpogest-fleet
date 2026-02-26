@@ -49,6 +49,7 @@ export default function TachographCards() {
   const [createDriverFor, setCreateDriverFor] = useState<string | null>(null); // card ID to auto-link after creation
   const [newDriver, setNewDriver] = useState({ full_name: "", email: "", password: "" });
   const [creatingDriver, setCreatingDriver] = useState(false);
+  const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
 
   const fetchCards = async () => {
     const { data } = await supabase.from("tachograph_cards").select("*").order("driver_name");
@@ -60,7 +61,23 @@ export default function TachographCards() {
     if (data) setDrivers(data);
   };
 
-  useEffect(() => { fetchCards(); fetchDrivers(); }, []);
+  const fetchLastActivity = async () => {
+    const { data } = await supabase
+      .from("driver_activities")
+      .select("driver_id, start_time")
+      .order("start_time", { ascending: false });
+    if (data) {
+      const map: Record<string, string> = {};
+      for (const row of data) {
+        if (!map[row.driver_id]) {
+          map[row.driver_id] = row.start_time;
+        }
+      }
+      setLastActivity(map);
+    }
+  };
+
+  useEffect(() => { fetchCards(); fetchDrivers(); fetchLastActivity(); }, []);
 
   const now = new Date();
   const in60Days = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
@@ -374,6 +391,7 @@ export default function TachographCards() {
                 <TableHead>Número do Cartão</TableHead>
                 <TableHead>Nome do Motorista</TableHead>
                 <TableHead>Perfil Associado</TableHead>
+                <TableHead>Última Inserção</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
@@ -416,6 +434,11 @@ export default function TachographCards() {
                         </div>
                       )}
                     </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {c.driver_id && lastActivity[c.driver_id]
+                        ? format(new Date(lastActivity[c.driver_id]), "dd/MM 'às' HH:mm", { locale: pt })
+                        : "—"}
+                    </TableCell>
                     <TableCell className="text-sm">
                       {c.expiry_date ? format(new Date(c.expiry_date), "dd/MM/yyyy") : "—"}
                       {c.expiry_date && status === "expiring" && (
@@ -443,7 +466,7 @@ export default function TachographCards() {
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">Nenhum cartão encontrado</TableCell>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">Nenhum cartão encontrado</TableCell>
                 </TableRow>
               )}
             </TableBody>
