@@ -14,8 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { pt } from "date-fns/locale";
 import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 import ComplianceWidget from "@/components/admin/ComplianceWidget";
@@ -134,7 +132,7 @@ export default function Dashboard() {
         setNotifications((prev) => [{
           id: rec.id, type: "maintenance",
           message: `Nova manutenção ${rec.type === "preventive" ? "preventiva" : "corretiva"} registada`,
-          time: new Date().toLocaleTimeString("pt-PT"),
+          time: new Date().toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon" }),
         }, ...prev.slice(0, 19)]);
         toast.info("Nova manutenção registada");
         fetchVehicles();
@@ -144,7 +142,7 @@ export default function Dashboard() {
         setNotifications((prev) => [{
           id: req.id, type: "request",
           message: `Nova solicitação: ${req.type}`,
-          time: new Date().toLocaleTimeString("pt-PT"),
+          time: new Date().toLocaleTimeString("pt-PT", { timeZone: "Europe/Lisbon" }),
         }, ...prev.slice(0, 19)]);
         toast.info("Nova solicitação de motorista");
         fetchVehicles();
