@@ -1266,6 +1266,7 @@ export type Database = {
         Row: {
           adblue_level_percent: number | null
           brand: string | null
+          card_inserted_at: string | null
           client_id: string | null
           created_at: string
           current_driver_id: string | null
@@ -1297,6 +1298,7 @@ export type Database = {
         Insert: {
           adblue_level_percent?: number | null
           brand?: string | null
+          card_inserted_at?: string | null
           client_id?: string | null
           created_at?: string
           current_driver_id?: string | null
@@ -1328,6 +1330,7 @@ export type Database = {
         Update: {
           adblue_level_percent?: number | null
           brand?: string | null
+          card_inserted_at?: string | null
           client_id?: string | null
           created_at?: string
           current_driver_id?: string | null

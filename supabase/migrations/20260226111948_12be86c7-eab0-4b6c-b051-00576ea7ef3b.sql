@@ -1,0 +1,1 @@
+ALTER TABLE public.vehicles ADD COLUMN card_inserted_at TIMESTAMPTZ DEFAULT NULL;

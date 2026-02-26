@@ -709,11 +709,11 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
-                    {driverCard && (tacho.tmx || lastActivity[v.id]) && (
+                    {driverCard && (v as any).card_inserted_at && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🪪 Cartão</span>
                         <span className="font-semibold tabular-nums">
-                          {format(new Date(tacho.tmx || lastActivity[v.id]), "dd/MM HH:mm", { locale: pt })}
+                          {format(new Date((v as any).card_inserted_at), "dd/MM HH:mm", { locale: pt })}
                         </span>
                       </div>
                     )}
