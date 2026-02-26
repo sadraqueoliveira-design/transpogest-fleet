@@ -1,27 +1,88 @@
 
-
-## Mostrar hora de inserção do cartão no fuso horário de Lisboa
+## Historico Diario de Insercao/Retirada de Cartao
 
 ### Problema
-A hora de inserção do cartão (`card_inserted_at`) é guardada em UTC na base de dados. O `date-fns format()` usa o fuso horário do browser do utilizador, que pode não ser sempre Lisboa.
+Atualmente, o sistema so guarda o ultimo `card_inserted_at` na tabela `vehicles`. Nao existe historico de insercoes e retiradas, impossibilitando consultar quem usou que veiculo ao longo do dia.
 
-### Solução
-No ficheiro `src/pages/admin/Dashboard.tsx`, linha 752, substituir o `format(new Date(...))` por uma formatação explícita com `timeZone: 'Europe/Lisbon'` usando a API nativa `toLocaleString`:
+### Solucao
 
-```typescript
-// Antes:
-format(new Date((v as any).card_inserted_at), "dd/MM HH:mm", { locale: pt })
+#### 1. Nova tabela `card_events` (migracao SQL)
 
-// Depois:
-new Date((v as any).card_inserted_at).toLocaleString("pt-PT", {
-  timeZone: "Europe/Lisbon",
-  day: "2-digit", month: "2-digit",
-  hour: "2-digit", minute: "2-digit"
-})
+Tabela para registar cada evento de insercao/retirada:
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid PK | Identificador |
+| vehicle_id | uuid | Referencia ao veiculo |
+| plate | text | Matricula (para consulta rapida) |
+| card_number | text | Numero do cartao |
+| driver_name | text | Nome do motorista (da tachograph_cards) |
+| employee_number | integer | Numero de funcionario (da employees) |
+| event_type | text | `inserted` ou `removed` |
+| event_at | timestamptz | Hora do evento (de Event 45 ou tmx) |
+| created_at | timestamptz | Hora do registo |
+
+RLS: admins/managers podem ler e gerir; drivers podem ler os proprios.
+
+#### 2. Atualizar Edge Function `sync-trackit-data`
+
+Na logica existente de tracking de cartao (onde ja deteta insercoes, remocoes e trocas), adicionar escrita na tabela `card_events`:
+
+- Quando `!oldHasCard && newHasCard` (insercao): inserir evento `inserted`
+- Quando `oldHasCard && !newHasCard` (remocao): inserir evento `removed`  
+- Quando cartao muda (troca de motorista): inserir `removed` para o antigo + `inserted` para o novo
+- Enriquecer com `driver_name` e `employee_number` cruzando com `tachograph_cards` e `employees`
+
+#### 3. Nova pagina `CardHistory` em `/admin/historico-cartoes`
+
+Interface com:
+- **Filtro por data** (date picker, default = hoje)
+- **Pesquisa por nome do motorista ou numero de funcionario**
+- **Filtro por matricula** (select com lista de viaturas)
+- **Tabela de resultados** com colunas: Hora, Evento (Inserido/Retirado), Motorista, N. Funcionario, Matricula
+- Ordenacao cronologica (mais recente primeiro)
+- Badge colorido para tipo de evento (verde=inserido, vermelho=retirado)
+
+#### 4. Adicionar rota e link no menu
+
+- Nova rota `/admin/historico-cartoes` no `App.tsx`
+- Novo item no menu lateral do `AdminLayout.tsx` (icone `History`, label "Hist. Cartoes")
+
+### Secao Tecnica
+
+**Ficheiros a criar:**
+- `src/pages/admin/CardHistory.tsx` -- pagina principal
+
+**Ficheiros a modificar:**
+- `supabase/functions/sync-trackit-data/index.ts` -- registar eventos na nova tabela
+- `src/App.tsx` -- adicionar rota
+- `src/components/layouts/AdminLayout.tsx` -- adicionar item no menu
+
+**Migracao SQL:**
+```sql
+CREATE TABLE public.card_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vehicle_id uuid REFERENCES public.vehicles(id),
+  plate text NOT NULL,
+  card_number text,
+  driver_name text,
+  employee_number integer,
+  event_type text NOT NULL CHECK (event_type IN ('inserted', 'removed')),
+  event_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_card_events_event_at ON public.card_events(event_at DESC);
+CREATE INDEX idx_card_events_plate ON public.card_events(plate);
+CREATE INDEX idx_card_events_card_number ON public.card_events(card_number);
+
+ALTER TABLE public.card_events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Admin/manager can manage card events"
+  ON public.card_events FOR ALL
+  USING (has_role(auth.uid(), 'admin'::app_role) OR has_role(auth.uid(), 'manager'::app_role));
+
+CREATE POLICY "Authenticated can read card events"
+  ON public.card_events FOR SELECT
+  USING (true);
 ```
-
-### Impacto
-- A hora do cartão será sempre mostrada no fuso horário de Lisboa (WET/WEST), independentemente do fuso horário do browser
-- Sem dependências adicionais (usa API nativa do browser)
-- Formato mantém-se igual: `dd/MM HH:mm`
-
