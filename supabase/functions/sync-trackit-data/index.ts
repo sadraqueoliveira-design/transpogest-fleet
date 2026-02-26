@@ -196,18 +196,6 @@ Deno.serve(async (req) => {
               }
               if (!resolvedDriverId) {
                 console.log(`${client.name}: Unknown card ${normalizedCard} on vehicle ${plate} — no matching driver found`);
-                // Auto-register unknown card in tachograph_cards for future mapping
-                const { error: upsertErr } = await supabaseAdmin
-                  .from("tachograph_cards")
-                  .upsert(
-                    { card_number: normalizedCard },
-                    { onConflict: "card_number", ignoreDuplicates: true }
-                  );
-                if (upsertErr) {
-                  console.log(`[CARD-AUTOREGISTER] Failed to register ${normalizedCard}: ${upsertErr.message}`);
-                } else {
-                  console.log(`[CARD-AUTOREGISTER] Registered unknown card ${normalizedCard}`);
-                }
               }
             }
             // If no valid card → resolvedDriverId stays null (auto-logout)
@@ -262,6 +250,33 @@ Deno.serve(async (req) => {
             }));
             if (i + BATCH < vehicleRecords.length) {
               await new Promise(r => setTimeout(r, 1100));
+            }
+          }
+
+          // Auto-register unknown cards (deferred from sync map above)
+          const unknownCards = new Set<string>();
+          for (const rec of vehicleRecords) {
+            if (rec.current_driver_id === null && rec.tachograph_status) {
+              try {
+                const tacho = JSON.parse(rec.tachograph_status);
+                if (tacho.card_present && tacho.card_slot_1) {
+                  const cn = tacho.card_slot_1;
+                  if (!cardToDriver.has(cn) && !cardToDriverName.has(cn)) {
+                    unknownCards.add(cn);
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+          }
+          if (unknownCards.size > 0) {
+            const cardsToInsert = Array.from(unknownCards).map(cn => ({ card_number: cn }));
+            const { error: autoRegErr } = await supabaseAdmin
+              .from("tachograph_cards")
+              .upsert(cardsToInsert, { onConflict: "card_number", ignoreDuplicates: true });
+            if (autoRegErr) {
+              console.log(`[CARD-AUTOREGISTER] Error: ${autoRegErr.message}`);
+            } else {
+              console.log(`[CARD-AUTOREGISTER] Registered ${unknownCards.size} unknown cards: ${Array.from(unknownCards).join(", ")}`);
             }
           }
 
@@ -501,28 +516,81 @@ Deno.serve(async (req) => {
                 return { dName, empNum };
               };
 
+              // Helper: check if a card_event already exists (prevent duplicates on backfills)
+              const eventExists = async (cardNum: string | null, plate: string, eventType: string, eventAt: string): Promise<boolean> => {
+                if (!cardNum) return false;
+                const { data } = await supabaseAdmin
+                  .from("card_events")
+                  .select("id")
+                  .eq("card_number", cardNum)
+                  .eq("plate", plate)
+                  .eq("event_type", eventType)
+                  .eq("event_at", eventAt)
+                  .limit(1);
+                return (data && data.length > 0);
+              };
+
               if (result.eventType === "swap") {
-                // Card swap: remove old + insert new
                 const oldInfo = resolveDriverInfo(result.oldCardNumber);
                 const newInfo = resolveDriverInfo(result.newCardNumber);
-                await supabaseAdmin.from("card_events").insert([
-                  { vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: oldInfo.dName, employee_number: oldInfo.empNum, event_type: "removed", event_at: insertionTime },
-                  { vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: newInfo.dName, employee_number: newInfo.empNum, event_type: "inserted", event_at: insertionTime },
-                ]);
-                console.log(`[CARD-EVENT] ${rec.plate}: swap recorded (removed ${result.oldCardNumber}, inserted ${result.newCardNumber})`);
+                const oldExists = await eventExists(result.oldCardNumber, rec.plate, "removed", insertionTime);
+                const newExists = await eventExists(result.newCardNumber, rec.plate, "inserted", insertionTime);
+                const toInsert = [];
+                if (!oldExists) toInsert.push({ vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: oldInfo.dName, employee_number: oldInfo.empNum, event_type: "removed", event_at: insertionTime });
+                if (!newExists) toInsert.push({ vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: newInfo.dName, employee_number: newInfo.empNum, event_type: "inserted", event_at: insertionTime });
+                if (toInsert.length > 0) {
+                  await supabaseAdmin.from("card_events").insert(toInsert);
+                  console.log(`[CARD-EVENT] ${rec.plate}: swap recorded (removed ${result.oldCardNumber}, inserted ${result.newCardNumber})`);
+                }
               } else if (result.eventType === "removed") {
                 const info = resolveDriverInfo(result.oldCardNumber);
-                await supabaseAdmin.from("card_events").insert({
-                  vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: insertionTime,
-                });
-                console.log(`[CARD-EVENT] ${rec.plate}: removal recorded`);
+                if (!(await eventExists(result.oldCardNumber, rec.plate, "removed", insertionTime))) {
+                  await supabaseAdmin.from("card_events").insert({
+                    vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: insertionTime,
+                  });
+                  console.log(`[CARD-EVENT] ${rec.plate}: removal recorded`);
+                }
               } else {
                 // inserted (or backfill)
                 const info = resolveDriverInfo(result.newCardNumber);
-                await supabaseAdmin.from("card_events").insert({
-                  vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "inserted", event_at: insertionTime,
-                });
-                console.log(`[CARD-EVENT] ${rec.plate}: insertion recorded`);
+                if (!(await eventExists(result.newCardNumber, rec.plate, "inserted", insertionTime))) {
+                  // Auto-remove from other vehicles: if this card is currently inserted elsewhere, generate removal
+                  if (result.newCardNumber) {
+                    const { data: openSessions } = await supabaseAdmin
+                      .from("card_events")
+                      .select("id, plate, event_at")
+                      .eq("card_number", result.newCardNumber)
+                      .eq("event_type", "inserted")
+                      .neq("plate", rec.plate)
+                      .order("event_at", { ascending: false })
+                      .limit(1);
+                    if (openSessions && openSessions.length > 0) {
+                      const prevPlate = openSessions[0].plate;
+                      // Check there's no removal yet for this card on the previous plate after the insertion
+                      const { data: existingRemoval } = await supabaseAdmin
+                        .from("card_events")
+                        .select("id")
+                        .eq("card_number", result.newCardNumber)
+                        .eq("plate", prevPlate)
+                        .eq("event_type", "removed")
+                        .gt("event_at", openSessions[0].event_at)
+                        .limit(1);
+                      if (!existingRemoval || existingRemoval.length === 0) {
+                        const prevVehicle = existingMap.get(vehicleRecords.find((vr: any) => vr.plate === prevPlate)?.trackit_id);
+                        await supabaseAdmin.from("card_events").insert({
+                          vehicle_id: prevVehicle?.id || null, plate: prevPlate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: insertionTime,
+                        });
+                        console.log(`[CARD-EVENT] ${prevPlate}: auto-removal recorded (card moved to ${rec.plate})`);
+                      }
+                    }
+                  }
+                  await supabaseAdmin.from("card_events").insert({
+                    vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "inserted", event_at: insertionTime,
+                  });
+                  console.log(`[CARD-EVENT] ${rec.plate}: insertion recorded`);
+                } else {
+                  console.log(`[CARD-EVENT] ${rec.plate}: skipped duplicate insertion`);
+                }
               }
             }
           }
