@@ -1,21 +1,20 @@
 
-# Mostrar hora de inserção do cartão no tacógrafo
+
+# Adicionar "Última Inserção" ao Card de Resumo
 
 ## Objetivo
-Adicionar uma coluna na tabela de Cartões de Tacógrafo que mostre a última vez que o motorista inseriu o cartão (baseado na atividade mais recente registada em `driver_activities`).
+Mostrar no card de resumo (topo da página) informação sobre a última inserção de cartão no tacógrafo, complementando os dados de mapeamento e validade que ja existem.
 
 ## Alterações
 
 ### Ficheiro: `src/pages/admin/TachographCards.tsx`
 
-1. **Buscar última atividade por motorista** -- Após carregar os cartões, fazer uma query a `driver_activities` para obter o `start_time` mais recente de cada `driver_id` que tenha cartão mapeado. Guardar num `Map<driver_id, timestamp>`.
+1. **Novo indicador no card de resumo** -- Adicionar uma terceira coluna de estatísticas ao lado de "Mapeados" e "Sem perfil", mostrando:
+   - Icone de relógio (Clock)
+   - A data/hora da inserção mais recente entre todos os motoristas (a atividade global mais recente)
+   - Label "Última Inserção"
 
-2. **Adicionar coluna "Última Inserção"** na tabela, entre "Perfil Associado" e "Validade", mostrando a data/hora formatada (ex: "14/02 às 08:32") ou "—" se não houver dados.
+2. **Calcular a inserção mais recente** -- Percorrer o `lastActivity` e encontrar o timestamp mais recente para mostrar no card de resumo.
 
-3. **Interface `TachCard`** -- Sem alteração na interface (os dados vêm de uma query separada).
+3. **Detalhe visual** -- Formato: "dd/MM as HH:mm" com cor neutra, consistente com o resto do card.
 
-## Detalhes técnicos
-
-- Query: `SELECT DISTINCT ON (driver_id) driver_id, start_time FROM driver_activities ORDER BY driver_id, start_time DESC` para obter a atividade mais recente de cada motorista.
-- Formato da hora: `dd/MM HH:mm` usando `date-fns` com locale `pt`.
-- Apenas mostrar para cartões com `driver_id` mapeado.
