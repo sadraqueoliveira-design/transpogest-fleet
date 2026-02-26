@@ -703,7 +703,7 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
-                    {(tacho.tmx || lastActivity[v.id]) && (
+                    {driverCard && (tacho.tmx || lastActivity[v.id]) && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🪪 Cartão</span>
                         <span className="font-semibold tabular-nums">
