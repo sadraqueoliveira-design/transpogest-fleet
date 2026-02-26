@@ -290,10 +290,19 @@ Deno.serve(async (req) => {
 
           // === CARD INSERTION TRACKING ===
           // Detect card state changes and set card_inserted_at accordingly
+          // Use the tachograph telemetry timestamp (drs.tmx) as the insertion time,
+          // NOT the sync execution time, so the displayed time reflects when the card
+          // was actually inserted according to the vehicle unit.
           const EMPTY_CARD_VAL = "0000000000000000";
-          for (const rec of vehicleRecords) {
+          for (let idx = 0; idx < vehicleRecords.length; idx++) {
+            const rec = vehicleRecords[idx];
             const existing = existingMap.get(rec.trackit_id);
             if (!existing) continue;
+
+            // Get the tachograph telemetry timestamp from the original trackit data
+            const origVehicle = filteredVehicles[idx];
+            const origDrs = origVehicle?.data?.drs || {};
+            const tachoTimestamp = origDrs.tmx || origVehicle?.data?.pos?.tmx || null;
 
             // Parse old dc1 from existing tachograph_status
             let oldDc1: string | null = null;
@@ -315,10 +324,15 @@ Deno.serve(async (req) => {
             }
             const newHasCard = newDc1 && newDc1 !== "" && newDc1 !== EMPTY_CARD_VAL && newDc1 !== "0";
 
+            // Use telemetry timestamp if available, otherwise fallback to current time
+            const insertionTime = tachoTimestamp
+              ? new Date(tachoTimestamp).toISOString()
+              : new Date().toISOString();
+
             if (!oldHasCard && newHasCard) {
-              // Card just inserted → set timestamp
-              (rec as any).card_inserted_at = new Date().toISOString();
-              console.log(`[CARD-INSERT] ${rec.plate}: card inserted (${newDc1}), setting card_inserted_at`);
+              // Card just inserted → use telemetry timestamp
+              (rec as any).card_inserted_at = insertionTime;
+              console.log(`[CARD-INSERT] ${rec.plate}: card inserted (${newDc1}), tmx=${tachoTimestamp}, card_inserted_at=${insertionTime}`);
             } else if (oldHasCard && !newHasCard) {
               // Card removed → clear timestamp
               (rec as any).card_inserted_at = null;
@@ -327,9 +341,9 @@ Deno.serve(async (req) => {
               // Card still inserted → preserve existing timestamp
               (rec as any).card_inserted_at = existing.card_inserted_at;
             } else if (newHasCard && !existing.card_inserted_at) {
-              // Card present but no timestamp recorded yet → set it now
-              (rec as any).card_inserted_at = new Date().toISOString();
-              console.log(`[CARD-BACKFILL] ${rec.plate}: card present but no timestamp, setting card_inserted_at`);
+              // Card present but no timestamp recorded yet → use telemetry timestamp
+              (rec as any).card_inserted_at = insertionTime;
+              console.log(`[CARD-BACKFILL] ${rec.plate}: card present but no timestamp, tmx=${tachoTimestamp}, card_inserted_at=${insertionTime}`);
             }
             // If no card on both sides, card_inserted_at stays null (not included in rec)
           }
