@@ -89,11 +89,24 @@ Deno.serve(async (req) => {
           // Pre-fetch tachograph cards for driver matching
           const { data: tachCards } = await supabaseAdmin
             .from("tachograph_cards")
-            .select("card_number, driver_id");
+            .select("card_number, driver_id, driver_name");
           const cardToDriver = new Map(
             (tachCards || [])
               .filter((c: any) => c.driver_id)
               .map((c: any) => [c.card_number, c.driver_id])
+          );
+          const cardToDriverName = new Map(
+            (tachCards || [])
+              .filter((c: any) => c.driver_name)
+              .map((c: any) => [c.card_number, c.driver_name])
+          );
+
+          // Pre-fetch employees for employee_number lookup by name
+          const { data: employeesData } = await supabaseAdmin
+            .from("employees")
+            .select("full_name, employee_number");
+          const nameToEmployeeNumber = new Map(
+            (employeesData || []).map((e: any) => [e.full_name?.toLowerCase()?.trim(), e.employee_number])
           );
 
           const filteredVehicles = vehiclesData
@@ -361,7 +374,7 @@ Deno.serve(async (req) => {
 
           const EMPTY_CARD_VAL = "0000000000000000";
           // Collect vehicles that need event-based timestamp lookup
-          const cardEventLookups: Array<{ idx: number; vehicleMid: number; plate: string; isBackfill: boolean }> = [];
+          const cardEventLookups: Array<{ idx: number; vehicleMid: number; plate: string; isBackfill: boolean; eventType: string; oldCardNumber: string | null; newCardNumber: string | null }> = [];
 
           for (let idx = 0; idx < vehicleRecords.length; idx++) {
             const rec = vehicleRecords[idx];
@@ -403,24 +416,26 @@ Deno.serve(async (req) => {
 
             if (!oldHasCard && newHasCard) {
               // Card just inserted → need event timestamp
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false });
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "inserted", oldCardNumber: null, newCardNumber });
             } else if (oldHasCard && !newHasCard) {
               // Card removed → clear timestamp
               (rec as any).card_inserted_at = null;
               console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
+              // Record removal event
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null });
             } else if (newHasCard && existing.card_inserted_at) {
               // Card still inserted — but check if card NUMBER changed (different driver)
               if (oldCardNumber && newCardNumber && oldCardNumber !== newCardNumber) {
                 // Different card inserted → need new event timestamp
                 console.log(`[CARD-CHANGE] ${rec.plate}: card changed from ${oldCardNumber} to ${newCardNumber}, fetching new timestamp`);
-                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false });
+                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber });
               } else {
                 // Same card still inserted → preserve existing timestamp
                 (rec as any).card_inserted_at = existing.card_inserted_at;
               }
             } else if (newHasCard && !existing.card_inserted_at) {
               // Card present but no timestamp recorded yet (backfill) → need event timestamp
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true });
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "inserted", oldCardNumber: null, newCardNumber });
             }
             // If no card on both sides, card_inserted_at stays null
           }
@@ -447,10 +462,56 @@ Deno.serve(async (req) => {
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
 
-              (rec as any).card_inserted_at = insertionTime;
+              if (result.eventType !== "removed") {
+                (rec as any).card_inserted_at = insertionTime;
+              }
               const source = result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now");
               const label = result.isBackfill ? "CARD-BACKFILL" : "CARD-INSERT";
               console.log(`[${label}] ${rec.plate}: card_inserted_at=${insertionTime} (source=${source})`);
+
+              // === Write card_events ===
+              const existing = existingMap.get(rec.trackit_id);
+              const vehicleDbId = existing?.id || null;
+
+              // Helper to resolve driver name and employee number from card number
+              const resolveDriverInfo = (cardNum: string | null) => {
+                if (!cardNum) return { dName: null, empNum: null };
+                const normalized = cardNum.replace(/[\s]/g, "").toUpperCase();
+                let dName = cardToDriverName.get(normalized) || null;
+                if (!dName) {
+                  // Try stripped matching
+                  const stripped = normalized.replace(/^0+/, "").slice(0, -2);
+                  for (const [cn, name] of cardToDriverName.entries()) {
+                    if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { dName = name as string; break; }
+                  }
+                }
+                const empNum = dName ? (nameToEmployeeNumber.get(dName.toLowerCase().trim()) || null) : null;
+                return { dName, empNum };
+              };
+
+              if (result.eventType === "swap") {
+                // Card swap: remove old + insert new
+                const oldInfo = resolveDriverInfo(result.oldCardNumber);
+                const newInfo = resolveDriverInfo(result.newCardNumber);
+                await supabaseAdmin.from("card_events").insert([
+                  { vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: oldInfo.dName, employee_number: oldInfo.empNum, event_type: "removed", event_at: insertionTime },
+                  { vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: newInfo.dName, employee_number: newInfo.empNum, event_type: "inserted", event_at: insertionTime },
+                ]);
+                console.log(`[CARD-EVENT] ${rec.plate}: swap recorded (removed ${result.oldCardNumber}, inserted ${result.newCardNumber})`);
+              } else if (result.eventType === "removed") {
+                const info = resolveDriverInfo(result.oldCardNumber);
+                await supabaseAdmin.from("card_events").insert({
+                  vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: insertionTime,
+                });
+                console.log(`[CARD-EVENT] ${rec.plate}: removal recorded`);
+              } else {
+                // inserted (or backfill)
+                const info = resolveDriverInfo(result.newCardNumber);
+                await supabaseAdmin.from("card_events").insert({
+                  vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "inserted", event_at: insertionTime,
+                });
+                console.log(`[CARD-EVENT] ${rec.plate}: insertion recorded`);
+              }
             }
           }
 
