@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CreditCard, Search } from "lucide-react";
+import { ExportButton } from "@/components/admin/BulkImportExport";
 
 interface CardEvent {
   id: string;
@@ -89,14 +90,27 @@ export default function CardHistory() {
     );
   }, [events, search]);
 
+  const exportData = useMemo(() => {
+    return filtered.map(ev => ({
+      Hora: new Date(ev.event_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }),
+      Evento: ev.event_type === "inserted" ? "Inserido" : "Retirado",
+      Motorista: ev.driver_name || "—",
+      "N. Funcionário": ev.employee_number ?? "—",
+      Matrícula: ev.plate,
+    }));
+  }, [filtered]);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <CreditCard className="h-7 w-7 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Histórico de Cartões</h1>
-          <p className="text-muted-foreground text-sm">Inserções e retiradas diárias de cartão de tacógrafo</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <CreditCard className="h-7 w-7 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Histórico de Cartões</h1>
+            <p className="text-muted-foreground text-sm">Inserções e retiradas diárias de cartão de tacógrafo</p>
+          </div>
         </div>
+        <ExportButton data={exportData} filenameBase={`eventos-cartao-${selectedDate}`} sheetName="Eventos Cartão" />
       </div>
 
       <Card>
