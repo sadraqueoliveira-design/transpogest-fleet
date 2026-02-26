@@ -1,47 +1,39 @@
 
-# Plano: Mostrar data/hora real de insercao do cartao
+
+# Plano: Corrigir timestamps de insercao do cartao
 
 ## Problema
 
-O campo `tmx` no JSON do tacografo e o timestamp da ultima mensagem de telemetria, nao da insercao do cartao. Por isso, o horario apresentado fica a atualizar a cada sincronizacao (~1 hora), em vez de mostrar quando o motorista efetivamente colocou o cartao.
+Quando a coluna `card_inserted_at` foi adicionada, o primeiro backfill usou `new Date()` (hora da sincronizacao). Todos os veiculos com cartao ficaram com o mesmo timestamp `2026-02-26 11:25:25`. Agora, a logica "preservar existente" mantem esses valores errados em cada sincronizacao.
 
 ## Solucao
 
-Adicionar uma coluna `card_inserted_at` na tabela `vehicles` que guarda o momento exato em que o cartao foi detetado pela primeira vez. A logica de sincronizacao atualiza este campo apenas quando o estado do cartao muda.
+### 1. Limpar os timestamps errados (migracao SQL)
 
-### 1. Nova coluna na base de dados
+Executar uma migracao que define `card_inserted_at = NULL` em todos os veiculos. Na proxima sincronizacao, a logica de backfill (`newHasCard && !existing.card_inserted_at`) ira disparar e usar o `tmx` da telemetria em vez de `new Date()`.
 
-Adicionar `card_inserted_at TIMESTAMPTZ` a tabela `vehicles` (valor default NULL).
+```sql
+UPDATE vehicles SET card_inserted_at = NULL;
+```
 
-### 2. Atualizar a funcao de sincronizacao
+### 2. Disparar sincronizacao
 
-No ficheiro `supabase/functions/sync-trackit-data/index.ts`:
+Apos a migracao, invocar a edge function `sync-trackit-data` para que o backfill preencha `card_inserted_at` com o timestamp correto da telemetria (`drs.tmx` ou `pos.tmx`).
 
-- Antes do upsert, verificar se o veiculo ja tem um cartao inserido comparando com o estado anterior
-- Se `dc1` passa de vazio/null para um valor valido: definir `card_inserted_at = now()`
-- Se `dc1` passa de um valor para vazio/null: limpar `card_inserted_at = null`
-- Se `dc1` se mantém igual: manter o valor existente (nao atualizar)
+### 3. Verificar resultados
 
-Para isso, buscar os veiculos existentes antes do upsert para comparar o estado do cartao anterior com o novo.
-
-### 3. Atualizar o Dashboard
-
-No ficheiro `src/pages/admin/Dashboard.tsx`:
-
-- Usar `v.card_inserted_at` em vez de `tacho.tmx` para mostrar o horario na linha "Cartao"
-- A condicao fica: `driverCard && v.card_inserted_at`
-- O formato continua `dd/MM HH:mm`
+Consultar a tabela `vehicles` para confirmar que os timestamps sao diferentes entre veiculos e correspondem aos valores `tmx` do JSON do tacografo.
 
 ## Ficheiros a modificar
 
-| Ficheiro | Acao |
+| Acao | Detalhe |
 |---|---|
-| Base de dados (vehicles) | Adicionar coluna `card_inserted_at` |
-| `supabase/functions/sync-trackit-data/index.ts` | Logica para detetar mudanca de cartao e atualizar timestamp |
-| `src/pages/admin/Dashboard.tsx` | Usar `card_inserted_at` em vez de `tmx` |
+| Migracao SQL | `UPDATE vehicles SET card_inserted_at = NULL` |
+| Nenhum ficheiro de codigo | A logica da edge function e do Dashboard ja estao corretas |
 
 ## Resultado esperado
 
-- Quando um motorista insere o cartao, aparece a data/hora exata desse momento
-- O horario NAO muda ate o motorista retirar e voltar a inserir o cartao
-- Veiculos sem cartao continuam a mostrar o badge vermelho "Sem Cartao"
+- Cada veiculo com cartao mostra o timestamp da telemetria (quando o tacografo reportou o cartao)
+- Veiculos diferentes mostram horarios diferentes
+- O horario deixa de mudar a cada sincronizacao
+
