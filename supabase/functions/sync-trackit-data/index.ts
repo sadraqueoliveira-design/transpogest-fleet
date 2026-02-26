@@ -196,6 +196,18 @@ Deno.serve(async (req) => {
               }
               if (!resolvedDriverId) {
                 console.log(`${client.name}: Unknown card ${normalizedCard} on vehicle ${plate} — no matching driver found`);
+                // Auto-register unknown card in tachograph_cards for future mapping
+                const { error: upsertErr } = await supabaseAdmin
+                  .from("tachograph_cards")
+                  .upsert(
+                    { card_number: normalizedCard },
+                    { onConflict: "card_number", ignoreDuplicates: true }
+                  );
+                if (upsertErr) {
+                  console.log(`[CARD-AUTOREGISTER] Failed to register ${normalizedCard}: ${upsertErr.message}`);
+                } else {
+                  console.log(`[CARD-AUTOREGISTER] Registered unknown card ${normalizedCard}`);
+                }
               }
             }
             // If no valid card → resolvedDriverId stays null (auto-logout)

@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreditCard, Search, Clock } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { CreditCard, Search, AlertTriangle } from "lucide-react";
 import { ExportButton } from "@/components/admin/BulkImportExport";
 
 interface CardEvent {
@@ -27,6 +28,12 @@ interface CardSession {
   plate: string;
   inserted_at: string | null;
   removed_at: string | null;
+}
+
+interface OverlapInfo {
+  driver_name: string;
+  plates: string[];
+  sessionKeys: Set<string>;
 }
 
 const formatLisbon = (iso: string) =>
@@ -54,7 +61,6 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
   const sessions: CardSession[] = [];
   const usedIds = new Set<string>();
 
-  // First pass: match each inserted with the next removed of same card+plate
   const insertions = sorted.filter((e) => e.event_type === "inserted");
   const removals = sorted.filter((e) => e.event_type === "removed");
 
@@ -80,7 +86,6 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
     });
   }
 
-  // Second pass: orphan removals (no matching insertion)
   for (const rem of removals) {
     if (!usedIds.has(rem.id)) {
       sessions.push({
@@ -94,7 +99,6 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
     }
   }
 
-  // Sort by earliest time descending
   sessions.sort((a, b) => {
     const tA = new Date(a.inserted_at ?? a.removed_at ?? "").getTime();
     const tB = new Date(b.inserted_at ?? b.removed_at ?? "").getTime();
@@ -104,17 +108,66 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
   return sessions;
 };
 
+const detectOverlaps = (sessions: CardSession[]): OverlapInfo[] => {
+  const byDriver = new Map<string, CardSession[]>();
+  for (const s of sessions) {
+    if (!s.driver_name || !s.inserted_at) continue;
+    const key = s.driver_name.toLowerCase().trim();
+    if (!byDriver.has(key)) byDriver.set(key, []);
+    byDriver.get(key)!.push(s);
+  }
+
+  const overlaps: OverlapInfo[] = [];
+
+  for (const [, driverSessions] of byDriver) {
+    if (driverSessions.length < 2) continue;
+    const uniquePlates = new Set(driverSessions.map((s) => s.plate));
+    if (uniquePlates.size < 2) continue;
+
+    const conflictKeys = new Set<string>();
+    const conflictPlates = new Set<string>();
+
+    for (let i = 0; i < driverSessions.length; i++) {
+      for (let j = i + 1; j < driverSessions.length; j++) {
+        const a = driverSessions[i];
+        const b = driverSessions[j];
+        if (a.plate === b.plate) continue;
+
+        const aStart = new Date(a.inserted_at!).getTime();
+        const aEnd = a.removed_at ? new Date(a.removed_at).getTime() : Date.now();
+        const bStart = new Date(b.inserted_at!).getTime();
+        const bEnd = b.removed_at ? new Date(b.removed_at).getTime() : Date.now();
+
+        if (aStart < bEnd && bStart < aEnd) {
+          conflictKeys.add(a.key);
+          conflictKeys.add(b.key);
+          conflictPlates.add(a.plate);
+          conflictPlates.add(b.plate);
+        }
+      }
+    }
+
+    if (conflictKeys.size > 0) {
+      overlaps.push({
+        driver_name: driverSessions[0].driver_name!,
+        plates: Array.from(conflictPlates),
+        sessionKeys: conflictKeys,
+      });
+    }
+  }
+
+  return overlaps;
+};
+
 export default function CardHistory() {
   const [events, setEvents] = useState<CardEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
-    return now.toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" }); // YYYY-MM-DD
+    return now.toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" });
   });
   const [search, setSearch] = useState("");
   const [plateFilter, setPlateFilter] = useState("all");
-
-  // Fetch plates for the filter
   const [plates, setPlates] = useState<string[]>([]);
 
   useEffect(() => {
@@ -131,10 +184,9 @@ export default function CardHistory() {
   useEffect(() => {
     const fetchEvents = async () => {
       setLoading(true);
-      // Build date range in Lisbon timezone
       const dayStart = new Date(`${selectedDate}T00:00:00+00:00`);
-      // Adjust for Lisbon: WET=+0, WEST=+1. Use a wide window.
-      const rangeStart = new Date(dayStart.getTime() - 2 * 60 * 60 * 1000).toISOString();
+      // Wide window: -26h to catch previous day insertions, +26h to catch next day removals
+      const rangeStart = new Date(dayStart.getTime() - 26 * 60 * 60 * 1000).toISOString();
       const rangeEnd = new Date(dayStart.getTime() + 26 * 60 * 60 * 1000).toISOString();
 
       let query = supabase
@@ -156,7 +208,38 @@ export default function CardHistory() {
     fetchEvents();
   }, [selectedDate, plateFilter]);
 
-  const sessions = useMemo(() => pairEvents(events), [events]);
+  const sessions = useMemo(() => {
+    const allSessions = pairEvents(events);
+    // Filter: show sessions relevant to the selected day
+    // A session is relevant if it was active at any point during the selected day
+    const dayStart = new Date(`${selectedDate}T00:00:00+00:00`).getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+
+    return allSessions.filter((s) => {
+      const sStart = s.inserted_at ? new Date(s.inserted_at).getTime() : null;
+      const sEnd = s.removed_at ? new Date(s.removed_at).getTime() : null;
+
+      // Session started during selected day
+      if (sStart && sStart >= dayStart && sStart < dayEnd) return true;
+      // Session ended during selected day
+      if (sEnd && sEnd >= dayStart && sEnd < dayEnd) return true;
+      // Session spans the entire day (started before, ended after or still active)
+      if (sStart && sStart < dayStart && (!sEnd || sEnd >= dayStart)) return true;
+      // Orphan removal during the day
+      if (!sStart && sEnd && sEnd >= dayStart && sEnd < dayEnd) return true;
+
+      return false;
+    });
+  }, [events, selectedDate]);
+
+  const overlaps = useMemo(() => detectOverlaps(sessions), [sessions]);
+  const overlapKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const o of overlaps) {
+      for (const k of o.sessionKeys) keys.add(k);
+    }
+    return keys;
+  }, [overlaps]);
 
   const filtered = useMemo(() => {
     if (!search) return sessions;
@@ -236,6 +319,21 @@ export default function CardHistory() {
         </CardContent>
       </Card>
 
+      {overlaps.length > 0 && (
+        <Alert className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-yellow-800 dark:text-yellow-400">Possível duplicação de cartão</AlertTitle>
+          <AlertDescription className="text-yellow-700 dark:text-yellow-500">
+            {overlaps.map((o) => (
+              <div key={o.driver_name}>
+                <strong>{o.driver_name}</strong> aparece em simultâneo nos veículos{" "}
+                {o.plates.join(", ")}
+              </div>
+            ))}
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -259,8 +357,16 @@ export default function CardHistory() {
               </TableHeader>
               <TableBody>
                 {filtered.map((s) => (
-                  <TableRow key={s.key}>
-                    <TableCell>{s.driver_name || "—"}</TableCell>
+                  <TableRow
+                    key={s.key}
+                    className={overlapKeys.has(s.key) ? "bg-yellow-50 dark:bg-yellow-950/20" : ""}
+                  >
+                    <TableCell>
+                      {s.driver_name || "—"}
+                      {overlapKeys.has(s.key) && (
+                        <AlertTriangle className="inline ml-1.5 h-3.5 w-3.5 text-yellow-600" />
+                      )}
+                    </TableCell>
                     <TableCell>{s.employee_number ?? "—"}</TableCell>
                     <TableCell className="font-mono">{s.plate}</TableCell>
                     <TableCell className="font-mono text-sm">
