@@ -1,25 +1,57 @@
 
+# Plano: Promover Filipes a Admin + Emails de Motoristas + Recuperacao de Senha
 
-# Adicionar "Última Inserção" aos Cards do Dashboard
+## 1. Alterar roles dos 2 Filipe Oliveira para admin
 
-## Objetivo
-Mostrar a hora da última inserção do cartão no tacógrafo diretamente nos cards compactos de veículos na página do Dashboard (`/admin`).
+Atualizar na base de dados o role de ambos os perfis:
+- **Filipe Duarte Da Luz De Oliveira** (ID: `a318a9b6-...`) de `driver` para `admin`
+- **Filipe Oliveira** (ID: `04734c17-...`) de `driver` para `admin`
 
-## Alterações
+Usando UPDATE direto na tabela `user_roles`.
 
-### Ficheiro: `src/pages/admin/Dashboard.tsx`
+---
 
-1. **Novo state** -- Adicionar `lastActivity` (`Record<string, string>`) para guardar o `start_time` mais recente por `driver_id`.
+## 2. Mostrar emails de cadastro dos motoristas
 
-2. **Fetch adicional** -- Na função `fetchVehicles`, adicionar query a `driver_activities` (ordenado por `start_time` desc) e construir o mapa `driver_id -> timestamp`.
+Adicionar na pagina de Motoristas (`src/pages/admin/Drivers.tsx`) uma coluna ou indicador que mostra o email associado ao perfil de cada funcionario que ja tem conta (ou seja, que tem `profile_id` preenchido).
 
-3. **Nova linha no card** -- Após o RPM e antes da temperatura, adicionar uma linha:
-   - `🪪 Cartão` com a hora formatada (`dd/MM HH:mm`) usando `date-fns` com locale `pt`
-   - Mostrar apenas quando o veículo tem `current_driver_id` e existe registo em `lastActivity`
+- Fazer JOIN entre `employees` e `profiles` para obter o email
+- Nota: O email nao esta na tabela `profiles`, esta em `auth.users` que nao e acessivel pelo cliente
+- **Solucao**: Buscar os profiles associados e mostrar na tabela se o funcionario tem conta ativa ou nao. Para mostrar o email, sera necessario guardar o email na tabela profiles OU criar uma edge function que, como admin, lista os emails dos users.
 
-## Detalhes Técnicos
+**Abordagem escolhida**: Criar uma edge function `list-user-emails` que, sendo chamada por admin, retorna o mapeamento `user_id -> email` usando `supabase.auth.admin.listUsers()`. Depois mostrar o email na tabela de motoristas.
 
-- Query: `supabase.from("driver_activities").select("driver_id, start_time").order("start_time", { ascending: false })`
-- Construir `Map` pegando apenas o primeiro registo por `driver_id`
-- Formato: `dd/MM HH:mm` (ex: "24/02 04:50")
-- Import adicional: `format` de `date-fns` e `pt` de `date-fns/locale/pt`
+---
+
+## 3. Implementar recuperacao de senha
+
+Atualmente nao existe nenhum fluxo de "Esqueci a senha". Precisa de:
+
+### a) Botao "Esqueceu a senha?" na pagina de Login (`src/pages/Auth.tsx`)
+- Adicionar link/botao abaixo do formulario de login
+- Abre um dialog ou navega para um estado que pede apenas o email
+- Chama `supabase.auth.resetPasswordForEmail(email, { redirectTo: origin + '/reset-password' })`
+- Mostra mensagem de sucesso
+
+### b) Nova pagina `/reset-password` (`src/pages/ResetPassword.tsx`)
+- Rota publica (nao protegida)
+- Verifica o hash da URL para `type=recovery`
+- Formulario para definir nova senha
+- Chama `supabase.auth.updateUser({ password })`
+- Redireciona para `/auth` apos sucesso
+
+### c) Registar rota no App.tsx
+- Adicionar `<Route path="/reset-password" element={<ResetPassword />} />`
+
+---
+
+## Ficheiros a criar/modificar
+
+| Ficheiro | Acao |
+|---|---|
+| Base de dados (user_roles) | UPDATE role para admin nos 2 Filipes |
+| `supabase/functions/list-user-emails/index.ts` | Nova edge function para listar emails |
+| `src/pages/admin/Drivers.tsx` | Adicionar coluna "Email" com dados da edge function |
+| `src/pages/Auth.tsx` | Adicionar botao "Esqueceu a senha?" e dialog |
+| `src/pages/ResetPassword.tsx` | Nova pagina para redefinir senha |
+| `src/App.tsx` | Adicionar rota `/reset-password` |
