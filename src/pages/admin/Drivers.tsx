@@ -32,6 +32,7 @@ interface Employee {
   card_issue_date: string | null;
   card_start_date: string | null;
   card_expiry_date: string | null;
+  profile_id: string | null;
 }
 
 export default function Drivers() {
@@ -50,7 +51,7 @@ export default function Drivers() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
-
+  const [emailMap, setEmailMap] = useState<Record<string, string>>({});
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
@@ -73,8 +74,14 @@ export default function Drivers() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchEmployees(); }, []);
+  useEffect(() => { fetchEmployees(); fetchEmails(); }, []);
 
+  const fetchEmails = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("list-user-emails");
+      if (!error && data) setEmailMap(data);
+    } catch { /* silently fail for non-admins */ }
+  };
   const filtered = useMemo(() => {
     let list = employees;
     if (filterCompany !== "all") {
@@ -288,6 +295,7 @@ export default function Drivers() {
                   <SortableHead label="Nome" field="full_name" />
                   <SortableHead label="Encarregado" field="company" className="w-16" />
                   <SortableHead label="Contribuinte" field="nif" />
+                  <TableHead>Email</TableHead>
                    <SortableHead label="Data Nascimento" field="birth_date" />
                    <SortableHead label="Data Contratação" field="hire_date" />
                    <SortableHead label="Categoria" field="category_code" />
@@ -302,9 +310,9 @@ export default function Drivers() {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                   <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                   <TableRow><TableCell colSpan={15} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
                  ) : paginated.length === 0 ? (
-                   <TableRow><TableCell colSpan={14} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
+                   <TableRow><TableCell colSpan={15} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
                 ) : (
                   paginated.map((e) => (
                     <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailEmployee(e)}>
@@ -312,6 +320,7 @@ export default function Drivers() {
                       <TableCell className="font-medium whitespace-nowrap">{e.full_name}</TableCell>
                       <TableCell><Badge variant={e.company === "ART" ? "outline" : "secondary"}>{e.company || "—"}</Badge></TableCell>
                       <TableCell className="font-mono text-xs">{e.nif || "—"}</TableCell>
+                      <TableCell className="text-xs">{e.profile_id && emailMap[e.profile_id] ? emailMap[e.profile_id] : "—"}</TableCell>
                        <TableCell className="whitespace-nowrap">{formatDate(e.birth_date)}</TableCell>
                        <TableCell className="whitespace-nowrap">{formatDate(e.hire_date)}</TableCell>
                       <TableCell className="font-mono text-xs">{e.category_code || "—"}</TableCell>

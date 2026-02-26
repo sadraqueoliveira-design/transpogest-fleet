@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.send-fcm]
 verify_jwt = false
+
+[functions.list-user-emails]
+verify_jwt = false
