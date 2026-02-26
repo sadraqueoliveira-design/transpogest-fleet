@@ -1,23 +1,42 @@
 
 
-## Reduzir tempo de dados "stale" de 24h para 2h
+## Corrigir timestamp de inserção quando o cartão muda (motoristas diferentes)
 
-Alteração simples de uma linha no Dashboard para que nomes de motoristas desapareçam mais rapidamente após a remoção do cartão.
+### Problema
+O veículo 97-LF-48 teve 3 motoristas hoje. O sistema compara apenas `oldHasCard` vs `newHasCard` (boolean). Quando ambos sao `true`, preserva o `card_inserted_at` antigo (linha 404-406), sem verificar se o numero do cartao mudou. Resultado: a hora mostrada e do primeiro motorista, nao do atual (Jorge).
 
-### O que muda
+### Solucao
 
-No ficheiro `src/pages/admin/Dashboard.tsx`, linha 260, o threshold de dados obsoletos passa de **24 horas** para **2 horas**:
+**Ficheiro: `supabase/functions/sync-trackit-data/index.ts`**
 
-```
-// Antes:
-const isStale = tmx > 0 && (Date.now() - tmx) > 24 * 60 * 60 * 1000;
+Na logica de tracking de cartao (linhas 366-412), alem de comparar presenca, comparar tambem o **numero do cartao**:
 
-// Depois:
-const isStale = tmx > 0 && (Date.now() - tmx) > 2 * 60 * 60 * 1000;
+1. Extrair `oldCardNumber` do `tachograph_status` existente (campo `card_slot_1` ou fallback `dc1`)
+2. Extrair `newCardNumber` do novo `tachograph_status` (campo `card_slot_1`)
+3. Se ambos tem cartao MAS o numero mudou → tratar como nova insercao (adicionar a `cardEventLookups` para buscar o evento 45 real)
+4. So preservar o timestamp existente quando o numero do cartao e o mesmo
+
+### Alteracao especifica
+
+```text
+Antes (linha 404-406):
+  } else if (newHasCard && existing.card_inserted_at) {
+    // Card still inserted -> preserve existing timestamp
+    (rec as any).card_inserted_at = existing.card_inserted_at;
+
+Depois:
+  } else if (newHasCard && existing.card_inserted_at) {
+    // Check if card NUMBER changed (different driver)
+    if (oldCardNumber && newCardNumber && oldCardNumber !== newCardNumber) {
+      // Different card inserted -> need new event timestamp
+      cardEventLookups.push({ idx, vehicleMid: ..., plate: ..., isBackfill: false });
+    } else {
+      // Same card still inserted -> preserve existing timestamp
+      (rec as any).card_inserted_at = existing.card_inserted_at;
+    }
 ```
 
 ### Impacto
-
-- Veículos sem dados de tacógrafo atualizados há mais de 2 horas deixam de mostrar o nome do motorista antigo.
-- Veículos ativos (com dados frescos) continuam a mostrar o nome normalmente.
-
+- Quando um motorista diferente insere o cartao no mesmo veiculo, o `card_inserted_at` sera atualizado com a hora real da nova insercao
+- Se o mesmo cartao permanece, o comportamento nao muda
+- O dashboard mostrara a hora correta do motorista atual
