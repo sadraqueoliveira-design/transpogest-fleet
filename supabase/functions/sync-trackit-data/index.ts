@@ -230,11 +230,11 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Detect refueling events
+          // Detect refueling events & card insertion changes
           const trackitIds = vehicleRecords.map((r: any) => r.trackit_id);
           const { data: existingVehicles } = await supabaseAdmin
             .from("vehicles")
-            .select("id, trackit_id, fuel_level_percent")
+            .select("id, trackit_id, fuel_level_percent, tachograph_status, card_inserted_at")
             .in("trackit_id", trackitIds);
 
           const existingMap = new Map(
@@ -286,6 +286,52 @@ Deno.serve(async (req) => {
                 threshold_percent: 10,
               });
             }
+          }
+
+          // === CARD INSERTION TRACKING ===
+          // Detect card state changes and set card_inserted_at accordingly
+          const EMPTY_CARD_VAL = "0000000000000000";
+          for (const rec of vehicleRecords) {
+            const existing = existingMap.get(rec.trackit_id);
+            if (!existing) continue;
+
+            // Parse old dc1 from existing tachograph_status
+            let oldDc1: string | null = null;
+            if (existing.tachograph_status) {
+              try {
+                const oldTacho = JSON.parse(existing.tachograph_status);
+                oldDc1 = oldTacho?.dc1 || null;
+              } catch { /* ignore */ }
+            }
+            const oldHasCard = oldDc1 && oldDc1 !== "" && oldDc1 !== EMPTY_CARD_VAL && oldDc1 !== "0";
+
+            // Parse new dc1 from new tachograph_status
+            let newDc1: string | null = null;
+            if (rec.tachograph_status) {
+              try {
+                const newTacho = JSON.parse(rec.tachograph_status);
+                newDc1 = newTacho?.dc1 || null;
+              } catch { /* ignore */ }
+            }
+            const newHasCard = newDc1 && newDc1 !== "" && newDc1 !== EMPTY_CARD_VAL && newDc1 !== "0";
+
+            if (!oldHasCard && newHasCard) {
+              // Card just inserted → set timestamp
+              (rec as any).card_inserted_at = new Date().toISOString();
+              console.log(`[CARD-INSERT] ${rec.plate}: card inserted (${newDc1}), setting card_inserted_at`);
+            } else if (oldHasCard && !newHasCard) {
+              // Card removed → clear timestamp
+              (rec as any).card_inserted_at = null;
+              console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
+            } else if (newHasCard && existing.card_inserted_at) {
+              // Card still inserted → preserve existing timestamp
+              (rec as any).card_inserted_at = existing.card_inserted_at;
+            } else if (newHasCard && !existing.card_inserted_at) {
+              // Card present but no timestamp recorded yet → set it now
+              (rec as any).card_inserted_at = new Date().toISOString();
+              console.log(`[CARD-BACKFILL] ${rec.plate}: card present but no timestamp, setting card_inserted_at`);
+            }
+            // If no card on both sides, card_inserted_at stays null (not included in rec)
           }
 
           // Upsert vehicles
