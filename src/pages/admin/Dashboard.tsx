@@ -257,7 +257,7 @@ export default function Dashboard() {
 
       // Check data freshness: if tmx is older than 24h, consider data stale
       const tmx = tacho.tmx ? new Date(tacho.tmx).getTime() : 0;
-      const isStale = tmx > 0 && (Date.now() - tmx) > 24 * 60 * 60 * 1000;
+      const isStale = tmx > 0 && (Date.now() - tmx) > 2 * 60 * 60 * 1000;
 
       // Use enriched fields first (set by sync after deploy)
       if (tacho.card_present != null) {
