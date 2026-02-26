@@ -657,12 +657,18 @@ export default function Dashboard() {
                     <span className={`text-[11px] font-bold tabular-nums ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
                   </div>
 
-                  {/* Driver name */}
-                  {driverName && (
+                  {/* Driver name or no-card badge */}
+                  {driverName ? (
                     <p className="text-[11px] font-medium text-foreground truncate mb-0.5">
                       👤 {driverName}
                     </p>
-                  )}
+                  ) : !driverCard ? (
+                    <p className="text-[10px] mb-0.5">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 text-destructive px-1.5 py-0.5 font-medium">
+                        🪪 Sem Cartão
+                      </span>
+                    </p>
+                  ) : null}
 
                   {/* Brand/Client */}
                   <p className="text-[10px] text-muted-foreground truncate mb-1">
