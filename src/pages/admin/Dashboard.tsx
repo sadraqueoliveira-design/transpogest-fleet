@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { pt } from "date-fns/locale";
 import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
 import ComplianceWidget from "@/components/admin/ComplianceWidget";
@@ -94,15 +96,17 @@ export default function Dashboard() {
   const [hubs, setHubs] = useState<HubLocation[]>([]);
 
   const [trailers, setTrailers] = useState<any[]>([]);
+  const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
 
   const fetchVehicles = async () => {
-    const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }, { data: hData }] = await Promise.all([
+    const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }, { data: hData }, { data: actData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
       supabase.from("clients").select("id, name").order("name"),
       supabase.from("trailers").select("id, plate, internal_id, status, last_linked_vehicle_id"),
       supabase.from("employees").select("card_number, full_name").not("card_number", "is", null),
       supabase.from("tachograph_cards").select("card_number, driver_name"),
       supabase.from("hubs").select("id, name, code, lat, lng, type, client_id").not("lat", "is", null),
+      supabase.from("driver_activities").select("driver_id, start_time").order("start_time", { ascending: false }),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
@@ -110,6 +114,13 @@ export default function Dashboard() {
     if (eData) setEmployeeCards(eData as EmployeeCard[]);
     if (tcData) setTachoCards(tcData as TachoCard[]);
     if (hData) setHubs(hData as HubLocation[]);
+    if (actData) {
+      const map: Record<string, string> = {};
+      for (const row of actData) {
+        if (!map[row.driver_id]) map[row.driver_id] = row.start_time;
+      }
+      setLastActivity(map);
+    }
   };
 
   useEffect(() => {
@@ -691,6 +702,14 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
+                    {v.current_driver_id && lastActivity[v.current_driver_id] && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">🪪 Cartão</span>
+                        <span className="font-semibold tabular-nums">
+                          {format(new Date(lastActivity[v.current_driver_id]), "dd/MM HH:mm", { locale: pt })}
+                        </span>
+                      </div>
+                    )}
                     {(typeof t1 === "number" || typeof t2 === "number") && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🌡️ Temp</span>
