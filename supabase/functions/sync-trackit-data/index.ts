@@ -368,8 +368,9 @@ Deno.serve(async (req) => {
             const existing = existingMap.get(rec.trackit_id);
             if (!existing) continue;
 
-            // Parse card presence from existing tachograph_status (use enriched fields)
+            // Parse card presence and card number from existing tachograph_status
             let oldCardPresent = false;
+            let oldCardNumber: string | null = null;
             if (existing.tachograph_status) {
               try {
                 const oldTacho = JSON.parse(existing.tachograph_status);
@@ -380,16 +381,22 @@ Deno.serve(async (req) => {
                   const oldDc1 = oldTacho?.dc1 || null;
                   oldCardPresent = !!(oldDc1 && oldDc1 !== "" && oldDc1 !== EMPTY_CARD_VAL && oldDc1 !== "0");
                 }
+                oldCardNumber = oldTacho.card_slot_1 || oldTacho.dc1 || null;
+                if (oldCardNumber === EMPTY_CARD_VAL || oldCardNumber === "0" || oldCardNumber === "") {
+                  oldCardNumber = null;
+                }
               } catch { /* ignore */ }
             }
             const oldHasCard = oldCardPresent;
 
-            // Parse card presence from new tachograph_status (enriched)
+            // Parse card presence and card number from new tachograph_status (enriched)
             let newCardPresent = false;
+            let newCardNumber: string | null = null;
             if (rec.tachograph_status) {
               try {
                 const newTacho = JSON.parse(rec.tachograph_status);
                 newCardPresent = !!newTacho.card_present;
+                newCardNumber = newTacho.card_slot_1 || null;
               } catch { /* ignore */ }
             }
             const newHasCard = newCardPresent;
@@ -402,8 +409,15 @@ Deno.serve(async (req) => {
               (rec as any).card_inserted_at = null;
               console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
             } else if (newHasCard && existing.card_inserted_at) {
-              // Card still inserted → preserve existing timestamp
-              (rec as any).card_inserted_at = existing.card_inserted_at;
+              // Card still inserted — but check if card NUMBER changed (different driver)
+              if (oldCardNumber && newCardNumber && oldCardNumber !== newCardNumber) {
+                // Different card inserted → need new event timestamp
+                console.log(`[CARD-CHANGE] ${rec.plate}: card changed from ${oldCardNumber} to ${newCardNumber}, fetching new timestamp`);
+                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false });
+              } else {
+                // Same card still inserted → preserve existing timestamp
+                (rec as any).card_inserted_at = existing.card_inserted_at;
+              }
             } else if (newHasCard && !existing.card_inserted_at) {
               // Card present but no timestamp recorded yet (backfill) → need event timestamp
               cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true });
