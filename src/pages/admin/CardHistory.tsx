@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreditCard, Search } from "lucide-react";
+import { CreditCard, Search, Clock } from "lucide-react";
 import { ExportButton } from "@/components/admin/BulkImportExport";
 
 interface CardEvent {
@@ -20,6 +20,15 @@ interface CardEvent {
   created_at: string;
 }
 
+interface CardSession {
+  key: string;
+  driver_name: string | null;
+  employee_number: number | null;
+  plate: string;
+  inserted_at: string | null;
+  removed_at: string | null;
+}
+
 const formatLisbon = (iso: string) =>
   new Date(iso).toLocaleString("pt-PT", {
     timeZone: "Europe/Lisbon",
@@ -27,6 +36,73 @@ const formatLisbon = (iso: string) =>
     minute: "2-digit",
     second: "2-digit",
   });
+
+const formatDuration = (insertedAt: string, removedAt: string): string => {
+  const ms = new Date(removedAt).getTime() - new Date(insertedAt).getTime();
+  if (ms < 0) return "—";
+  const totalMin = Math.floor(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
+const pairEvents = (events: CardEvent[]): CardSession[] => {
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.event_at).getTime() - new Date(b.event_at).getTime()
+  );
+
+  const sessions: CardSession[] = [];
+  const usedIds = new Set<string>();
+
+  // First pass: match each inserted with the next removed of same card+plate
+  const insertions = sorted.filter((e) => e.event_type === "inserted");
+  const removals = sorted.filter((e) => e.event_type === "removed");
+
+  for (const ins of insertions) {
+    const matchKey = `${ins.card_number ?? ins.driver_name}__${ins.plate}`;
+    const removal = removals.find(
+      (r) =>
+        !usedIds.has(r.id) &&
+        `${r.card_number ?? r.driver_name}__${r.plate}` === matchKey &&
+        new Date(r.event_at).getTime() > new Date(ins.event_at).getTime()
+    );
+
+    usedIds.add(ins.id);
+    if (removal) usedIds.add(removal.id);
+
+    sessions.push({
+      key: ins.id,
+      driver_name: ins.driver_name,
+      employee_number: ins.employee_number,
+      plate: ins.plate,
+      inserted_at: ins.event_at,
+      removed_at: removal?.event_at ?? null,
+    });
+  }
+
+  // Second pass: orphan removals (no matching insertion)
+  for (const rem of removals) {
+    if (!usedIds.has(rem.id)) {
+      sessions.push({
+        key: rem.id,
+        driver_name: rem.driver_name,
+        employee_number: rem.employee_number,
+        plate: rem.plate,
+        inserted_at: null,
+        removed_at: rem.event_at,
+      });
+    }
+  }
+
+  // Sort by earliest time descending
+  sessions.sort((a, b) => {
+    const tA = new Date(a.inserted_at ?? a.removed_at ?? "").getTime();
+    const tB = new Date(b.inserted_at ?? b.removed_at ?? "").getTime();
+    return tB - tA;
+  });
+
+  return sessions;
+};
 
 export default function CardHistory() {
   const [events, setEvents] = useState<CardEvent[]>([]);
@@ -80,23 +156,26 @@ export default function CardHistory() {
     fetchEvents();
   }, [selectedDate, plateFilter]);
 
+  const sessions = useMemo(() => pairEvents(events), [events]);
+
   const filtered = useMemo(() => {
-    if (!search) return events;
+    if (!search) return sessions;
     const q = search.toLowerCase();
-    return events.filter(
-      (e) =>
-        (e.driver_name && e.driver_name.toLowerCase().includes(q)) ||
-        (e.employee_number && String(e.employee_number).includes(q))
+    return sessions.filter(
+      (s) =>
+        (s.driver_name && s.driver_name.toLowerCase().includes(q)) ||
+        (s.employee_number && String(s.employee_number).includes(q))
     );
-  }, [events, search]);
+  }, [sessions, search]);
 
   const exportData = useMemo(() => {
-    return filtered.map(ev => ({
-      Hora: new Date(ev.event_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }),
-      Evento: ev.event_type === "inserted" ? "Inserido" : "Retirado",
-      Motorista: ev.driver_name || "—",
-      "N. Funcionário": ev.employee_number ?? "—",
-      Matrícula: ev.plate,
+    return filtered.map(s => ({
+      Motorista: s.driver_name || "—",
+      "N. Funcionário": s.employee_number ?? "—",
+      Matrícula: s.plate,
+      "Hora Inserção": s.inserted_at ? new Date(s.inserted_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
+      "Hora Retirada": s.removed_at ? new Date(s.removed_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
+      Duração: s.inserted_at && s.removed_at ? formatDuration(s.inserted_at, s.removed_at) : s.inserted_at ? "Em curso" : "—",
     }));
   }, [filtered]);
 
@@ -170,30 +249,35 @@ export default function CardHistory() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Hora</TableHead>
-                  <TableHead>Evento</TableHead>
                   <TableHead>Motorista</TableHead>
                   <TableHead>N.º Func.</TableHead>
                   <TableHead>Matrícula</TableHead>
+                  <TableHead>Hora Inserção</TableHead>
+                  <TableHead>Hora Retirada</TableHead>
+                  <TableHead>Duração</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((ev) => (
-                  <TableRow key={ev.id}>
+                {filtered.map((s) => (
+                  <TableRow key={s.key}>
+                    <TableCell>{s.driver_name || "—"}</TableCell>
+                    <TableCell>{s.employee_number ?? "—"}</TableCell>
+                    <TableCell className="font-mono">{s.plate}</TableCell>
                     <TableCell className="font-mono text-sm">
-                      {formatLisbon(ev.event_at)}
+                      {s.inserted_at ? formatLisbon(s.inserted_at) : "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {s.removed_at ? formatLisbon(s.removed_at) : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant={ev.event_type === "inserted" ? "default" : "destructive"}
-                        className={ev.event_type === "inserted" ? "bg-green-600 hover:bg-green-700" : ""}
-                      >
-                        {ev.event_type === "inserted" ? "Inserido" : "Retirado"}
-                      </Badge>
+                      {s.inserted_at && s.removed_at ? (
+                        <Badge variant="secondary">{formatDuration(s.inserted_at, s.removed_at)}</Badge>
+                      ) : s.inserted_at ? (
+                        <Badge className="bg-green-600 hover:bg-green-700">Em curso</Badge>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
-                    <TableCell>{ev.driver_name || "—"}</TableCell>
-                    <TableCell>{ev.employee_number ?? "—"}</TableCell>
-                    <TableCell className="font-mono">{ev.plate}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
