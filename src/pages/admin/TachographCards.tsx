@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, UserCheck, UserX, Link2, UserPlus
+  Plus, Search, CreditCard, AlertTriangle, MoreVertical, Trash2, Edit, UserCheck, UserX, Link2, UserPlus, Clock
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
@@ -234,6 +234,11 @@ export default function TachographCards() {
 
   const mappedPct = cards.length > 0 ? Math.round((mappedCount / cards.length) * 100) : 0;
 
+  const latestActivityTime = Object.values(lastActivity).reduce<string | null>((latest, ts) => {
+    if (!latest) return ts;
+    return new Date(ts) > new Date(latest) ? ts : latest;
+  }, null);
+
   const tabs: { key: FilterTab; label: string; count: number; alert?: boolean }[] = [
     { key: "all", label: "Todos", count: cards.length },
     { key: "unmapped", label: "Sem Motorista", count: unmappedCount, alert: unmappedCount > 0 },
@@ -269,6 +274,15 @@ export default function TachographCards() {
                 <UserX className="h-4 w-4 mx-auto text-destructive mb-1" />
                 <span className="font-bold">{unmappedCount}</span>
                 <p className="text-xs text-muted-foreground">Sem perfil</p>
+              </div>
+              <div className="text-center">
+                <Clock className="h-4 w-4 mx-auto text-muted-foreground mb-1" />
+                <span className="font-bold text-sm">
+                  {latestActivityTime
+                    ? format(new Date(latestActivityTime), "dd/MM 'às' HH:mm", { locale: pt })
+                    : "—"}
+                </span>
+                <p className="text-xs text-muted-foreground">Última Inserção</p>
               </div>
             </div>
           </div>
