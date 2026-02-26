@@ -1,44 +1,38 @@
 
 
-## Reestruturar Historico de Cartoes: Hora de Insercao e Hora de Retirada
+## Melhorias no Historico de Cartoes
 
-### Objetivo
-Alterar a tabela para mostrar pares de eventos (insercao + retirada) numa unica linha, com colunas separadas para "Hora Insercao" e "Hora Retirada", em vez de linhas individuais por evento.
+### 1. Aviso visual de motorista em dois veiculos simultaneamente
 
-### Alteracoes
+Na pagina `CardHistory.tsx`, apos calcular as sessoes, detetar motoristas cujas sessoes se sobrepõem em veiculos diferentes no mesmo periodo. Mostrar um alerta amarelo/laranja no topo da tabela listando os motoristas afetados e os veiculos, e destacar as linhas correspondentes na tabela com fundo amarelo.
+
+**Logica de detecao:**
+- Agrupar sessoes por `driver_name` (ou `card_number`)
+- Para cada motorista com sessoes em veiculos diferentes, verificar se os intervalos temporais se sobrepõem (insercao de uma sessao antes da retirada de outra)
+- Considerar sessoes "em curso" (sem `removed_at`) como ainda ativas
+
+### 2. Auto-registar cartoes desconhecidos na tabela tachograph_cards
+
+No `sync-trackit-data/index.ts`, quando um cartao nao e encontrado nas `tachograph_cards` (o log "Unknown card"), inserir automaticamente um novo registo na tabela `tachograph_cards` com o `card_number` e sem `driver_id`. Isto garante que o cartao fica registado para futura associacao e que os eventos subsequentes ja podem resolver o nome do motorista.
+
+### 3. Suporte a sessoes que cruzam a meia-noite
+
+Na query de `CardHistory.tsx`, alargar a janela temporal para tambem buscar eventos do dia anterior que nao tenham sido fechados (insercoes do dia anterior sem retirada correspondente). Isto resolve o caso de motoristas que inserem o cartao apos as 18h e so retiram no dia seguinte.
+
+**Abordagem:** Buscar tambem insercoes do dia anterior que nao tenham retirada antes da meia-noite, para que aparecam como sessoes ativas ou com retirada no dia selecionado.
+
+---
+
+### Detalhes tecnicos
 
 **Ficheiro: `src/pages/admin/CardHistory.tsx`**
+- Importar `Alert`, `AlertTitle`, `AlertDescription` de `@/components/ui/alert` e `AlertTriangle` do lucide
+- Adicionar `useMemo` para detetar sobreposicoes: agrupar sessoes por motorista, verificar se existem sessoes em veiculos diferentes com intervalos sobrepostos
+- Renderizar alerta condicional antes da tabela quando ha sobreposicoes
+- Adicionar classe `bg-yellow-50` nas `TableRow` de sessoes com conflito
+- Alargar a janela de busca: `rangeStart` para -26h (em vez de -2h) para apanhar insercoes do dia anterior, e filtrar no frontend para mostrar apenas sessoes relevantes ao dia selecionado
 
-1. **Agrupar eventos por sessao**: Emparelhar eventos `inserted` e `removed` do mesmo cartao/motorista na mesma viatura, criando linhas com hora de entrada e hora de saida.
+**Ficheiro: `supabase/functions/sync-trackit-data/index.ts`**
+- Apos o log "Unknown card", adicionar `upsert` na tabela `tachograph_cards` com `card_number` e `driver_name: null`, usando `onConflict: "card_number"` para nao duplicar
+- Atualizar o `cardToDriverName` map com o novo registo para que os card_events subsequentes ja tenham o cartao mapeado
 
-2. **Nova estrutura da tabela**:
-
-| Motorista | N. Func. | Matricula | Hora Insercao | Hora Retirada | Duracao |
-|-----------|----------|-----------|---------------|---------------|---------|
-| Joao Silva | 1234 | 00-AB-00 | 06:30:00 | 14:45:00 | 8h 15m |
-| Maria Santos | 5678 | 11-CD-11 | 07:00:00 | — | Em curso |
-
-3. **Logica de emparelhamento**:
-   - Ordenar eventos cronologicamente por cartao/viatura
-   - Cada `inserted` abre uma sessao
-   - O proximo `removed` do mesmo cartao+viatura fecha a sessao
-   - Se nao houver `removed`, mostrar "Em curso" ou "—"
-   - Calcular duracao entre insercao e retirada
-
-4. **Exportacao atualizada**: Adaptar os dados de exportacao para refletir a nova estrutura com colunas separadas para hora de insercao e retirada.
-
-### Secao Tecnica
-
-**Logica de agrupamento (pseudocodigo):**
-```text
-Para cada evento "inserted", ordenado por event_at:
-  -> Procurar o proximo "removed" com mesmo card_number + plate
-  -> Criar linha: { motorista, n_func, matricula, hora_in, hora_out, duracao }
-  -> Se nao encontrar removed: hora_out = null (em curso)
-Eventos "removed" sem par de insercao: mostrar como linha so com hora de retirada
-```
-
-**Ficheiro a modificar:** `src/pages/admin/CardHistory.tsx`
-- Adicionar `useMemo` para agrupar eventos em sessoes
-- Atualizar colunas da tabela
-- Atualizar `exportData` com nova estrutura
