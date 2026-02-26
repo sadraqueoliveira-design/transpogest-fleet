@@ -1,49 +1,59 @@
 
+Objetivo: corrigir o falso estado “🪪 Sem Cartão” no veículo 37-ST-20 (em andamento), garantindo que o painel diferencie corretamente entre “sem cartão físico” e “cartão presente mas não mapeado”.
 
-# Corrigir timestamp de insercao do cartao - usar eventos Trackit
+Resumo do diagnóstico (com evidência)
+- O backend está a detetar cartão no Trackit para 37-ST-20:
+  - Log: `[CARD-DEBUG] 37-ST-20: dc1=N/A, tac.1.idc=0000001983970000 ... → using: 0000001983970000`
+- No entanto, na tabela `vehicles`, o `tachograph_status` gravado contém apenas o bloco `drs` (ex.: `ds1`, `rpm`, `tmx`), sem `tac.1.idc`.
+- O frontend do Dashboard decide “Sem Cartão” com base apenas em `tacho.dc1`:
+  - `driverCard = tacho.dc1 || null`
+  - Se `!driverCard`, mostra badge vermelho “🪪 Sem Cartão”.
+- Resultado: quando o cartão vem em `tac.1.idc` (e não em `dc1`), o UI marca incorretamente “Sem Cartão”.
+- Adicionalmente, esse cartão (`0000001983970000`) existe em `tachograph_cards`, mas sem `driver_id`; por isso também aparece “Unknown card” no sync. Isto explica falta de associação a motorista, mas não deveria virar “Sem Cartão”.
 
-## Problema
+Implementação proposta (sem alterar base de dados)
+1) Corrigir origem de verdade do cartão no sync
+- Ficheiro: `supabase/functions/sync-trackit-data/index.ts`
+- Alterar construção de `tachograph_status` para incluir campos derivados persistidos (além do `drs`):
+  - `card_slot_1` (valor normalizado detetado: `drs.dc1 || tac.1.idc || exd.eco.idc || drs.idc`)
+  - `card_present` (boolean)
+  - `card_source` (`dc1` | `tac.1.idc` | `exd.eco.idc` | `drs.idc` | `none`)
+- Manter compatibilidade com estrutura atual (não remover `drs`), apenas enriquecer o JSON.
 
-O campo `drs.tmx` da API Trackit nao e o momento da insercao do cartao -- e o timestamp da ultima mensagem de telemetria. Por isso, quando o cartao do Austelino foi inserido as ~06:00 mas a primeira sincronizacao pos-migracao ocorreu as 11:25, o sistema gravou 11:25 em vez de 06:00.
+2) Unificar parsing de cartão no Dashboard
+- Ficheiro: `src/pages/admin/Dashboard.tsx`
+- Criar helper único para extrair estado de cartão do `tachograph_status`:
+  - priorizar `card_slot_1`/`card_present` novos;
+  - fallback legacy para `dc1`.
+- Substituir usos atuais de `getDc1`/`driverCard` por este helper nos pontos:
+  - pesquisa por motorista;
+  - popups/labels de mapa;
+  - cartão compacto da frota.
 
-## Abordagem
+3) Corrigir regra de apresentação do badge no cartão da frota
+- Estado visual proposto:
+  - Se há motorista resolvido: mostrar `👤 Nome`.
+  - Se há cartão presente mas sem motorista mapeado: mostrar badge neutro/aviso “🪪 Cartão não identificado”.
+  - Só mostrar badge vermelho “🪪 Sem Cartão” quando `card_present === false`.
+- Assim elimina-se o falso positivo “Sem Cartão” com veículo em andamento.
 
-A API Trackit tem um endpoint `/ws/events` que reporta eventos historicos por veiculo, incluindo possivelmente eventos de insercao/remocao de cartao. Podemos usar este endpoint para obter o timestamp real.
+4) Ajustar exibição de “Última Inserção”
+- No cartão compacto, mostrar `card_inserted_at` quando `card_present === true` (não apenas quando existe `dc1`), para não ocultar inserção válida de cartões sem `dc1`.
 
-### Passo 1: Investigar eventos de insercao de cartao
+5) Validação funcional após implementação
+- Forçar sincronização e validar:
+  - 37-ST-20 não aparece mais como “Sem Cartão” se `tac.1.idc` estiver presente;
+  - deve aparecer “Cartão não identificado” enquanto não houver mapeamento para motorista.
+- Confirmar no registo do veículo que `tachograph_status` passou a incluir os campos derivados (`card_slot_1`, `card_present`, `card_source`).
+- Verificar regressão em outros veículos:
+  - com `dc1` preenchido continuam corretos;
+  - sem cartão real continuam “Sem Cartão”.
 
-Criar uma edge function temporaria (ou adaptar a existente `trackit-events`) para consultar os eventos do veiculo AD-98-JU no dia de hoje e identificar se existe um evento de "card insertion" com o ID correto e o timestamp real (~06:00).
+Ação operacional recomendada (em paralelo, não bloqueante)
+- No ecrã de cartões de tacógrafo, mapear `0000001983970000` a um `driver_id` válido (ou criar perfil e associar).
+- Isto resolve o “Unknown card” e permitirá atribuição automática de motorista no `current_driver_id`.
 
-Os IDs de evento de insercao de cartao na Trackit sao tipicamente:
-- Evento 45: "Driver Card Inserted Slot 1"
-- Evento 46: "Driver Card Removed Slot 1"
-
-### Passo 2: Integrar na sincronizacao
-
-Se confirmarmos que o evento existe, modificar a logica de sincronizacao em `sync-trackit-data/index.ts` para:
-
-1. No caso de **backfill** (cartao presente mas sem `card_inserted_at`), consultar o endpoint de eventos para obter o timestamp real de insercao
-2. No caso de **transicao detetada** (sem cartao -> com cartao), se o `tmx` nao for preciso, consultar os eventos recentes
-
-### Passo 3: Alternativa pragmatica
-
-Se a API de eventos nao fornecer o timestamp de insercao, aceitar a limitacao e:
-- Para transicoes futuras (sem cartao -> com cartao), o `tmx` sera razoavelmente preciso (dentro do intervalo de 5 min de sincronizacao)
-- Para cartoes ja inseridos (backfill), nao ha forma fiavel de saber o horario real sem historico de eventos
-
-## Ficheiros a modificar
-
-| Ficheiro | Acao |
-|---|---|
-| `supabase/functions/sync-trackit-data/index.ts` | Melhorar logica de backfill para consultar eventos se disponivel |
-| `supabase/functions/trackit-events/index.ts` | Possivelmente reutilizar para consulta interna de eventos de cartao |
-
-## Proximo passo imediato
-
-Antes de implementar, testar o endpoint de eventos para o veiculo AD-98-JU de hoje para confirmar se o evento de insercao de cartao (evento 45) existe e contem o timestamp correto. Se nao existir, a abordagem pragmatica sera comunicada.
-
-## Resultado esperado
-
-- Cartoes inseridos no futuro: timestamp preciso ao minuto (via evento ou detetado na sincronizacao seguinte)
-- Backfill de cartoes ja inseridos: timestamp real se a API de eventos o fornecer
-
+Impacto esperado
+- O estado “Sem Cartão” passa a refletir ausência real de cartão físico.
+- Veículos em andamento com cartão não mapeado deixam de aparecer com erro visual crítico.
+- Melhor consistência entre backend (deteção real) e frontend (estado exibido).
