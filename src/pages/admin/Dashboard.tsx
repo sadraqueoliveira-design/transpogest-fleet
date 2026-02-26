@@ -254,13 +254,20 @@ export default function Dashboard() {
     if (!v.tachograph_status) return { cardNumber: null, cardPresent: false };
     try {
       const tacho = JSON.parse(v.tachograph_status);
+
+      // Check data freshness: if tmx is older than 24h, consider data stale
+      const tmx = tacho.tmx ? new Date(tacho.tmx).getTime() : 0;
+      const isStale = tmx > 0 && (Date.now() - tmx) > 24 * 60 * 60 * 1000;
+
       // Use enriched fields first (set by sync after deploy)
       if (tacho.card_present != null) {
+        if (isStale) return { cardNumber: null, cardPresent: null }; // stale → unknown
         return { cardNumber: tacho.card_slot_1 || tacho.dc1 || null, cardPresent: !!tacho.card_present };
       }
-      // Legacy fallback: dc1 present → card present; dc1 absent → UNKNOWN (not "no card")
+      // Legacy fallback: dc1 present → card present (only if fresh)
       const dc1 = tacho.dc1 || null;
-      if (dc1) return { cardNumber: dc1, cardPresent: true };
+      if (dc1 && !isStale) return { cardNumber: dc1, cardPresent: true };
+      if (dc1 && isStale) return { cardNumber: null, cardPresent: null }; // stale dc1 → unknown
       // dc1 absent but tachograph_status exists → could be card via tac.1.idc (unknown to frontend)
       return { cardNumber: null, cardPresent: null };
     } catch { return { cardNumber: null, cardPresent: false }; }
