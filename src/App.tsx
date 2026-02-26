@@ -12,6 +12,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import VerifyDeclaration from "./pages/VerifyDeclaration";
+import ResetPassword from "./pages/ResetPassword";
 
 // Admin pages
 import Dashboard from "./pages/admin/Dashboard";
@@ -68,6 +69,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/verificar" element={<VerifyDeclaration />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             {/* Admin routes */}
             <Route path="/admin" element={<AdminRoute><Dashboard /></AdminRoute>} />

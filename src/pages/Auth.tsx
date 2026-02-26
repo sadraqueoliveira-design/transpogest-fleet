@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { Truck } from "lucide-react";
 
@@ -17,6 +18,9 @@ export default function Auth() {
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
   const [signupName, setSignupName] = useState("");
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,6 +89,9 @@ export default function Auth() {
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? "A entrar..." : "Entrar"}
                   </Button>
+                  <Button variant="link" type="button" className="w-full text-sm" onClick={() => { setForgotEmail(loginEmail); setForgotOpen(true); }}>
+                    Esqueceu a palavra-passe?
+                  </Button>
                 </form>
               </TabsContent>
               <TabsContent value="signup" className="mt-0">
@@ -110,6 +117,38 @@ export default function Auth() {
           </Tabs>
         </Card>
       </div>
+
+      {/* Forgot password dialog */}
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Recuperar Palavra-passe</DialogTitle>
+            <DialogDescription>Introduza o seu e-mail para receber um link de recuperação.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            setForgotLoading(true);
+            const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+              redirectTo: `${window.location.origin}/reset-password`,
+            });
+            if (error) {
+              toast.error(error.message);
+            } else {
+              toast.success("E-mail de recuperação enviado! Verifique a sua caixa de entrada.");
+              setForgotOpen(false);
+            }
+            setForgotLoading(false);
+          }} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">E-mail</Label>
+              <Input id="forgot-email" type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} required placeholder="email@exemplo.pt" />
+            </div>
+            <Button type="submit" className="w-full" disabled={forgotLoading}>
+              {forgotLoading ? "A enviar..." : "Enviar Link de Recuperação"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
