@@ -1,35 +1,47 @@
 
+# Plano: Mostrar data/hora real de insercao do cartao
 
-# Plano: Cartao do tacografo - mostrar horario de insercao e ocultar sem cartao
+## Problema
 
-## Problema atual
+O campo `tmx` no JSON do tacografo e o timestamp da ultima mensagem de telemetria, nao da insercao do cartao. Por isso, o horario apresentado fica a atualizar a cada sincronizacao (~1 hora), em vez de mostrar quando o motorista efetivamente colocou o cartao.
 
-A linha "Cartao" nos cards do Dashboard aparece sempre que existe um timestamp `tmx` no JSON do tacografo, mesmo quando nao ha cartao de motorista inserido (`dc1` vazio ou null). O utilizador quer que:
+## Solucao
 
-1. So mostre a linha "Cartao" quando existe um cartao de motorista efetivamente inserido (campo `dc1` presente no JSON do tacografo)
-2. Quando ha cartao, mostre o horario de insercao (`tmx`)
-3. Quando NAO ha cartao inserido, nao mostrar valores nessa linha
+Adicionar uma coluna `card_inserted_at` na tabela `vehicles` que guarda o momento exato em que o cartao foi detetado pela primeira vez. A logica de sincronizacao atualiza este campo apenas quando o estado do cartao muda.
 
-## Alteracao
+### 1. Nova coluna na base de dados
 
-**Ficheiro**: `src/pages/admin/Dashboard.tsx`
+Adicionar `card_inserted_at TIMESTAMPTZ` a tabela `vehicles` (valor default NULL).
 
-**Linha ~706**: Alterar a condicao de exibicao da linha "Cartao"
+### 2. Atualizar a funcao de sincronizacao
 
-De:
-```
-{(tacho.tmx || lastActivity[v.id]) && (
-```
+No ficheiro `supabase/functions/sync-trackit-data/index.ts`:
 
-Para:
-```
-{driverCard && (tacho.tmx || lastActivity[v.id]) && (
-```
+- Antes do upsert, verificar se o veiculo ja tem um cartao inserido comparando com o estado anterior
+- Se `dc1` passa de vazio/null para um valor valido: definir `card_inserted_at = now()`
+- Se `dc1` passa de um valor para vazio/null: limpar `card_inserted_at = null`
+- Se `dc1` se mantém igual: manter o valor existente (nao atualizar)
 
-Isto garante que a linha so aparece quando `dc1` (o numero do cartao do motorista) esta preenchido no JSON do tacografo, significando que ha um cartao fisicamente inserido no dispositivo.
+Para isso, buscar os veiculos existentes antes do upsert para comparar o estado do cartao anterior com o novo.
+
+### 3. Atualizar o Dashboard
+
+No ficheiro `src/pages/admin/Dashboard.tsx`:
+
+- Usar `v.card_inserted_at` em vez de `tacho.tmx` para mostrar o horario na linha "Cartao"
+- A condicao fica: `driverCard && v.card_inserted_at`
+- O formato continua `dd/MM HH:mm`
+
+## Ficheiros a modificar
+
+| Ficheiro | Acao |
+|---|---|
+| Base de dados (vehicles) | Adicionar coluna `card_inserted_at` |
+| `supabase/functions/sync-trackit-data/index.ts` | Logica para detetar mudanca de cartao e atualizar timestamp |
+| `src/pages/admin/Dashboard.tsx` | Usar `card_inserted_at` em vez de `tmx` |
 
 ## Resultado esperado
 
-- Veiculos COM cartao inserido: mostram a linha "Cartao" com data/hora da insercao
-- Veiculos SEM cartao inserido: nao mostram a linha "Cartao" de todo
-
+- Quando um motorista insere o cartao, aparece a data/hora exata desse momento
+- O horario NAO muda ate o motorista retirar e voltar a inserir o cartao
+- Veiculos sem cartao continuam a mostrar o badge vermelho "Sem Cartao"
