@@ -461,8 +461,8 @@ Deno.serve(async (req) => {
                 (rec as any).card_inserted_at = existing.card_inserted_at;
               }
             } else if (newHasCard && !existing.card_inserted_at) {
-              // Card present but no timestamp recorded yet (backfill) → need event timestamp
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "inserted", oldCardNumber: null, newCardNumber });
+              // Card present but no timestamp recorded yet (backfill) → update vehicle timestamp only, do NOT create card_event
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "backfill_only", oldCardNumber: null, newCardNumber });
             }
             // If no card on both sides, card_inserted_at stays null
           }
@@ -495,6 +495,9 @@ Deno.serve(async (req) => {
               const source = result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now");
               const label = result.isBackfill ? "CARD-BACKFILL" : "CARD-INSERT";
               console.log(`[${label}] ${rec.plate}: card_inserted_at=${insertionTime} (source=${source})`);
+
+              // Skip card_events for backfill_only (no real state change detected)
+              if (result.eventType === "backfill_only") continue;
 
               // === Write card_events ===
               const existing = existingMap.get(rec.trackit_id);
