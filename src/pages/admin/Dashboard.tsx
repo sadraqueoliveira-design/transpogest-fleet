@@ -749,7 +749,7 @@ export default function Dashboard() {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🪪 Cartão</span>
                         <span className="font-semibold tabular-nums">
-                          {format(new Date((v as any).card_inserted_at), "dd/MM HH:mm", { locale: pt })}
+                          {new Date((v as any).card_inserted_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
                     )}
