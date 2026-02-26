@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap
+  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap, History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ const navItems = [
   { to: "/admin/solicitacoes", icon: FileText, label: "Solicitações" },
   { to: "/admin/motoristas", icon: Users, label: "Motoristas" },
   { to: "/admin/tacografo", icon: CreditCard, label: "Tacógrafo" },
+  { to: "/admin/historico-cartoes", icon: History, label: "Hist. Cartões" },
   { to: "/admin/declaracoes", icon: ShieldAlert, label: "Declarações" },
   { to: "/admin/antram", icon: Settings, label: "ANTRAM" },
   { to: "/admin/compliance", icon: ShieldCheck, label: "Compliance" },

@@ -166,6 +166,50 @@ export type Database = {
           },
         ]
       }
+      card_events: {
+        Row: {
+          card_number: string | null
+          created_at: string
+          driver_name: string | null
+          employee_number: number | null
+          event_at: string
+          event_type: string
+          id: string
+          plate: string
+          vehicle_id: string | null
+        }
+        Insert: {
+          card_number?: string | null
+          created_at?: string
+          driver_name?: string | null
+          employee_number?: number | null
+          event_at: string
+          event_type: string
+          id?: string
+          plate: string
+          vehicle_id?: string | null
+        }
+        Update: {
+          card_number?: string | null
+          created_at?: string
+          driver_name?: string | null
+          employee_number?: number | null
+          event_at?: string
+          event_type?: string
+          id?: string
+          plate?: string
+          vehicle_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "card_events_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       checklist_submissions: {
         Row: {
           created_at: string
