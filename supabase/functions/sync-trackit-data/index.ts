@@ -202,7 +202,17 @@ Deno.serve(async (req) => {
               engine_hours: engineHoursVal,
               temperature_data: Object.keys(tmp).length > 0 ? tmp : null,
               last_location_name: null as string | null,
-              tachograph_status: Object.keys(drs).length > 0 ? JSON.stringify(drs) : null,
+              tachograph_status: (() => {
+                // Enrich tachograph_status with normalized card fields
+                const cardSource = drs.dc1 ? "dc1" : tacSlot1 ? "tac.1.idc" : d.exd?.eco?.idc ? "exd.eco.idc" : drs.idc ? "drs.idc" : "none";
+                const enriched = {
+                  ...drs,
+                  card_slot_1: hasValidCard ? driverCardNumber : null,
+                  card_present: !!hasValidCard,
+                  card_source: cardSource,
+                };
+                return Object.keys(drs).length > 0 || hasValidCard ? JSON.stringify(enriched) : null;
+              })(),
               adblue_level_percent: adblueLevel,
               reefer_set_point_1: setPoint1,
               reefer_set_point_2: setPoint2,
@@ -358,25 +368,31 @@ Deno.serve(async (req) => {
             const existing = existingMap.get(rec.trackit_id);
             if (!existing) continue;
 
-            // Parse old dc1 from existing tachograph_status
-            let oldDc1: string | null = null;
+            // Parse card presence from existing tachograph_status (use enriched fields)
+            let oldCardPresent = false;
             if (existing.tachograph_status) {
               try {
                 const oldTacho = JSON.parse(existing.tachograph_status);
-                oldDc1 = oldTacho?.dc1 || null;
+                // Use enriched field first, fallback to dc1
+                if (oldTacho.card_present != null) {
+                  oldCardPresent = !!oldTacho.card_present;
+                } else {
+                  const oldDc1 = oldTacho?.dc1 || null;
+                  oldCardPresent = !!(oldDc1 && oldDc1 !== "" && oldDc1 !== EMPTY_CARD_VAL && oldDc1 !== "0");
+                }
               } catch { /* ignore */ }
             }
-            const oldHasCard = oldDc1 && oldDc1 !== "" && oldDc1 !== EMPTY_CARD_VAL && oldDc1 !== "0";
+            const oldHasCard = oldCardPresent;
 
-            // Parse new dc1 from new tachograph_status
-            let newDc1: string | null = null;
+            // Parse card presence from new tachograph_status (enriched)
+            let newCardPresent = false;
             if (rec.tachograph_status) {
               try {
                 const newTacho = JSON.parse(rec.tachograph_status);
-                newDc1 = newTacho?.dc1 || null;
+                newCardPresent = !!newTacho.card_present;
               } catch { /* ignore */ }
             }
-            const newHasCard = newDc1 && newDc1 !== "" && newDc1 !== EMPTY_CARD_VAL && newDc1 !== "0";
+            const newHasCard = newCardPresent;
 
             if (!oldHasCard && newHasCard) {
               // Card just inserted → need event timestamp

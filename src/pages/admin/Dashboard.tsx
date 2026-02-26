@@ -248,11 +248,26 @@ export default function Dashboard() {
     return null;
   };
 
-  // Extract dc1 from tachograph_status
-  const getDc1 = (v: Vehicle): string | null => {
-    if (!v.tachograph_status) return null;
-    try { return JSON.parse(v.tachograph_status)?.dc1 || null; } catch { return null; }
+  // Extract card info from tachograph_status (enriched fields first, fallback to dc1)
+  // cardPresent: true = card physically in slot, false = definitely no card, null = unknown (legacy data without dc1)
+  const getCardInfo = (v: Vehicle): { cardNumber: string | null; cardPresent: boolean | null } => {
+    if (!v.tachograph_status) return { cardNumber: null, cardPresent: false };
+    try {
+      const tacho = JSON.parse(v.tachograph_status);
+      // Use enriched fields first (set by sync after deploy)
+      if (tacho.card_present != null) {
+        return { cardNumber: tacho.card_slot_1 || tacho.dc1 || null, cardPresent: !!tacho.card_present };
+      }
+      // Legacy fallback: dc1 present → card present; dc1 absent → UNKNOWN (not "no card")
+      const dc1 = tacho.dc1 || null;
+      if (dc1) return { cardNumber: dc1, cardPresent: true };
+      // dc1 absent but tachograph_status exists → could be card via tac.1.idc (unknown to frontend)
+      return { cardNumber: null, cardPresent: null };
+    } catch { return { cardNumber: null, cardPresent: false }; }
   };
+
+  // Backward-compatible getDc1 wrapper
+  const getDc1 = (v: Vehicle): string | null => getCardInfo(v).cardNumber;
 
 
   const filtered = vehicles.filter(v => {
@@ -627,7 +642,9 @@ export default function Dashboard() {
               const engineH = v.engine_hours ?? tacho.ehr ?? null;
               const odo = v.odometer_km ?? tacho.ckm ?? null;
               const rpm = v.rpm ?? tacho.rpm ?? null;
-              const driverCard = tacho.dc1 || null;
+              const cardInfo = getCardInfo(v);
+              const driverCard = cardInfo.cardNumber;
+              const cardPresent = cardInfo.cardPresent;
               const driverName = resolveDriverName(driverCard);
               const cName = clients.find(c => c.id === v.client_id)?.name;
               const linkedTrailer = trailers.find(t => t.last_linked_vehicle_id === v.id && t.status === "coupled");
@@ -657,18 +674,30 @@ export default function Dashboard() {
                     <span className={`text-[11px] font-bold tabular-nums ${isMoving ? "text-success" : "text-muted-foreground"}`}>{speed} km/h</span>
                   </div>
 
-                  {/* Driver name or no-card badge */}
+                  {/* Driver name or card status badge */}
                   {driverName ? (
                     <p className="text-[11px] font-medium text-foreground truncate mb-0.5">
                       👤 {driverName}
                     </p>
-                  ) : !driverCard ? (
+                  ) : cardPresent === true ? (
+                    <p className="text-[10px] mb-0.5">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 text-warning px-1.5 py-0.5 font-medium">
+                        🪪 Cartão não identificado
+                      </span>
+                    </p>
+                  ) : cardPresent === null ? (
+                    <p className="text-[10px] mb-0.5">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 font-medium">
+                        🪪 A verificar...
+                      </span>
+                    </p>
+                  ) : (
                     <p className="text-[10px] mb-0.5">
                       <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 text-destructive px-1.5 py-0.5 font-medium">
                         🪪 Sem Cartão
                       </span>
                     </p>
-                  ) : null}
+                  )}
 
                   {/* Brand/Client */}
                   <p className="text-[10px] text-muted-foreground truncate mb-1">
@@ -709,7 +738,7 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
-                    {driverCard && (v as any).card_inserted_at && (
+                    {cardPresent && (v as any).card_inserted_at && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🪪 Cartão</span>
                         <span className="font-semibold tabular-nums">
