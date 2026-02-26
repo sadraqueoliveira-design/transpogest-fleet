@@ -106,7 +106,7 @@ export default function Dashboard() {
       supabase.from("employees").select("card_number, full_name").not("card_number", "is", null),
       supabase.from("tachograph_cards").select("card_number, driver_name"),
       supabase.from("hubs").select("id, name, code, lat, lng, type, client_id").not("lat", "is", null),
-      supabase.from("driver_activities").select("driver_id, start_time").order("start_time", { ascending: false }),
+      supabase.from("driver_activities").select("vehicle_id, start_time").not("vehicle_id", "is", null).order("start_time", { ascending: false }),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
@@ -117,7 +117,8 @@ export default function Dashboard() {
     if (actData) {
       const map: Record<string, string> = {};
       for (const row of actData) {
-        if (!map[row.driver_id]) map[row.driver_id] = row.start_time;
+        const vid = (row as any).vehicle_id;
+        if (vid && !map[vid]) map[vid] = row.start_time;
       }
       setLastActivity(map);
     }
@@ -702,11 +703,11 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
-                    {v.current_driver_id && lastActivity[v.current_driver_id] && (
+                    {lastActivity[v.id] && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🪪 Cartão</span>
                         <span className="font-semibold tabular-nums">
-                          {format(new Date(lastActivity[v.current_driver_id]), "dd/MM HH:mm", { locale: pt })}
+                          {format(new Date(lastActivity[v.id]), "dd/MM HH:mm", { locale: pt })}
                         </span>
                       </div>
                     )}
