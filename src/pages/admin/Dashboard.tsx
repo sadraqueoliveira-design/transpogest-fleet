@@ -90,6 +90,7 @@ export default function Dashboard() {
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
+  const hubLayerRef = useRef<any>(null);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [employeeCards, setEmployeeCards] = useState<EmployeeCard[]>([]);
   const [tachoCards, setTachoCards] = useState<TachoCard[]>([]);
@@ -459,8 +460,32 @@ export default function Dashboard() {
       });
       map.addLayer(clusterGroup);
 
-      // Draw proximity radius circles around hubs
-      if (showHubCircles) {
+      // Hub circles handled by separate useEffect
+
+      const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
+      if (withCoords.length > 0) {
+        map.fitBounds(L.latLngBounds(withCoords.map((v) => [v.last_lat!, v.last_lng!])), { padding: [50, 50] });
+      }
+    };
+    initMap();
+    return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; hubLayerRef.current = null; } };
+  }, [viewMode, filtered.length, filterTab]);
+
+  // Separate effect for hub circles — no map recreation
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+
+    // Remove old hub layer
+    if (hubLayerRef.current) {
+      map.removeLayer(hubLayerRef.current);
+      hubLayerRef.current = null;
+    }
+
+    if (!showHubCircles) return;
+
+    import("leaflet").then((L) => {
+      const group = L.layerGroup();
       hubs.forEach((h) => {
         if (h.lat != null && h.lng != null) {
           const isStore = h.type === 'store' || h.type === 'hub';
@@ -471,9 +496,8 @@ export default function Dashboard() {
             fillOpacity: 0.08,
             weight: 1.5,
             dashArray: '6 4',
-          }).addTo(map);
+          }).addTo(group);
 
-          // Hub marker
           const hubIcon = L.divIcon({
             html: `<div style="width:22px;height:22px;background:${isStore ? 'hsl(152,60%,42%)' : 'hsl(220,60%,50%)'};border-radius:4px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
               <span style="font-size:11px">${isStore ? '🏪' : '🏭'}</span>
@@ -482,19 +506,13 @@ export default function Dashboard() {
           });
           L.marker([h.lat, h.lng], { icon: hubIcon })
             .bindPopup(`<div style="font-family:Inter,sans-serif"><strong>${h.code}</strong><br/>${h.name}<br/><span style="color:#888;font-size:11px">Raio: ${proximityRadius} km</span></div>`)
-            .addTo(map);
+            .addTo(group);
         }
       });
-      }
-
-      const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
-      if (withCoords.length > 0) {
-        map.fitBounds(L.latLngBounds(withCoords.map((v) => [v.last_lat!, v.last_lng!])), { padding: [50, 50] });
-      }
-    };
-    initMap();
-    return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
-  }, [viewMode, filtered.length, filterTab, proximityRadius, showHubCircles]);
+      group.addTo(map);
+      hubLayerRef.current = group;
+    });
+  }, [showHubCircles, proximityRadius, hubs]);
 
   const widgetCards: { label: string; value: number; icon: any; variant: string; action: () => void }[] = [
     { label: "Total", value: stats.total, icon: Truck, variant: "default", action: () => setFilterTab("all") },

@@ -61,6 +61,7 @@ export default function LiveMap() {
   const [showHubCircles, setShowHubCircles] = useState(true);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
+  const hubLayerRef = useRef<any>(null);
 
   const fetchVehicles = async () => {
     const [{ data: vData }, { data: cData }, { data: hData }, { data: configData }] = await Promise.all([
@@ -212,32 +213,7 @@ export default function LiveMap() {
 
       map.addLayer(clusterGroup);
 
-      // Draw proximity radius circles around hubs
-      if (showHubCircles) {
-      hubs.forEach((h) => {
-        if (h.lat != null && h.lng != null) {
-          const isStore = h.type === 'store' || h.type === 'hub';
-          L.circle([h.lat, h.lng], {
-            radius: proximityRadius * 1000,
-            color: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
-            fillColor: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
-            fillOpacity: 0.08,
-            weight: 1.5,
-            dashArray: '6 4',
-          }).addTo(map);
-
-          const hubIcon = L.divIcon({
-            html: `<div style="width:22px;height:22px;background:${isStore ? 'hsl(152,60%,42%)' : 'hsl(220,60%,50%)'};border-radius:4px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
-              <span style="font-size:11px">${isStore ? '🏪' : '🏭'}</span>
-            </div>`,
-            className: "", iconSize: [22, 22], iconAnchor: [11, 11],
-          });
-          L.marker([h.lat, h.lng], { icon: hubIcon })
-            .bindPopup(`<div style="font-family:Inter,sans-serif"><strong>${h.code}</strong><br/>${h.name}<br/><span style="color:#888;font-size:11px">Raio: ${proximityRadius} km</span></div>`)
-            .addTo(map);
-        }
-      });
-      }
+      // Hub circles handled by separate useEffect
 
       const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
       if (withCoords.length > 0) {
@@ -252,9 +228,52 @@ export default function LiveMap() {
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
+        hubLayerRef.current = null;
       }
     };
-  }, [viewMode, filtered.length, filterTab, proximityRadius, showHubCircles]);
+  }, [viewMode, filtered.length, filterTab]);
+
+  // Separate effect for hub circles — no map recreation
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return;
+
+    if (hubLayerRef.current) {
+      map.removeLayer(hubLayerRef.current);
+      hubLayerRef.current = null;
+    }
+
+    if (!showHubCircles) return;
+
+    import("leaflet").then((L) => {
+      const group = L.layerGroup();
+      hubs.forEach((h) => {
+        if (h.lat != null && h.lng != null) {
+          const isStore = h.type === 'store' || h.type === 'hub';
+          L.circle([h.lat, h.lng], {
+            radius: proximityRadius * 1000,
+            color: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillColor: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillOpacity: 0.08,
+            weight: 1.5,
+            dashArray: '6 4',
+          }).addTo(group);
+
+          const hubIcon = L.divIcon({
+            html: `<div style="width:22px;height:22px;background:${isStore ? 'hsl(152,60%,42%)' : 'hsl(220,60%,50%)'};border-radius:4px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+              <span style="font-size:11px">${isStore ? '🏪' : '🏭'}</span>
+            </div>`,
+            className: "", iconSize: [22, 22], iconAnchor: [11, 11],
+          });
+          L.marker([h.lat, h.lng], { icon: hubIcon })
+            .bindPopup(`<div style="font-family:Inter,sans-serif"><strong>${h.code}</strong><br/>${h.name}<br/><span style="color:#888;font-size:11px">Raio: ${proximityRadius} km</span></div>`)
+            .addTo(group);
+        }
+      });
+      group.addTo(map);
+      hubLayerRef.current = group;
+    });
+  }, [showHubCircles, proximityRadius, hubs]);
 
   const handleSync = async () => {
     setSyncing(true);
