@@ -1,21 +1,20 @@
 
 
-## Adicionar auto-refresh de 30 segundos ao Dashboard
+## Corrigir persistência do raio de proximidade
 
-O Dashboard atualmente so atualiza os dados ao carregar a pagina ou quando recebe eventos via Realtime (novas manutencoes/solicitacoes). Ao contrario do Mapa ao Vivo, nao tem um ciclo de auto-refresh periodico.
+### Problema
+
+O slider usa `onValueChange` tanto para atualizar o estado local como para gravar no backend. Como `onValueChange` dispara em cada pixel de arrasto, são enviados muitos upserts em paralelo (ex: 2.0, 1.5, 1.0). Devido a condições de corrida, o ultimo upsert a completar pode nao ser o valor final, fazendo com que um valor intermedio fique gravado.
+
+### Solucao
+
+Usar `onValueCommit` do Radix Slider (dispara apenas quando o utilizador larga o slider) para gravar no backend, mantendo `onValueChange` apenas para a atualizacao visual imediata.
 
 ### Alteracao
 
-Adicionar ao `Dashboard.tsx` o mesmo mecanismo de auto-refresh que ja existe no `LiveMap.tsx`:
+Ficheiro: `src/pages/admin/Dashboard.tsx`
 
-1. **Dois novos estados**: `autoRefresh` (boolean, default `true`) e `countdown` (number, default `30`)
-2. **useEffect com intervalo de 1 segundo**: decrementa o countdown e quando chega a 0, chama `fetchVehicles()` e reinicia para 30
-3. **Botao de toggle**: ao lado do botao de sync existente, mostrar botao "Auto 28s" / "Auto OFF" igual ao do LiveMap
-
-### Detalhes tecnicos
-
-- Ficheiro: `src/pages/admin/Dashboard.tsx`
-- Adicionar estados `autoRefresh` e `countdown` (linhas ~96)
-- Adicionar useEffect para o intervalo (apos o useEffect existente, ~linha 155)
-- Adicionar botao de toggle auto-refresh na barra de ferramentas junto ao botao RefreshCw existente
+1. No `onValueChange` do Slider, voltar a usar apenas `setProximityRadius(v)` para feedback visual imediato
+2. Adicionar `onValueCommit` ao Slider que chama `updateProximityRadius(v)` para gravar no backend apenas quando o utilizador larga o slider
+3. A funcao `updateProximityRadius` passa a apenas gravar no backend (sem chamar `setProximityRadius`, pois o estado ja foi atualizado pelo `onValueChange`)
 
