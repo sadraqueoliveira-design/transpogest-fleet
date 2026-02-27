@@ -33,6 +33,15 @@ interface ClientOption {
   name: string;
 }
 
+interface HubLocation {
+  id: string;
+  name: string;
+  code: string;
+  lat: number | null;
+  lng: number | null;
+  type: string | null;
+}
+
 type ViewMode = "cards" | "map";
 type FilterTab = "all" | "moving" | "stopped" | "alerts";
 
@@ -47,16 +56,22 @@ export default function LiveMap() {
   const [syncing, setSyncing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [countdown, setCountdown] = useState(30);
+  const [hubs, setHubs] = useState<HubLocation[]>([]);
+  const [proximityRadius, setProximityRadius] = useState(2);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
 
   const fetchVehicles = async () => {
-    const [{ data: vData }, { data: cData }] = await Promise.all([
+    const [{ data: vData }, { data: cData }, { data: hData }, { data: configData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
       supabase.from("clients").select("id, name").order("name"),
+      supabase.from("hubs").select("id, name, code, lat, lng, type").not("lat", "is", null),
+      supabase.from("app_config").select("value").eq("key", "proximity_radius_km").maybeSingle(),
     ]);
     if (vData) setVehicles(vData);
     if (cData) setClients(cData);
+    if (hData) setHubs(hData as HubLocation[]);
+    if (configData?.value) setProximityRadius(parseFloat(configData.value));
   };
 
   useEffect(() => { fetchVehicles(); }, []);
@@ -196,6 +211,31 @@ export default function LiveMap() {
 
       map.addLayer(clusterGroup);
 
+      // Draw proximity radius circles around hubs
+      hubs.forEach((h) => {
+        if (h.lat != null && h.lng != null) {
+          const isStore = h.type === 'store' || h.type === 'hub';
+          L.circle([h.lat, h.lng], {
+            radius: proximityRadius * 1000,
+            color: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillColor: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillOpacity: 0.08,
+            weight: 1.5,
+            dashArray: '6 4',
+          }).addTo(map);
+
+          const hubIcon = L.divIcon({
+            html: `<div style="width:22px;height:22px;background:${isStore ? 'hsl(152,60%,42%)' : 'hsl(220,60%,50%)'};border-radius:4px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+              <span style="font-size:11px">${isStore ? '🏪' : '🏭'}</span>
+            </div>`,
+            className: "", iconSize: [22, 22], iconAnchor: [11, 11],
+          });
+          L.marker([h.lat, h.lng], { icon: hubIcon })
+            .bindPopup(`<div style="font-family:Inter,sans-serif"><strong>${h.code}</strong><br/>${h.name}<br/><span style="color:#888;font-size:11px">Raio: ${proximityRadius} km</span></div>`)
+            .addTo(map);
+        }
+      });
+
       const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
       if (withCoords.length > 0) {
         const bounds = L.latLngBounds(withCoords.map((v) => [v.last_lat!, v.last_lng!]));
@@ -211,7 +251,7 @@ export default function LiveMap() {
         mapInstance.current = null;
       }
     };
-  }, [viewMode, filtered.length, filterTab]);
+  }, [viewMode, filtered.length, filterTab, proximityRadius]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -322,7 +362,8 @@ export default function LiveMap() {
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-success" />Em Movimento</div>
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-muted-foreground" />Parado</div>
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-destructive" />Alerta</div>
-              <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-muted" />Ignição OFF</div>
+              <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-sm" style={{ background: 'hsl(152, 60%, 42%)' }} />Hub/Loja</div>
+              <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full border border-dashed" style={{ borderColor: 'hsl(152, 60%, 42%)' }} />Raio {proximityRadius} km</div>
             </div>
           </CardContent>
         </Card>

@@ -458,6 +458,32 @@ export default function Dashboard() {
       });
       map.addLayer(clusterGroup);
 
+      // Draw proximity radius circles around hubs
+      hubs.forEach((h) => {
+        if (h.lat != null && h.lng != null) {
+          const isStore = h.type === 'store' || h.type === 'hub';
+          L.circle([h.lat, h.lng], {
+            radius: proximityRadius * 1000,
+            color: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillColor: isStore ? 'hsl(152, 60%, 42%)' : 'hsl(220, 60%, 50%)',
+            fillOpacity: 0.08,
+            weight: 1.5,
+            dashArray: '6 4',
+          }).addTo(map);
+
+          // Hub marker
+          const hubIcon = L.divIcon({
+            html: `<div style="width:22px;height:22px;background:${isStore ? 'hsl(152,60%,42%)' : 'hsl(220,60%,50%)'};border-radius:4px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;">
+              <span style="font-size:11px">${isStore ? '🏪' : '🏭'}</span>
+            </div>`,
+            className: "", iconSize: [22, 22], iconAnchor: [11, 11],
+          });
+          L.marker([h.lat, h.lng], { icon: hubIcon })
+            .bindPopup(`<div style="font-family:Inter,sans-serif"><strong>${h.code}</strong><br/>${h.name}<br/><span style="color:#888;font-size:11px">Raio: ${proximityRadius} km</span></div>`)
+            .addTo(map);
+        }
+      });
+
       const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
       if (withCoords.length > 0) {
         map.fitBounds(L.latLngBounds(withCoords.map((v) => [v.last_lat!, v.last_lng!])), { padding: [50, 50] });
@@ -465,7 +491,7 @@ export default function Dashboard() {
     };
     initMap();
     return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
-  }, [viewMode, filtered.length, filterTab]);
+  }, [viewMode, filtered.length, filterTab, proximityRadius]);
 
   const widgetCards: { label: string; value: number; icon: any; variant: string; action: () => void }[] = [
     { label: "Total", value: stats.total, icon: Truck, variant: "default", action: () => setFilterTab("all") },
