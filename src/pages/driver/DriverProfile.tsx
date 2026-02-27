@@ -50,52 +50,37 @@ export default function DriverProfile() {
     if (isNaN(num)) { toast.error("Número inválido"); return; }
 
     setLinking(true);
-    // Check if employee exists and is unlinked (or already linked to this user)
-    const { data: emp, error } = await supabase
-      .from("employees")
-      .select("id, employee_number, full_name, profile_id, license_number")
-      .eq("employee_number", num)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc('link_real_account_to_employee', {
+      p_employee_number: num
+    });
 
-    if (error || !emp) {
+    if (error) {
+      toast.error("Erro ao associar: " + error.message);
+      setLinking(false);
+      return;
+    }
+
+    const result = data as { status?: string; error?: string; employee_name?: string; replaced_placeholder?: boolean };
+
+    if (result.error === 'employee_not_found') {
       toast.error("Funcionário não encontrado com esse número");
-      setLinking(false);
-      return;
-    }
-    if (emp.profile_id && emp.profile_id !== user.id) {
+    } else if (result.error === 'already_linked_real') {
       toast.error("Este número já está associado a outro utilizador");
-      setLinking(false);
-      return;
-    }
-    if (emp.profile_id === user.id) {
-      setLinkedEmployee({ employee_number: emp.employee_number, full_name: emp.full_name });
+    } else if (result.status === 'already_linked') {
       toast.info("Já está associado a este funcionário");
-      setLinking(false);
-      return;
-    }
-
-    // Unlink any previous employee from this profile
-    await supabase.from("employees").update({ profile_id: null }).eq("profile_id", user.id);
-
-    // Link this employee
-    const { error: linkErr } = await supabase
-      .from("employees")
-      .update({ profile_id: user.id })
-      .eq("id", emp.id);
-
-    if (linkErr) {
-      toast.error("Erro ao associar: " + linkErr.message);
-    } else {
-      // Auto-fill profile fields from employee data
-      setFullName(emp.full_name);
-      if (emp.license_number) setLicenseNumber(emp.license_number);
-      // Save to profiles table
-      await supabase.from("profiles").update({
-        full_name: emp.full_name,
-        license_number: emp.license_number || licenseNumber,
-      }).eq("id", user.id);
-      setLinkedEmployee({ employee_number: emp.employee_number, full_name: emp.full_name });
-      toast.success(`Associado ao funcionário ${emp.full_name} (nº ${emp.employee_number}) — perfil atualizado`);
+      // Refresh linked employee display
+      const { data: emp } = await supabase.from("employees").select("employee_number, full_name").eq("profile_id", user.id).maybeSingle();
+      if (emp) setLinkedEmployee(emp);
+    } else if (result.status === 'linked') {
+      const msg = result.replaced_placeholder
+        ? `Conta real vinculada ao funcionário ${result.employee_name} (nº ${num}) — conta placeholder desativada`
+        : `Associado ao funcionário ${result.employee_name} (nº ${num}) — perfil atualizado`;
+      toast.success(msg);
+      // Refresh profile data
+      setFullName(result.employee_name || fullName);
+      setLinkedEmployee({ employee_number: num, full_name: result.employee_name || "" });
+      const { data: prof } = await supabase.from("profiles").select("license_number").eq("id", user.id).maybeSingle();
+      if (prof?.license_number) setLicenseNumber(prof.license_number);
     }
     setLinking(false);
   };
