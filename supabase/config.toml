@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.update-driver-credentials]
 verify_jwt = false
+
+[functions.create-driver]
+verify_jwt = false
