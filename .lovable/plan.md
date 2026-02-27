@@ -1,37 +1,39 @@
 
 
-## Substituir slider por input numérico no raio de proximidade
+# Correcao: Contagem "Em Loja" no separador vs widget
 
-### O que muda
+## Problema encontrado
 
-Trocar o `Slider` por um `Input` numérico com botões +/- para ajustar o raio de proximidade. Mais direto e fácil de usar.
+O widget (card) no topo mostra o valor correto de `stats.atStore` (ex: 3 veiculos em loja).
 
-### Alteração
+Porem, o separador/tab "Em Loja" mais abaixo mostra um numero errado porque o codigo que calcula o numero a mostrar no tab tem um bug:
 
-**Ficheiro: `src/pages/admin/Dashboard.tsx`**
-
-Dentro do `PopoverContent` do raio de proximidade (linhas ~616-630), substituir o bloco do `Slider` por:
-
-- Um `Input` do tipo `number` com `min=0.5`, `max=10`, `step=0.5`
-- Botões `-` e `+` nos lados para incrementar/decrementar 0.5 km
-- Ao alterar o valor (on blur ou Enter), gravar no backend com `updateProximityRadius`
-- Manter o estado local `proximityRadius` atualizado em tempo real para feedback visual
-
-Remover a importação do `Slider` se deixar de ser usado noutro local do ficheiro.
-
-### Detalhe técnico
-
-```text
-Antes:
-  [Label: Raio de proximidade]  [0.5 km]
-  [========O================] (slider)
-
-Depois:
-  [Label: Raio de proximidade]
-  [ - ]  [ 2.0 ]  [ + ]  km
+```javascript
+// Linha 761 — mapeamento incompleto:
+stats[tab.key === "all" ? "total" 
+    : tab.key === "moving" ? "moving" 
+    : tab.key === "stopped" ? "stopped" 
+    : "alerts"]  // <-- at_store e at_supplier caem aqui!
 ```
 
-- `onChange` no input atualiza `setProximityRadius` localmente
-- `onBlur` e tecla Enter chamam `updateProximityRadius(valor)` para persistir
-- Botões +/- atualizam localmente e gravam imediatamente no backend
-- Validação: clamp entre 0.5 e 10
+Quando o `tab.key` e `"at_store"` ou `"at_supplier"`, o codigo faz fallback para `stats.alerts` em vez de usar `stats.atStore` ou `stats.atSupplier`. Por isso, o numero mostrado no tab nao corresponde ao numero real de veiculos nessa categoria.
+
+## Solucao
+
+Corrigir o mapeamento na linha 761 do `Dashboard.tsx` para incluir todos os valores possiveis:
+
+```javascript
+{stats[
+  tab.key === "all" ? "total" 
+  : tab.key === "at_store" ? "atStore" 
+  : tab.key === "at_supplier" ? "atSupplier" 
+  : tab.key as keyof typeof stats
+]}
+```
+
+## Detalhes tecnicos
+
+- **Ficheiro**: `src/pages/admin/Dashboard.tsx`, linha 761
+- **Alteracao**: Substituir o mapeamento incompleto por um que cubra todas as chaves (`all`, `moving`, `stopped`, `alerts`, `at_store`, `at_supplier`)
+- **Impacto**: Apenas visual — os tabs passam a mostrar o numero correto correspondente ao filtro
+
