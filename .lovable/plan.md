@@ -1,20 +1,37 @@
 
 
-## Corrigir persistência do raio de proximidade
+## Substituir slider por input numérico no raio de proximidade
 
-### Problema
+### O que muda
 
-O slider usa `onValueChange` tanto para atualizar o estado local como para gravar no backend. Como `onValueChange` dispara em cada pixel de arrasto, são enviados muitos upserts em paralelo (ex: 2.0, 1.5, 1.0). Devido a condições de corrida, o ultimo upsert a completar pode nao ser o valor final, fazendo com que um valor intermedio fique gravado.
+Trocar o `Slider` por um `Input` numérico com botões +/- para ajustar o raio de proximidade. Mais direto e fácil de usar.
 
-### Solucao
+### Alteração
 
-Usar `onValueCommit` do Radix Slider (dispara apenas quando o utilizador larga o slider) para gravar no backend, mantendo `onValueChange` apenas para a atualizacao visual imediata.
+**Ficheiro: `src/pages/admin/Dashboard.tsx`**
 
-### Alteracao
+Dentro do `PopoverContent` do raio de proximidade (linhas ~616-630), substituir o bloco do `Slider` por:
 
-Ficheiro: `src/pages/admin/Dashboard.tsx`
+- Um `Input` do tipo `number` com `min=0.5`, `max=10`, `step=0.5`
+- Botões `-` e `+` nos lados para incrementar/decrementar 0.5 km
+- Ao alterar o valor (on blur ou Enter), gravar no backend com `updateProximityRadius`
+- Manter o estado local `proximityRadius` atualizado em tempo real para feedback visual
 
-1. No `onValueChange` do Slider, voltar a usar apenas `setProximityRadius(v)` para feedback visual imediato
-2. Adicionar `onValueCommit` ao Slider que chama `updateProximityRadius(v)` para gravar no backend apenas quando o utilizador larga o slider
-3. A funcao `updateProximityRadius` passa a apenas gravar no backend (sem chamar `setProximityRadius`, pois o estado ja foi atualizado pelo `onValueChange`)
+Remover a importação do `Slider` se deixar de ser usado noutro local do ficheiro.
 
+### Detalhe técnico
+
+```text
+Antes:
+  [Label: Raio de proximidade]  [0.5 km]
+  [========O================] (slider)
+
+Depois:
+  [Label: Raio de proximidade]
+  [ - ]  [ 2.0 ]  [ + ]  km
+```
+
+- `onChange` no input atualiza `setProximityRadius` localmente
+- `onBlur` e tecla Enter chamam `updateProximityRadius(valor)` para persistir
+- Botões +/- atualizam localmente e gravam imediatamente no backend
+- Validação: clamp entre 0.5 e 10
