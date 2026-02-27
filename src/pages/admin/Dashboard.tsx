@@ -6,13 +6,15 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Truck, AlertTriangle, Fuel, Thermometer, CreditCard,
   RefreshCw, Bell, Navigation, Store, Warehouse,
-  Search, LayoutGrid, Map as MapIcon, Filter, Send, Users, Check
+  Search, LayoutGrid, Map as MapIcon, Filter, Send, Users, Check, Radar
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
 import VehicleDetailPanel from "@/components/admin/VehicleDetailPanel";
@@ -97,6 +99,7 @@ export default function Dashboard() {
   const [lastActivity, setLastActivity] = useState<Record<string, string>>({});
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [countdown, setCountdown] = useState(30);
+  const [proximityRadius, setProximityRadius] = useState(2);
 
   const fetchVehicles = async () => {
     const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }, { data: hData }, { data: actData }] = await Promise.all([
@@ -192,7 +195,7 @@ export default function Dashboard() {
   const getNearestHub = (v: Vehicle): HubLocation | null => {
     if (v.last_lat == null || v.last_lng == null) return null;
     let best: HubLocation | null = null;
-    let bestDist = 2; // max 2km
+    let bestDist = proximityRadius; // configurable radius in km
     for (const h of hubs) {
       if (h.lat == null || h.lng == null) continue;
       const dlat = (v.last_lat - h.lat) * 111.32;
@@ -560,6 +563,32 @@ export default function Dashboard() {
           >
             {autoRefresh ? `Auto ${countdown}s` : "Auto OFF"}
           </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs gap-1.5">
+                <Radar className="h-3.5 w-3.5" />
+                {proximityRadius} km
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-4" align="end">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium">Raio de proximidade</Label>
+                  <span className="text-xs font-bold text-primary">{proximityRadius} km</span>
+                </div>
+                <Slider
+                  value={[proximityRadius]}
+                  onValueChange={([v]) => setProximityRadius(v)}
+                  min={0.5}
+                  max={10}
+                  step={0.5}
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Distância máxima para associar veículos a lojas/hubs
+                </p>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 
