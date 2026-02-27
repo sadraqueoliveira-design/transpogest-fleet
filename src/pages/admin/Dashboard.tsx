@@ -77,7 +77,7 @@ interface Notification {
 }
 
 type ViewMode = "cards" | "map";
-type FilterTab = "all" | "moving" | "stopped" | "alerts" | "at_store" | "at_supplier";
+type FilterTab = "all" | "moving" | "stopped" | "alerts" | "at_store" | "at_supplier" | "at_depot";
 
 export default function Dashboard() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -234,6 +234,13 @@ export default function Dashboard() {
     return ["fornecedor"].includes(t);
   };
 
+  const isAtDepot = (v: Vehicle) => {
+    const h = getNearestHub(v);
+    if (!h || !h.type) return false;
+    const t = h.type.toLowerCase();
+    return ["entreposto arp", "centro de distribuição"].includes(t);
+  };
+
   const stats = {
     total: vehicles.length,
     moving: vehicles.filter(v => getStatus(v) === "moving").length,
@@ -258,6 +265,7 @@ export default function Dashboard() {
     ).length,
     atStore: vehicles.filter(v => isAtStore(v)).length,
     atSupplier: vehicles.filter(v => isAtSupplier(v)).length,
+    atDepot: vehicles.filter(v => isAtDepot(v)).length,
   };
 
   // Normalize card number: remove prefix "5B.", leading zeros, last 2 digits
@@ -326,6 +334,7 @@ export default function Dashboard() {
     if (filterTab === "alerts") return hasAlert(v);
     if (filterTab === "at_store") return isAtStore(v);
     if (filterTab === "at_supplier") return isAtSupplier(v);
+    if (filterTab === "at_depot") return isAtDepot(v);
     return true;
   });
 
@@ -525,6 +534,7 @@ export default function Dashboard() {
     { label: "Cart. Vencidos", value: stats.cardsExpired, icon: CreditCard, variant: "default", action: () => setFilterTab("all") },
     { label: "Em Loja", value: stats.atStore, icon: Store, variant: "success", action: () => setFilterTab("at_store") },
     { label: "Em Fornecedor", value: stats.atSupplier, icon: Warehouse, variant: "default", action: () => setFilterTab("at_supplier") },
+    { label: "Entreposto", value: stats.atDepot, icon: Warehouse, variant: "default", action: () => setFilterTab("at_depot") },
   ];
 
   const variantStyles: Record<string, string> = {
@@ -543,6 +553,7 @@ export default function Dashboard() {
     { key: "alerts", label: "Alertas" },
     { key: "at_store", label: "Em Loja" },
     { key: "at_supplier", label: "Fornecedor" },
+    { key: "at_depot", label: "Entreposto" },
   ];
 
   return (
@@ -758,7 +769,7 @@ export default function Dashboard() {
             >
               {tab.label}
               <span className={`text-xs font-bold ${tab.key === "alerts" && stats.alerts > 0 ? "bg-destructive text-destructive-foreground rounded-full px-1.5 py-0.5" : ""}`}>
-                {stats[tab.key === "all" ? "total" : tab.key === "at_store" ? "atStore" : tab.key === "at_supplier" ? "atSupplier" : tab.key as keyof typeof stats]}
+                {stats[tab.key === "all" ? "total" : tab.key === "at_store" ? "atStore" : tab.key === "at_supplier" ? "atSupplier" : tab.key === "at_depot" ? "atDepot" : tab.key as keyof typeof stats]}
               </span>
             </button>
           ))}
