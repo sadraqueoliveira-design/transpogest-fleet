@@ -758,7 +758,7 @@ export default function Dashboard() {
             >
               {tab.label}
               <span className={`text-xs font-bold ${tab.key === "alerts" && stats.alerts > 0 ? "bg-destructive text-destructive-foreground rounded-full px-1.5 py-0.5" : ""}`}>
-                {stats[tab.key === "all" ? "total" : tab.key === "moving" ? "moving" : tab.key === "stopped" ? "stopped" : "alerts"]}
+                {stats[tab.key === "all" ? "total" : tab.key === "at_store" ? "atStore" : tab.key === "at_supplier" ? "atSupplier" : tab.key as keyof typeof stats]}
               </span>
             </button>
           ))}
