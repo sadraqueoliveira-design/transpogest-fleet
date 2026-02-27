@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
+
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import VehicleCard from "@/components/admin/VehicleCard";
@@ -613,18 +613,56 @@ export default function Dashboard() {
             </PopoverTrigger>
             <PopoverContent className="w-56 p-4" align="end">
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium">Raio de proximidade</Label>
-                  <span className="text-xs font-bold text-primary">{proximityRadius} km</span>
+                <Label className="text-xs font-medium">Raio de proximidade</Label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => {
+                      const v = Math.max(0.5, +(proximityRadius - 0.5).toFixed(1));
+                      setProximityRadius(v);
+                      updateProximityRadius(v);
+                    }}
+                  >−</Button>
+                  <div className="relative flex-1">
+                    <Input
+                      type="number"
+                      min={0.5}
+                      max={10}
+                      step={0.5}
+                      value={proximityRadius}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v)) setProximityRadius(v);
+                      }}
+                      onBlur={(e) => {
+                        const v = Math.min(10, Math.max(0.5, parseFloat(e.target.value) || 0.5));
+                        setProximityRadius(v);
+                        updateProximityRadius(v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const v = Math.min(10, Math.max(0.5, parseFloat((e.target as HTMLInputElement).value) || 0.5));
+                          setProximityRadius(v);
+                          updateProximityRadius(v);
+                        }
+                      }}
+                      className="h-8 text-center text-sm pr-8 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">km</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => {
+                      const v = Math.min(10, +(proximityRadius + 0.5).toFixed(1));
+                      setProximityRadius(v);
+                      updateProximityRadius(v);
+                    }}
+                  >+</Button>
                 </div>
-                <Slider
-                  value={[proximityRadius]}
-                  onValueChange={([v]) => setProximityRadius(v)}
-                  onValueCommit={([v]) => updateProximityRadius(v)}
-                  min={0.5}
-                  max={10}
-                  step={0.5}
-                />
                 <p className="text-[10px] text-muted-foreground">
                   Distância máxima para associar veículos a lojas/hubs
                 </p>
