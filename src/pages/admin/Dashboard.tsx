@@ -100,6 +100,7 @@ export default function Dashboard() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [countdown, setCountdown] = useState(30);
   const [proximityRadius, setProximityRadius] = useState(2);
+  const [showHubCircles, setShowHubCircles] = useState(true);
 
   // Load saved proximity radius from backend
   useEffect(() => {
@@ -459,6 +460,7 @@ export default function Dashboard() {
       map.addLayer(clusterGroup);
 
       // Draw proximity radius circles around hubs
+      if (showHubCircles) {
       hubs.forEach((h) => {
         if (h.lat != null && h.lng != null) {
           const isStore = h.type === 'store' || h.type === 'hub';
@@ -483,6 +485,7 @@ export default function Dashboard() {
             .addTo(map);
         }
       });
+      }
 
       const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
       if (withCoords.length > 0) {
@@ -491,7 +494,7 @@ export default function Dashboard() {
     };
     initMap();
     return () => { if (mapInstance.current) { mapInstance.current.remove(); mapInstance.current = null; } };
-  }, [viewMode, filtered.length, filterTab, proximityRadius]);
+  }, [viewMode, filtered.length, filterTab, proximityRadius, showHubCircles]);
 
   const widgetCards: { label: string; value: number; icon: any; variant: string; action: () => void }[] = [
     { label: "Total", value: stats.total, icon: Truck, variant: "default", action: () => setFilterTab("all") },
@@ -625,6 +628,15 @@ export default function Dashboard() {
                 <p className="text-[10px] text-muted-foreground">
                   Distância máxima para associar veículos a lojas/hubs
                 </p>
+                <div className="flex items-center justify-between pt-1 border-t">
+                  <Label className="text-xs font-medium">Mostrar raio no mapa</Label>
+                  <button
+                    onClick={() => setShowHubCircles(!showHubCircles)}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${showHubCircles ? 'bg-primary' : 'bg-muted'}`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${showHubCircles ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
