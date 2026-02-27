@@ -619,8 +619,8 @@ export default function Dashboard() {
                     variant="outline"
                     size="icon"
                     className="h-8 w-8 shrink-0"
-                    onClick={() => {
-                      const v = Math.max(0.5, +(proximityRadius - 0.5).toFixed(1));
+                     onClick={() => {
+                      const v = Math.max(0.1, +(proximityRadius - 0.1).toFixed(1));
                       setProximityRadius(v);
                       updateProximityRadius(v);
                     }}
@@ -628,22 +628,22 @@ export default function Dashboard() {
                   <div className="relative flex-1">
                     <Input
                       type="number"
-                      min={0.5}
+                      min={0.1}
                       max={10}
-                      step={0.5}
+                      step={0.1}
                       value={proximityRadius}
                       onChange={(e) => {
                         const v = parseFloat(e.target.value);
                         if (!isNaN(v)) setProximityRadius(v);
                       }}
                       onBlur={(e) => {
-                        const v = Math.min(10, Math.max(0.5, parseFloat(e.target.value) || 0.5));
+                        const v = Math.min(10, Math.max(0.1, parseFloat(e.target.value) || 0.1));
                         setProximityRadius(v);
                         updateProximityRadius(v);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          const v = Math.min(10, Math.max(0.5, parseFloat((e.target as HTMLInputElement).value) || 0.5));
+                          const v = Math.min(10, Math.max(0.1, parseFloat((e.target as HTMLInputElement).value) || 0.1));
                           setProximityRadius(v);
                           updateProximityRadius(v);
                         }
@@ -657,7 +657,7 @@ export default function Dashboard() {
                     size="icon"
                     className="h-8 w-8 shrink-0"
                     onClick={() => {
-                      const v = Math.min(10, +(proximityRadius + 0.5).toFixed(1));
+                      const v = Math.min(10, +(proximityRadius + 0.1).toFixed(1));
                       setProximityRadius(v);
                       updateProximityRadius(v);
                     }}
