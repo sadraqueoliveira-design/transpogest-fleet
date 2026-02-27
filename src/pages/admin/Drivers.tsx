@@ -10,7 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExportButton, ImportButton } from "@/components/admin/BulkImportExport";
-import { Search, Pencil, Save, X, Users, Truck, UserCheck, ArrowUpDown, ArrowUp, ArrowDown, Plus, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Pencil, Save, X, Users, Truck, UserCheck, ArrowUpDown, ArrowUp, ArrowDown, Plus, Trash2, ChevronLeft, ChevronRight, KeyRound, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -35,6 +35,27 @@ interface Employee {
   profile_id: string | null;
 }
 
+type AccountStatus = "no_account" | "placeholder" | "active";
+
+function getAccountStatus(emp: Employee, emailMap: Record<string, string>): AccountStatus {
+  if (!emp.profile_id) return "no_account";
+  const email = emailMap[emp.profile_id];
+  if (!email) return "no_account";
+  if (email.endsWith("@fleet.local")) return "placeholder";
+  return "active";
+}
+
+function AccountBadge({ status }: { status: AccountStatus }) {
+  switch (status) {
+    case "no_account":
+      return <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 gap-1"><ShieldAlert className="h-3 w-3" />Sem conta</Badge>;
+    case "placeholder":
+      return <Badge className="bg-yellow-500/15 text-yellow-700 border-yellow-500/30 hover:bg-yellow-500/20 gap-1"><Shield className="h-3 w-3" />Pendente</Badge>;
+    case "active":
+      return <Badge className="bg-green-500/15 text-green-700 border-green-500/30 hover:bg-green-500/20 gap-1"><ShieldCheck className="h-3 w-3" />Ativo</Badge>;
+  }
+}
+
 export default function Drivers() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +73,14 @@ export default function Drivers() {
   const [pageSize, setPageSize] = useState(25);
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [emailMap, setEmailMap] = useState<Record<string, string>>({});
+
+  // Credentials dialog
+  const [credTarget, setCredTarget] = useState<Employee | null>(null);
+  const [credEmail, setCredEmail] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credSaving, setCredSaving] = useState(false);
+  const [mappingRunning, setMappingRunning] = useState(false);
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir("asc"); }
@@ -157,6 +186,50 @@ export default function Drivers() {
     setDeleteTarget(null); fetchEmployees();
   };
 
+  const openCredentials = (emp: Employee) => {
+    setCredTarget(emp);
+    const currentEmail = emp.profile_id ? emailMap[emp.profile_id] || "" : "";
+    setCredEmail(currentEmail.endsWith("@fleet.local") ? "" : currentEmail);
+    setCredPassword("");
+  };
+
+  const runMapping = async () => {
+    setMappingRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("map-tacho-cards", { body: { dry_run: false } });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const s = data?.summary;
+      toast.success(`Mapeamento concluído: ${s?.created || 0} contas criadas, ${s?.matched_profile + s?.matched_employee || 0} vinculados`);
+      fetchEmployees();
+      fetchEmails();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Falha no mapeamento"));
+    } finally {
+      setMappingRunning(false);
+    }
+  };
+
+  const saveCredentials = async () => {
+    if (!credTarget?.profile_id) { toast.error("Motorista sem conta"); return; }
+    if (!credEmail && !credPassword) { toast.error("Introduza email ou password"); return; }
+    setCredSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("update-driver-credentials", {
+        body: { user_id: credTarget.profile_id, new_email: credEmail || undefined, new_password: credPassword || undefined },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Credenciais atualizadas com sucesso");
+      setCredTarget(null);
+      fetchEmails();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Falha ao atualizar"));
+    } finally {
+      setCredSaving(false);
+    }
+  };
+
   // Import config
   const importColumns = ["employee_number", "full_name", "company", "nif", "birth_date", "hire_date", "license_number", "category_code", "category_description", "card_number", "card_issue_date", "card_start_date", "card_expiry_date"];
   const importAliases: Record<string, string[]> = {
@@ -236,6 +309,9 @@ export default function Drivers() {
             templateExample="1234;João Silva;ARV;123456789;15/03/1985;01/01/2020;L-123456;83320;Motorista de Pesados;5B.000001234;01/06/2020;01/01/2025;01/01/2030"
             templateFilename="modelo_funcionarios.csv"
           />
+          <Button variant="outline" size="sm" className="gap-2" onClick={runMapping} disabled={mappingRunning}>
+            <KeyRound className="h-4 w-4" /> {mappingRunning ? "A mapear..." : "Mapear Cartões"}
+          </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" /> Novo
           </Button>
@@ -293,6 +369,7 @@ export default function Drivers() {
                 <TableRow>
                   <SortableHead label="Funcionário" field="employee_number" className="w-20" />
                   <SortableHead label="Nome" field="full_name" />
+                  <TableHead>Conta</TableHead>
                   <SortableHead label="Encarregado" field="company" className="w-16" />
                   <SortableHead label="Contribuinte" field="nif" />
                   <TableHead>Email</TableHead>
@@ -305,19 +382,22 @@ export default function Drivers() {
                   <SortableHead label="Emissão" field="card_issue_date" />
                   <SortableHead label="Data Início" field="card_start_date" />
                   <SortableHead label="Data Validade" field="card_expiry_date" />
-                  <TableHead className="w-24">Ações</TableHead>
+                  <TableHead className="w-28">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                   <TableRow><TableCell colSpan={15} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                   <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
                  ) : paginated.length === 0 ? (
-                   <TableRow><TableCell colSpan={15} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
+                   <TableRow><TableCell colSpan={16} className="text-center py-8 text-muted-foreground">Nenhum funcionário encontrado</TableCell></TableRow>
                 ) : (
-                  paginated.map((e) => (
+                  paginated.map((e) => {
+                    const status = getAccountStatus(e, emailMap);
+                    return (
                     <TableRow key={e.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setDetailEmployee(e)}>
                       <TableCell className="font-mono text-muted-foreground">{e.employee_number}</TableCell>
                       <TableCell className="font-medium whitespace-nowrap">{e.full_name}</TableCell>
+                      <TableCell><AccountBadge status={status} /></TableCell>
                       <TableCell><Badge variant={e.company === "ART" ? "outline" : "secondary"}>{e.company || "—"}</Badge></TableCell>
                       <TableCell className="font-mono text-xs">{e.nif || "—"}</TableCell>
                       <TableCell className="text-xs">{e.profile_id && emailMap[e.profile_id] ? emailMap[e.profile_id] : "—"}</TableCell>
@@ -338,6 +418,11 @@ export default function Drivers() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          {status !== "no_account" && (
+                            <Button variant="ghost" size="icon" title="Definir credenciais" onClick={(ev) => { ev.stopPropagation(); openCredentials(e); }}>
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon" onClick={(ev) => { ev.stopPropagation(); startEdit(e); }}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -347,7 +432,8 @@ export default function Drivers() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -390,6 +476,8 @@ export default function Drivers() {
               <div><Label className="text-muted-foreground">Nº Funcionário</Label><p className="font-mono">{detailEmployee.employee_number}</p></div>
               <div><Label className="text-muted-foreground">Empresa</Label><p>{detailEmployee.company || "—"}</p></div>
               <div><Label className="text-muted-foreground">NIF</Label><p>{detailEmployee.nif || "—"}</p></div>
+              <div><Label className="text-muted-foreground">Estado da Conta</Label><AccountBadge status={getAccountStatus(detailEmployee, emailMap)} /></div>
+              <div><Label className="text-muted-foreground">Email</Label><p>{detailEmployee.profile_id && emailMap[detailEmployee.profile_id] ? emailMap[detailEmployee.profile_id] : "—"}</p></div>
               <div><Label className="text-muted-foreground">Data Nascimento</Label><p>{formatDate(detailEmployee.birth_date)}</p></div>
               <div><Label className="text-muted-foreground">Data Contratação</Label><p>{formatDate(detailEmployee.hire_date)}</p></div>
               <div><Label className="text-muted-foreground">Carta de Condução</Label><p>{detailEmployee.license_number || "—"}</p></div>
@@ -404,6 +492,13 @@ export default function Drivers() {
                   </Badge>
                 ) : "—"}</p>
               </div>
+              {getAccountStatus(detailEmployee, emailMap) !== "no_account" && (
+                <div className="col-span-2 pt-2">
+                  <Button variant="outline" className="w-full gap-2" onClick={() => { setDetailEmployee(null); openCredentials(detailEmployee); }}>
+                    <KeyRound className="h-4 w-4" /> Definir Credenciais
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -455,6 +550,51 @@ export default function Drivers() {
             <Button variant="outline" onClick={() => { setAddOpen(false); setNewData({}); }}><X className="h-4 w-4 mr-1" /> Cancelar</Button>
             <Button onClick={saveNew}><Save className="h-4 w-4 mr-1" /> Criar</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials dialog */}
+      <Dialog open={!!credTarget} onOpenChange={() => setCredTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" /> Definir Credenciais
+            </DialogTitle>
+          </DialogHeader>
+          {credTarget && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <div>
+                  <p className="font-medium">{credTarget.full_name}</p>
+                  <p className="text-sm text-muted-foreground">Nº {credTarget.employee_number}</p>
+                </div>
+                <div className="ml-auto">
+                  <AccountBadge status={getAccountStatus(credTarget, emailMap)} />
+                </div>
+              </div>
+
+              {getAccountStatus(credTarget, emailMap) === "placeholder" && (
+                <div className="text-sm text-muted-foreground bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                  Esta conta usa um email temporário ({emailMap[credTarget.profile_id!]}). Defina um email real para permitir o login do motorista.
+                </div>
+              )}
+
+              <div>
+                <Label>Email</Label>
+                <Input type="email" placeholder="motorista@empresa.pt" value={credEmail} onChange={e => setCredEmail(e.target.value)} />
+              </div>
+              <div>
+                <Label>Password</Label>
+                <Input type="password" placeholder="Mínimo 6 caracteres" value={credPassword} onChange={e => setCredPassword(e.target.value)} />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setCredTarget(null)}>Cancelar</Button>
+                <Button onClick={saveCredentials} disabled={credSaving}>
+                  {credSaving ? "A guardar..." : "Guardar Credenciais"}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.list-user-emails]
 verify_jwt = false
+
+[functions.update-driver-credentials]
+verify_jwt = false
