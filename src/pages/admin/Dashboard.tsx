@@ -231,7 +231,7 @@ export default function Dashboard() {
     const h = getNearestHub(v);
     if (!h || !h.type) return false;
     const t = h.type.toLowerCase();
-    return ["fornecedor", "entreposto arp", "centro de distribuição"].includes(t);
+    return ["fornecedor", "centro de distribuição"].includes(t);
   };
 
   const stats = {
