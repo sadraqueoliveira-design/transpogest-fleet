@@ -821,6 +821,7 @@ export type Database = {
           full_name: string | null
           hire_date: string | null
           id: string
+          is_active: boolean
           last_card_download_at: string | null
           license_number: string | null
           next_card_download_due: string | null
@@ -835,6 +836,7 @@ export type Database = {
           full_name?: string | null
           hire_date?: string | null
           id: string
+          is_active?: boolean
           last_card_download_at?: string | null
           license_number?: string | null
           next_card_download_due?: string | null
@@ -849,6 +851,7 @@ export type Database = {
           full_name?: string | null
           hire_date?: string | null
           id?: string
+          is_active?: boolean
           last_card_download_at?: string | null
           license_number?: string | null
           next_card_download_due?: string | null
@@ -1428,6 +1431,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      link_real_account_to_employee: {
+        Args: { p_employee_number: number }
+        Returns: Json
       }
     }
     Enums: {
