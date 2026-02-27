@@ -101,6 +101,19 @@ export default function Dashboard() {
   const [countdown, setCountdown] = useState(30);
   const [proximityRadius, setProximityRadius] = useState(2);
 
+  // Load saved proximity radius from backend
+  useEffect(() => {
+    supabase.from("app_config").select("value").eq("key", "proximity_radius_km").maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) setProximityRadius(parseFloat(data.value));
+      });
+  }, []);
+
+  const updateProximityRadius = async (value: number) => {
+    setProximityRadius(value);
+    await supabase.from("app_config").upsert({ key: "proximity_radius_km", value: String(value) }, { onConflict: "key" });
+  };
+
   const fetchVehicles = async () => {
     const [{ data: vData }, { data: cData }, { data: tData }, { data: eData }, { data: tcData }, { data: hData }, { data: actData }] = await Promise.all([
       supabase.from("vehicles").select("*"),
@@ -578,7 +591,7 @@ export default function Dashboard() {
                 </div>
                 <Slider
                   value={[proximityRadius]}
-                  onValueChange={([v]) => setProximityRadius(v)}
+                  onValueChange={([v]) => updateProximityRadius(v)}
                   min={0.5}
                   max={10}
                   step={0.5}
