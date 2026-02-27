@@ -345,7 +345,7 @@ Deno.serve(async (req) => {
           // Falls back to drs.tmx if events are unavailable.
 
           // Helper: fetch the most recent card insertion event timestamp for a vehicle
-          const fetchCardInsertionTime = async (vehicleMid: number): Promise<string | null> => {
+          const fetchCardInsertionTime = async (vehicleMid: number, afterTimestamp?: string | null): Promise<string | null> => {
             try {
               // Query last 24h of events for this vehicle, event 45 = card inserted slot 1
               const now = new Date();
@@ -385,13 +385,20 @@ Deno.serve(async (req) => {
               }
 
               // Get the most recent event 45 (card inserted) — eventStatus=1 means active
+              // If afterTimestamp is provided (swap case), only consider events after that time
+              const afterMs = afterTimestamp ? new Date(afterTimestamp).getTime() : 0;
               const activeEvents = events
-                .filter((e: any) => e.eventStatus === 1)
+                .filter((e: any) => e.eventStatus === 1 && (!afterTimestamp || new Date(e.timestamp).getTime() > afterMs))
                 .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-              const mostRecent = activeEvents[0] || events[events.length - 1];
+              // If filtering by afterTimestamp and no events found after it, return null (fall back to tmx)
+              const mostRecent = activeEvents[0] || (afterTimestamp ? null : events[events.length - 1]);
+              if (!mostRecent) {
+                console.log(`[CARD-EVENTS] No event 45 found for mid=${vehicleMid} after ${afterTimestamp}`);
+                return null;
+              }
               const eventTimestamp = mostRecent.timestamp;
-              console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${events.length}`);
+              console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${events.length}${afterTimestamp ? `, filtered after=${afterTimestamp}` : ""}`);
               return eventTimestamp ? new Date(eventTimestamp).toISOString() : null;
             } catch (err) {
               console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
@@ -401,7 +408,7 @@ Deno.serve(async (req) => {
 
           const EMPTY_CARD_VAL = "0000000000000000";
           // Collect vehicles that need event-based timestamp lookup
-          const cardEventLookups: Array<{ idx: number; vehicleMid: number; plate: string; isBackfill: boolean; eventType: string; oldCardNumber: string | null; newCardNumber: string | null }> = [];
+          const cardEventLookups: Array<{ idx: number; vehicleMid: number; plate: string; isBackfill: boolean; eventType: string; oldCardNumber: string | null; newCardNumber: string | null; existingCardInsertedAt: string | null }> = [];
 
           for (let idx = 0; idx < vehicleRecords.length; idx++) {
             const rec = vehicleRecords[idx];
@@ -443,26 +450,26 @@ Deno.serve(async (req) => {
 
             if (!oldHasCard && newHasCard) {
               // Card just inserted → need event timestamp
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "inserted", oldCardNumber: null, newCardNumber });
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "inserted", oldCardNumber: null, newCardNumber, existingCardInsertedAt: null });
             } else if (oldHasCard && !newHasCard) {
               // Card removed → clear timestamp
               (rec as any).card_inserted_at = null;
               console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
               // Record removal event
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null });
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null, existingCardInsertedAt: null });
             } else if (newHasCard && existing.card_inserted_at) {
               // Card still inserted — but check if card NUMBER changed (different driver)
               if (oldCardNumber && newCardNumber && oldCardNumber !== newCardNumber) {
                 // Different card inserted → need new event timestamp
                 console.log(`[CARD-CHANGE] ${rec.plate}: card changed from ${oldCardNumber} to ${newCardNumber}, fetching new timestamp`);
-                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber });
+                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
               } else {
                 // Same card still inserted → preserve existing timestamp
                 (rec as any).card_inserted_at = existing.card_inserted_at;
               }
             } else if (newHasCard && !existing.card_inserted_at) {
               // Card present but no timestamp recorded yet (backfill) → update vehicle timestamp only, do NOT create card_event
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "backfill_only", oldCardNumber: null, newCardNumber });
+              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "backfill_only", oldCardNumber: null, newCardNumber, existingCardInsertedAt: null });
             }
             // If no card on both sides, card_inserted_at stays null
           }
@@ -473,7 +480,8 @@ Deno.serve(async (req) => {
             const batch = cardEventLookups.slice(i, i + EVENT_BATCH);
             const results = await Promise.all(
               batch.map(async (lookup) => {
-                const eventTime = await fetchCardInsertionTime(lookup.vehicleMid);
+                const afterTs = lookup.eventType === "swap" ? lookup.existingCardInsertedAt : null;
+                const eventTime = await fetchCardInsertionTime(lookup.vehicleMid, afterTs);
                 return { ...lookup, eventTime };
               })
             );
