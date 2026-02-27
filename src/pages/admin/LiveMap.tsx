@@ -58,6 +58,7 @@ export default function LiveMap() {
   const [countdown, setCountdown] = useState(30);
   const [hubs, setHubs] = useState<HubLocation[]>([]);
   const [proximityRadius, setProximityRadius] = useState(2);
+  const [showHubCircles, setShowHubCircles] = useState(true);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
 
@@ -212,6 +213,7 @@ export default function LiveMap() {
       map.addLayer(clusterGroup);
 
       // Draw proximity radius circles around hubs
+      if (showHubCircles) {
       hubs.forEach((h) => {
         if (h.lat != null && h.lng != null) {
           const isStore = h.type === 'store' || h.type === 'hub';
@@ -235,6 +237,7 @@ export default function LiveMap() {
             .addTo(map);
         }
       });
+      }
 
       const withCoords = filtered.filter((v) => v.last_lat && v.last_lng);
       if (withCoords.length > 0) {
@@ -251,7 +254,7 @@ export default function LiveMap() {
         mapInstance.current = null;
       }
     };
-  }, [viewMode, filtered.length, filterTab, proximityRadius]);
+  }, [viewMode, filtered.length, filterTab, proximityRadius, showHubCircles]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -362,8 +365,10 @@ export default function LiveMap() {
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-success" />Em Movimento</div>
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-muted-foreground" />Parado</div>
               <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full bg-destructive" />Alerta</div>
-              <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-sm" style={{ background: 'hsl(152, 60%, 42%)' }} />Hub/Loja</div>
-              <div className="flex items-center gap-2"><div className="h-3 w-3 rounded-full border border-dashed" style={{ borderColor: 'hsl(152, 60%, 42%)' }} />Raio {proximityRadius} km</div>
+              <button onClick={() => setShowHubCircles(!showHubCircles)} className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity">
+                <div className={`h-3 w-3 rounded-sm border ${showHubCircles ? '' : 'opacity-40'}`} style={{ background: showHubCircles ? 'hsl(152, 60%, 42%)' : 'transparent', borderColor: 'hsl(152, 60%, 42%)' }} />
+                <span className={showHubCircles ? '' : 'line-through opacity-60'}>Hub/Loja + Raio {proximityRadius} km</span>
+              </button>
             </div>
           </CardContent>
         </Card>
