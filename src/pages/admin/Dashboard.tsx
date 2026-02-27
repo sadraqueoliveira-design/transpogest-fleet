@@ -110,7 +110,6 @@ export default function Dashboard() {
   }, []);
 
   const updateProximityRadius = async (value: number) => {
-    setProximityRadius(value);
     await supabase.from("app_config").upsert({ key: "proximity_radius_km", value: String(value) }, { onConflict: "key" });
   };
 
@@ -591,7 +590,8 @@ export default function Dashboard() {
                 </div>
                 <Slider
                   value={[proximityRadius]}
-                  onValueChange={([v]) => updateProximityRadius(v)}
+                  onValueChange={([v]) => setProximityRadius(v)}
+                  onValueCommit={([v]) => updateProximityRadius(v)}
                   min={0.5}
                   max={10}
                   step={0.5}
