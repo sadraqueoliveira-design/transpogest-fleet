@@ -279,10 +279,11 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
   doc.setFontSize(LABEL_SIZE);
   doc.text("Assinatura:…………………………………………………...", margin + 2, y);
+  const sigLine20Y = y;
 
   if (data.managerSignatureDataUrl) {
     try {
-      doc.addImage(data.managerSignatureDataUrl, "PNG", margin + 25, y - 8, 50, 15);
+      doc.addImage(data.managerSignatureDataUrl, "PNG", margin + 30, sigLine20Y - 4, 40, 12);
     } catch (e) { console.warn("Could not add manager signature", e); }
   }
   y += 10;
@@ -310,7 +311,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
   if (data.driverSignatureDataUrl) {
     try {
-      doc.addImage(data.driverSignatureDataUrl, "PNG", margin + 45, y - 8, 50, 15);
+      doc.addImage(data.driverSignatureDataUrl, "PNG", margin + 55, y - 4, 40, 12);
     } catch (e) { console.warn("Could not add driver signature", e); }
   }
   y += 12;
@@ -374,7 +375,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
       const stampH = 19;
       // Position: over/near the company signature area (field 20)
       const baseX = margin + 55 + randX;
-      const baseY = borderBottom - 55 + randY;
+      const baseY = sigLine20Y - 6 + randY;
 
       doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
     } catch (e) {
