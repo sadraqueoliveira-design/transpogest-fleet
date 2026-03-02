@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -82,7 +83,7 @@ export default function ApprovalRulesPage() {
   const [sigLoading, setSigLoading] = useState(false);
   const [savingRule, setSavingRule] = useState(false);
   const [editingRule, setEditingRule] = useState<ApprovalRule | null>(null);
-
+  const [confirmAction, setConfirmAction] = useState<{ type: "delete_rule" | "remove_sig"; id: string } | null>(null);
   // Managers list
   const [managers, setManagers] = useState<DriverProfile[]>([]);
 
@@ -395,7 +396,7 @@ export default function ApprovalRulesPage() {
                             <Button variant="ghost" size="sm" onClick={() => { setPendingRuleId(r.id); setShowRuleSig(true); }}>
                               Alterar
                             </Button>
-                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleRemoveSignature(r.id)}>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmAction({ type: "remove_sig", id: r.id })}>
                               Remover
                             </Button>
                           </div>
@@ -418,7 +419,7 @@ export default function ApprovalRulesPage() {
                         <Button variant="ghost" size="icon" onClick={() => openEditRule(r)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteRule(r.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmAction({ type: "delete_rule", id: r.id })}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>
@@ -550,6 +551,35 @@ export default function ApprovalRulesPage() {
         onConfirm={handleRuleSignature}
         loading={sigLoading}
       />
+
+      {/* Confirm Dialog */}
+      <AlertDialog open={!!confirmAction} onOpenChange={o => { if (!o) setConfirmAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmAction?.type === "delete_rule" ? "Eliminar regra?" : "Remover assinatura?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction?.type === "delete_rule"
+                ? "Esta ação é irreversível. A regra de auto-aprovação será eliminada permanentemente."
+                : "A assinatura digital será removida desta regra. Pode adicionar uma nova posteriormente."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmAction?.type === "delete_rule") handleDeleteRule(confirmAction.id);
+                else if (confirmAction?.type === "remove_sig") handleRemoveSignature(confirmAction.id);
+                setConfirmAction(null);
+              }}
+            >
+              {confirmAction?.type === "delete_rule" ? "Eliminar" : "Remover"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
