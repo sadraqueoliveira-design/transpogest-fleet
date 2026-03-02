@@ -551,6 +551,30 @@ export default function Declarations() {
     }
   };
 
+  const handleBulkRegenerate = async () => {
+    const signed = declarations.filter((d) => selectedIds.has(d.id) && d.status === "signed");
+    if (signed.length === 0) {
+      toast({ title: "Nenhuma declaração assinada selecionada" });
+      return;
+    }
+    let count = 0;
+    for (const d of signed) {
+      try {
+        const pdfData = await buildPdfForDecl(d);
+        const pdf = generateDeclarationPDF(pdfData);
+        const pdfBlob = pdf.output("blob");
+        const pdfUrl = await uploadSignedPDF(pdfBlob, d.id);
+        await supabase.from("activity_declarations").update({ signed_pdf_url: pdfUrl } as any).eq("id", d.id);
+        count++;
+      } catch (err) {
+        console.error("Erro ao re-gerar PDF:", err);
+      }
+    }
+    toast({ title: `${count} PDF(s) re-gerado(s)`, description: "Os ficheiros foram atualizados com os dados atuais." });
+    setSelectedIds(new Set());
+    fetchDeclarations();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -650,6 +674,9 @@ export default function Declarations() {
             <div className="flex gap-2">
               <Button size="sm" onClick={handleBulkDownload}>
                 <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleBulkRegenerate}>
+                <RefreshCw className="h-4 w-4 mr-1" /> Re-gerar PDFs
               </Button>
               <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
                 <Trash2 className="h-4 w-4 mr-1" /> Apagar ({selectedIds.size})
