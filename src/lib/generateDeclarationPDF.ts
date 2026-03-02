@@ -287,7 +287,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
   if (data.managerSignatureDataUrl) {
     try {
-      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 3, sigW, sigH);
+      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 5, sigW, sigH);
     } catch (e) { console.warn("Could not add manager signature", e); }
   }
   y += 10;
@@ -318,7 +318,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
   if (data.driverSignatureDataUrl) {
     try {
-      doc.addImage(data.driverSignatureDataUrl, "PNG", sig22X, sigLine22Y - sigH / 2 - 3, sigW, sigH);
+      doc.addImage(data.driverSignatureDataUrl, "PNG", sig22X, sigLine22Y - sigH / 2 - 4, sigW, sigH);
     } catch (e) { console.warn("Could not add driver signature", e); }
   }
   y += 12;
