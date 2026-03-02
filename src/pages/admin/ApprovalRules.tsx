@@ -267,8 +267,25 @@ export default function ApprovalRulesPage() {
   };
 
   const handleDeleteRule = async (id: string) => {
-    await supabase.from("approval_rules" as any).delete().eq("id", id);
-    fetchAll();
+    const { error } = await supabase.from("approval_rules" as any).delete().eq("id", id);
+    if (error) {
+      toast({ title: "Erro ao eliminar", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Regra eliminada" });
+      fetchAll();
+    }
+  };
+
+  const handleRemoveSignature = async (id: string) => {
+    const { error } = await supabase.from("approval_rules" as any)
+      .update({ digital_signature_url: null } as any)
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Assinatura removida" });
+      fetchAll();
+    }
   };
 
   // Filter drivers (only those with 'driver' role)
@@ -373,7 +390,15 @@ export default function ApprovalRulesPage() {
                       </TableCell>
                       <TableCell>
                         {r.digital_signature_url ? (
-                          <img src={r.digital_signature_url} alt="Sig" className="h-8 rounded border bg-white px-1" />
+                          <div className="flex items-center gap-2">
+                            <img src={r.digital_signature_url} alt="Sig" className="h-8 rounded border bg-white px-1" />
+                            <Button variant="ghost" size="sm" onClick={() => { setPendingRuleId(r.id); setShowRuleSig(true); }}>
+                              Alterar
+                            </Button>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleRemoveSignature(r.id)}>
+                              Remover
+                            </Button>
+                          </div>
                         ) : (
                           <Button variant="outline" size="sm" onClick={() => { setPendingRuleId(r.id); setShowRuleSig(true); }}>
                             Adicionar
