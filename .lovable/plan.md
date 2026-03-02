@@ -1,34 +1,31 @@
 
-# Ajustar Posicionamento das Assinaturas no PDF
+## Corrigir Gestao de Assinatura e Eliminacao de Regras de Auto-Aprovacao
 
-## Problema
-As assinaturas no PDF gerado estao mal posicionadas. A assinatura do gestor (campo 20) e a assinatura do motorista (campo 22) usam offsets fixos (`y - 8`) que as colocam demasiado acima da linha de assinatura, e as coordenadas X nao estao alinhadas corretamente com o campo "Assinatura:".
+### Problemas Identificados
 
-## Alteracoes propostas
+1. **Assinatura do gestor nao pode ser alterada**: Quando uma regra ja tem assinatura (`digital_signature_url`), o codigo apenas mostra a imagem sem botoes para alterar ou remover.
 
-**Ficheiro:** `src/lib/generateDeclarationPDF.ts`
+2. **Eliminacao de regras pode estar a falhar silenciosamente**: A funcao `handleDeleteRule` nao mostra feedback de erro ao utilizador.
 
-### 1. Assinatura do Gestor (campo 20, linha ~285)
-- **Atual:** `doc.addImage(..., margin + 25, y - 8, 50, 15)` — imagem colocada 8mm acima da linha, comecando a 45mm da esquerda
-- **Corrigido:** Guardar a posicao Y da linha "Assinatura:" e colocar a imagem centrada verticalmente sobre essa linha, alinhada a direita do texto "Assinatura:"
-- Nova posicao: `doc.addImage(..., margin + 30, y - 4, 40, 12)` — mais pequena, melhor centrada sobre a linha pontilhada
+### Alteracoes Planeadas
 
-### 2. Assinatura do Motorista (campo 22, linha ~313)
-- **Atual:** `doc.addImage(..., margin + 45, y - 8, 50, 15)` — demasiado deslocada a direita e alta
-- **Corrigido:** Alinhar com o texto "Assinatura do conductor:" e centrar sobre a linha pontilhada
-- Nova posicao: `doc.addImage(..., margin + 55, y - 4, 40, 12)` — proporcional ao texto do label mais longo
+**Ficheiro**: `src/pages/admin/ApprovalRules.tsx`
 
-### 3. Carimbo da empresa (linhas ~366-383)
-- Manter logica de posicionamento aleatorio mas ajustar `baseY` para ficar sobre a area da assinatura do gestor (campo 20), nao relativo ao `borderBottom` que pode variar
+1. **Adicionar botoes de acao na assinatura existente** (linhas 374-381):
+   - Quando a assinatura ja existe, mostrar a imagem junto com dois botoes: "Alterar" (abre o dialog de assinatura) e "Remover" (limpa o campo `digital_signature_url`).
 
-## Detalhes tecnicos
+2. **Adicionar funcao `handleRemoveSignature`**:
+   - Nova funcao que faz `update({ digital_signature_url: null })` na regra e recarrega os dados.
 
-Coordenadas ajustadas:
-- Assinatura gestor: X = `margin + 30` (apos "Assinatura:..."), Y = `sigLine20Y - 4`, tamanho = 40x12mm
-- Assinatura motorista: X = `margin + 55` (apos "Assinatura do conductor:..."), Y = `sigLine22Y - 4`, tamanho = 40x12mm  
-- Guardar as posicoes Y das linhas de assinatura em variaveis (`sigLine20Y`, `sigLine22Y`) para referencia estavel do carimbo
+3. **Permitir alterar assinatura de regra existente**:
+   - O botao "Alterar" vai definir `pendingRuleId` com o ID da regra e abrir o dialog `showRuleSig`, reutilizando o fluxo ja existente de `handleRuleSignature`.
 
-Isto garante que:
-- As assinaturas ficam sobrepostas na linha pontilhada, como se fossem manuscritas
-- O tamanho e proporcional e nao ultrapassa a area designada
-- O carimbo fica posicionado sobre a assinatura do gestor
+4. **Melhorar feedback na eliminacao de regras**:
+   - Adicionar toast de erro em `handleDeleteRule` caso falhe.
+
+### Resultado Esperado
+
+- Ao lado da imagem da assinatura, aparecem icones para alterar ou remover.
+- Clicar em "Alterar" abre o pad de assinatura e substitui a anterior.
+- Clicar em "Remover" limpa a assinatura da regra.
+- Eliminar regras mostra feedback caso falhe.
