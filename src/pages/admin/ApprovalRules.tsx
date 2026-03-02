@@ -73,6 +73,7 @@ export default function ApprovalRulesPage() {
   const [rules, setRules] = useState<ApprovalRule[]>([]);
   const [showNewRule, setShowNewRule] = useState(false);
   const [ruleForm, setRuleForm] = useState({
+    manager_id: "",
     driver_group_id: "",
     allowed_reasons: [] as string[],
     active_hours_start: "20:00",
@@ -185,11 +186,11 @@ export default function ApprovalRulesPage() {
   };
 
   const handleCreateRule = async () => {
-    if (!ruleForm.driver_group_id || !user) return;
+    if (!ruleForm.driver_group_id || !ruleForm.manager_id || !user) return;
     setSavingRule(true);
 
     const { data, error } = await supabase.from("approval_rules" as any).insert({
-      manager_id: user.id,
+      manager_id: ruleForm.manager_id || user.id,
       driver_group_id: ruleForm.driver_group_id,
       allowed_reasons: ruleForm.allowed_reasons,
       active_hours_start: ruleForm.active_hours_start,
@@ -208,11 +209,12 @@ export default function ApprovalRulesPage() {
   };
 
   const handleUpdateRule = async () => {
-    if (!editingRule || !ruleForm.driver_group_id) return;
+    if (!editingRule || !ruleForm.driver_group_id || !ruleForm.manager_id) return;
     setSavingRule(true);
 
     const { error } = await supabase.from("approval_rules" as any)
       .update({
+        manager_id: ruleForm.manager_id,
         driver_group_id: ruleForm.driver_group_id,
         allowed_reasons: ruleForm.allowed_reasons,
         active_hours_start: ruleForm.active_hours_start,
@@ -234,6 +236,7 @@ export default function ApprovalRulesPage() {
   const openEditRule = (rule: ApprovalRule) => {
     setEditingRule(rule);
     setRuleForm({
+      manager_id: rule.manager_id,
       driver_group_id: rule.driver_group_id,
       allowed_reasons: rule.allowed_reasons || [],
       active_hours_start: rule.active_hours_start,
@@ -344,7 +347,7 @@ export default function ApprovalRulesPage() {
           <div className="flex justify-end">
             <Button onClick={() => {
               setEditingRule(null);
-              setRuleForm({ driver_group_id: "", allowed_reasons: [], active_hours_start: "20:00", active_hours_end: "08:00" });
+              setRuleForm({ manager_id: user?.id || "", driver_group_id: "", allowed_reasons: [], active_hours_start: "20:00", active_hours_end: "08:00" });
               setShowNewRule(true);
             }}>
               <Plus className="h-4 w-4 mr-2" /> Nova Regra
@@ -357,19 +360,21 @@ export default function ApprovalRulesPage() {
             <Card>
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>Grupo</TableHead>
-                    <TableHead>Horário Ativo</TableHead>
-                    <TableHead>Motivos</TableHead>
-                    <TableHead>Assinatura</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
+                 <TableRow>
+                     <TableHead>Grupo</TableHead>
+                     <TableHead>Gestor</TableHead>
+                     <TableHead>Horário Ativo</TableHead>
+                     <TableHead>Motivos</TableHead>
+                     <TableHead>Assinatura</TableHead>
+                     <TableHead>Estado</TableHead>
+                     <TableHead></TableHead>
+                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rules.map(r => (
                     <TableRow key={r.id}>
                       <TableCell className="font-medium">{r.group_name}</TableCell>
+                      <TableCell>{r.manager_name}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 text-sm">
                           <Clock className="h-3 w-3 text-muted-foreground" />
@@ -484,6 +489,16 @@ export default function ApprovalRulesPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
+              <Label>Gestor responsável</Label>
+              <Select value={ruleForm.manager_id} onValueChange={v => setRuleForm(f => ({ ...f, manager_id: v }))}>
+                <SelectTrigger><SelectValue placeholder="Selecionar gestor" /></SelectTrigger>
+                <SelectContent>
+                  {managers.map(m => <SelectItem key={m.id} value={m.id}>{m.full_name || m.id}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label>Grupo de motoristas</Label>
               <Select value={ruleForm.driver_group_id} onValueChange={v => setRuleForm(f => ({ ...f, driver_group_id: v }))}>
                 <SelectTrigger><SelectValue placeholder="Selecionar grupo" /></SelectTrigger>
@@ -534,7 +549,7 @@ export default function ApprovalRulesPage() {
             <Button variant="outline" onClick={() => { setShowNewRule(false); setEditingRule(null); }}>Cancelar</Button>
             <Button
               onClick={editingRule ? handleUpdateRule : handleCreateRule}
-              disabled={savingRule || !ruleForm.driver_group_id}
+              disabled={savingRule || !ruleForm.driver_group_id || !ruleForm.manager_id}
             >
               {savingRule ? "A guardar..." : editingRule ? "Guardar Alterações" : "Criar e Assinar"}
             </Button>
