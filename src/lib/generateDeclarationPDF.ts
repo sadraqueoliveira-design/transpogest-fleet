@@ -278,12 +278,16 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   y += 6;
 
   doc.setFontSize(LABEL_SIZE);
-  doc.text("Assinatura:…………………………………………………...", margin + 2, y);
+  const managerSigLabel = "Assinatura:…………………………………………………...";
+  doc.text(managerSigLabel, margin + 2, y);
   const sigLine20Y = y;
+  const sigW = 40;
+  const sigH = 12;
+  const sig20X = margin + 2 + doc.getTextWidth("Assinatura:") + 4;
 
   if (data.managerSignatureDataUrl) {
     try {
-      doc.addImage(data.managerSignatureDataUrl, "PNG", margin + 30, sigLine20Y - 4, 40, 12);
+      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2, sigW, sigH);
     } catch (e) { console.warn("Could not add manager signature", e); }
   }
   y += 10;
@@ -307,11 +311,14 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   y += 6;
 
   doc.setFontSize(LABEL_SIZE);
-  doc.text("Assinatura do conductor:…………………………………………………...", margin + 2, y);
+  const driverSigLabel = "Assinatura do conductor:…………………………………………………...";
+  doc.text(driverSigLabel, margin + 2, y);
+  const sigLine22Y = y;
+  const sig22X = margin + 2 + doc.getTextWidth("Assinatura do conductor:") + 4;
 
   if (data.driverSignatureDataUrl) {
     try {
-      doc.addImage(data.driverSignatureDataUrl, "PNG", margin + 55, y - 4, 40, 12);
+      doc.addImage(data.driverSignatureDataUrl, "PNG", sig22X, sigLine22Y - sigH / 2, sigW, sigH);
     } catch (e) { console.warn("Could not add driver signature", e); }
   }
   y += 12;
