@@ -54,15 +54,15 @@ export default function SignaturePad({
 
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground font-medium">Desenhe a sua assinatura abaixo:</p>
-          <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg bg-white">
+          <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg overflow-hidden" style={{ backgroundColor: "#ffffff" }}>
             <SignatureCanvas
               ref={sigRef}
               canvasProps={{
                 className: "w-full rounded-lg",
-                style: { width: "100%", height: 180 },
+                style: { width: "100%", height: 180, backgroundColor: "#ffffff" },
               }}
               penColor="#1a1a2e"
-              backgroundColor="rgba(255,255,255,0)"
+              backgroundColor="#ffffff"
               onBegin={() => setIsEmpty(false)}
             />
           </div>
