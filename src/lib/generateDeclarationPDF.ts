@@ -372,18 +372,17 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   doc.setFont("helvetica", "normal");
   doc.text("1", W / 2, footerY, { align: "center" });
 
-  // ── Company stamp (realistic placement with random variation) ──
+  // ── Company stamp (positioned to avoid overlapping date/signature text) ──
   if (stampDataUrl) {
     try {
-      // Random offsets to simulate a hand-placed stamp
-      const randX = (Math.random() - 0.5) * 16;  // ±8mm horizontal
-      const randY = (Math.random() - 0.5) * 8;   // ±4mm vertical
+      // Keep tiny variation but lock to safe area on the right side
+      const randX = (Math.random() - 0.5) * 4;  // ±2mm
+      const randY = (Math.random() - 0.5) * 3;  // ±1.5mm
 
-      const stampW = 45;
-      const stampH = 19;
-      // Position: over/near the company signature area (field 20), kept above (21) text
-      const baseX = margin + 55 + randX;
-      const baseY = sigLine20Y - 14 + randY;
+      const stampW = 34;
+      const stampH = 14;
+      const baseX = W - margin - stampW - 8 + randX;
+      const baseY = sigLine20Y - 9 + randY;
 
       doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
     } catch (e) {
