@@ -791,8 +791,9 @@ Deno.serve(async (req) => {
           }
 
           // === UPDATE gap_end_date ON DRAFT DECLARATIONS ===
-          // When new activity is detected for a driver with open draft declarations,
-          // update gap_end_date to the start_time of the first new activity (real card insertion time)
+          // Use gap_start_date as stable anchor to find the FIRST return signal.
+          // Priority: 1) card_events(inserted) after gap_start, 2) driver_activities after gap_start.
+          // Monotonic rule: only update if candidate is EARLIER than current gap_end_date.
           const driversWithNewActivity = new Set(
             vehicleRecords
               .filter((r: any) => r.current_driver_id)
@@ -803,32 +804,75 @@ Deno.serve(async (req) => {
             const driverIdsArray = Array.from(driversWithNewActivity);
             const { data: draftDeclarations } = await supabaseAdmin
               .from("activity_declarations")
-              .select("id, driver_id, gap_end_date")
+              .select("id, driver_id, gap_start_date, gap_end_date")
               .in("driver_id", driverIdsArray)
               .eq("status", "draft");
 
             for (const decl of draftDeclarations || []) {
-              // Find the earliest new activity start_time for this driver
-              // Find the FIRST activity after the current gap_end_date (marks the real return)
-              const { data: firstReturnActivity } = await supabaseAdmin
-                .from("driver_activities")
-                .select("start_time")
-                .eq("driver_id", decl.driver_id)
-                .gt("start_time", decl.gap_end_date)
-                .order("start_time", { ascending: true })
+              const anchor = decl.gap_start_date;
+              let candidateGapEnd: string | null = null;
+
+              // Priority 1: first card_events "inserted" after gap_start_date
+              // We need the employee_number for this driver to match card_events
+              const { data: empMatch } = await supabaseAdmin
+                .from("employees")
+                .select("employee_number")
+                .eq("profile_id", decl.driver_id)
                 .limit(1)
                 .maybeSingle();
 
-              if (firstReturnActivity?.start_time) {
-                const { error: updateDeclErr } = await supabaseAdmin
-                  .from("activity_declarations")
-                  .update({ gap_end_date: firstReturnActivity.start_time })
-                  .eq("id", decl.id);
+              if (empMatch?.employee_number) {
+                const { data: cardInsertEvent } = await supabaseAdmin
+                  .from("card_events")
+                  .select("event_at")
+                  .eq("employee_number", empMatch.employee_number)
+                  .eq("event_type", "inserted")
+                  .gt("event_at", anchor)
+                  .order("event_at", { ascending: true })
+                  .limit(1)
+                  .maybeSingle();
 
-                if (updateDeclErr) {
-                  console.error(`[SYNC] Error updating gap_end_date for declaration ${decl.id}:`, updateDeclErr.message);
+                if (cardInsertEvent?.event_at) {
+                  candidateGapEnd = cardInsertEvent.event_at;
+                  console.log(`[SYNC] Declaration ${decl.id}: card_events candidate = ${candidateGapEnd}`);
+                }
+              }
+
+              // Priority 2 (fallback): first driver_activity after gap_start_date
+              if (!candidateGapEnd) {
+                const { data: firstReturnActivity } = await supabaseAdmin
+                  .from("driver_activities")
+                  .select("start_time")
+                  .eq("driver_id", decl.driver_id)
+                  .gt("start_time", anchor)
+                  .order("start_time", { ascending: true })
+                  .limit(1)
+                  .maybeSingle();
+
+                if (firstReturnActivity?.start_time) {
+                  candidateGapEnd = firstReturnActivity.start_time;
+                  console.log(`[SYNC] Declaration ${decl.id}: driver_activities candidate = ${candidateGapEnd}`);
+                }
+              }
+
+              // Monotonic rule: only update if candidate is earlier than current, or current is empty
+              if (candidateGapEnd) {
+                const candidateMs = new Date(candidateGapEnd).getTime();
+                const currentMs = decl.gap_end_date ? new Date(decl.gap_end_date).getTime() : Infinity;
+
+                if (candidateMs < currentMs) {
+                  const { error: updateDeclErr } = await supabaseAdmin
+                    .from("activity_declarations")
+                    .update({ gap_end_date: candidateGapEnd })
+                    .eq("id", decl.id);
+
+                  if (updateDeclErr) {
+                    console.error(`[SYNC] Error updating gap_end_date for declaration ${decl.id}:`, updateDeclErr.message);
+                  } else {
+                    console.log(`[SYNC] Updated gap_end_date for declaration ${decl.id}: ${decl.gap_end_date} → ${candidateGapEnd}`);
+                  }
                 } else {
-                  console.log(`[SYNC] Updated gap_end_date for declaration ${decl.id} to ${firstReturnActivity.start_time}`);
+                  console.log(`[SYNC] Skipped declaration ${decl.id}: candidate ${candidateGapEnd} >= current ${decl.gap_end_date}`);
                 }
               }
             }
