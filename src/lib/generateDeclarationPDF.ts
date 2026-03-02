@@ -287,7 +287,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
   if (data.managerSignatureDataUrl) {
     try {
-      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 5, sigW, sigH);
+      // Position signature on the dotted line, not overlapping the date above
+      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 2, sigW, sigH);
     } catch (e) { console.warn("Could not add manager signature", e); }
   }
   y += 10;

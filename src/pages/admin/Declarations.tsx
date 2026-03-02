@@ -479,20 +479,48 @@ export default function Declarations() {
     }
   };
 
-  // Helper: fetch a remote image URL and return a base64 data URL
+  // Helper: fetch a remote image URL, remove white background, and return a base64 data URL
   const fetchImageAsDataUrl = async (url: string): Promise<string | undefined> => {
     try {
       const res = await fetch(url);
       const blob = await res.blob();
-      return await new Promise<string>((resolve) => {
+      const rawDataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
         reader.readAsDataURL(blob);
       });
+      // Remove white background for transparent signature overlay
+      return await removeWhiteBg(rawDataUrl);
     } catch (e) {
       console.warn("Could not fetch image for PDF:", e);
       return undefined;
     }
+  };
+
+  // Remove white/light background from a data URL image
+  const removeWhiteBg = (dataUrl: string, threshold = 230): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { resolve(dataUrl); return; }
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i] > threshold && d[i+1] > threshold && d[i+2] > threshold) {
+            d[i+3] = 0;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
   };
 
   const buildPdfForDecl = async (d: Declaration) => {
