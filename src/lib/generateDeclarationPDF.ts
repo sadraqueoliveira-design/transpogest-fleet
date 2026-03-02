@@ -281,8 +281,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   const managerSigLabel = "Assinatura:…………………………………………………...";
   doc.text(managerSigLabel, margin + 2, y);
   const sigLine20Y = y;
-  const sigW = 40;
-  const sigH = 12;
+  const sigW = 38;
+  const sigH = 10;
   const sig20X = margin + 2 + doc.getTextWidth("Assinatura:") + 4;
 
   if (data.managerSignatureDataUrl) {
@@ -376,13 +376,13 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
     try {
       // Random offsets to simulate a hand-placed stamp
       const randX = (Math.random() - 0.5) * 16;  // ±8mm horizontal
-      const randY = (Math.random() - 0.5) * 12;  // ±6mm vertical
+      const randY = (Math.random() - 0.5) * 8;   // ±4mm vertical
 
       const stampW = 45;
       const stampH = 19;
-      // Position: over/near the company signature area (field 20)
+      // Position: over/near the company signature area (field 20), kept above (21) text
       const baseX = margin + 55 + randX;
-      const baseY = sigLine20Y - 6 + randY;
+      const baseY = sigLine20Y - 14 + randY;
 
       doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
     } catch (e) {
