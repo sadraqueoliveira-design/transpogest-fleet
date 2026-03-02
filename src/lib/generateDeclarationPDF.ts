@@ -368,8 +368,8 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   if (stampDataUrl) {
     try {
       // Random offsets to simulate a hand-placed stamp
-      const randX = (Math.random() - 0.5) * 8;  // ±4mm horizontal
-      const randY = (Math.random() - 0.5) * 6;  // ±3mm vertical
+      const randX = (Math.random() - 0.5) * 16;  // ±8mm horizontal
+      const randY = (Math.random() - 0.5) * 12;  // ±6mm vertical
 
       const stampW = 45;
       const stampH = 19;
