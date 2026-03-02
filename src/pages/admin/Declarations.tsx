@@ -479,31 +479,57 @@ export default function Declarations() {
     }
   };
 
-  const buildPdfForDecl = (d: Declaration) => ({
-    driverName: d.driver_name || "Desconhecido",
-    licenseNumber: d.license_number || "",
-    birthDate: d.birth_date,
-    hireDate: d.hire_date,
-    gapStartDate: d.gap_start_date,
-    gapEndDate: d.gap_end_date,
-    reasonCode: d.reason_code || "other",
-    reasonText: d.reason_text || undefined,
-    managerName: d.manager_name || "—",
-    companyName: d.company_name,
-    _stampDataUrl: stampDataUrl || undefined,
-    ...editFields,
-  });
+  // Helper: fetch a remote image URL and return a base64 data URL
+  const fetchImageAsDataUrl = async (url: string): Promise<string | undefined> => {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn("Could not fetch image for PDF:", e);
+      return undefined;
+    }
+  };
 
-  const handleBulkDownload = () => {
+  const buildPdfForDecl = async (d: Declaration) => {
+    const [driverSigDataUrl, managerSigDataUrl] = await Promise.all([
+      d.driver_signature_url ? fetchImageAsDataUrl(d.driver_signature_url) : Promise.resolve(undefined),
+      d.manager_signature_url ? fetchImageAsDataUrl(d.manager_signature_url) : Promise.resolve(undefined),
+    ]);
+
+    return {
+      driverName: d.driver_name || "Desconhecido",
+      licenseNumber: d.license_number || "",
+      birthDate: d.birth_date,
+      hireDate: d.hire_date,
+      gapStartDate: d.gap_start_date,
+      gapEndDate: d.gap_end_date,
+      reasonCode: d.reason_code || "other",
+      reasonText: d.reason_text || undefined,
+      managerName: d.manager_name || "—",
+      companyName: d.company_name,
+      driverSignatureDataUrl: driverSigDataUrl,
+      managerSignatureDataUrl: managerSigDataUrl,
+      signedAt: d.signed_pdf_url ? undefined : undefined,
+      _stampDataUrl: stampDataUrl || undefined,
+      ...editFields,
+    };
+  };
+
+  const handleBulkDownload = async () => {
     const selected = declarations.filter((d) => selectedIds.has(d.id));
     if (selected.length === 0) return;
 
     try {
       // First declaration creates the doc
-      const doc = generateDeclarationPDF(buildPdfForDecl(selected[0]));
+      const doc = generateDeclarationPDF(await buildPdfForDecl(selected[0]));
       // Subsequent declarations append pages
       for (let i = 1; i < selected.length; i++) {
-        generateDeclarationPDF(buildPdfForDecl(selected[i]), { existingDoc: doc });
+        generateDeclarationPDF(await buildPdfForDecl(selected[i]), { existingDoc: doc });
       }
       const dateSlug = format(new Date(), "yyyyMMdd");
       doc.save(`Declaracoes_Lote_${dateSlug}.pdf`);
@@ -514,9 +540,9 @@ export default function Declarations() {
     }
   };
 
-  const handleSingleDownload = (d: Declaration) => {
+  const handleSingleDownload = async (d: Declaration) => {
     try {
-      const pdf = generateDeclarationPDF(buildPdfForDecl(d));
+      const pdf = generateDeclarationPDF(await buildPdfForDecl(d));
       const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
       const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
       pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);

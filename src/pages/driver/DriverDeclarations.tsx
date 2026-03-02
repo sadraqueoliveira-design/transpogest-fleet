@@ -28,6 +28,8 @@ interface Declaration {
   company_name: string;
   created_at: string;
   manager_name?: string | null;
+  driver_signature_url?: string | null;
+  manager_signature_url?: string | null;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -343,8 +345,23 @@ export default function DriverDeclarations() {
                         variant="outline"
                         size="sm"
                         className="w-full mt-3"
-                        onClick={() => {
+                        onClick={async () => {
                           try {
+                            const fetchImg = async (url: string): Promise<string | undefined> => {
+                              try {
+                                const res = await fetch(url);
+                                const blob = await res.blob();
+                                return await new Promise<string>((resolve) => {
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => resolve(reader.result as string);
+                                  reader.readAsDataURL(blob);
+                                });
+                              } catch { return undefined; }
+                            };
+                            const [driverSig, managerSig] = await Promise.all([
+                              d.driver_signature_url ? fetchImg(d.driver_signature_url) : Promise.resolve(undefined),
+                              d.manager_signature_url ? fetchImg(d.manager_signature_url) : Promise.resolve(undefined),
+                            ]);
                             const pdf = generateDeclarationPDF({
                               driverName: profile?.full_name || "Motorista",
                               licenseNumber: profile?.license_number || "",
@@ -356,6 +373,8 @@ export default function DriverDeclarations() {
                               reasonText: d.reason_text || undefined,
                               managerName: d.manager_name || "—",
                               companyName: d.company_name,
+                              driverSignatureDataUrl: driverSig,
+                              managerSignatureDataUrl: managerSig,
                               _stampDataUrl: stampDataUrl || undefined,
                             });
                             const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
