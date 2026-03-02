@@ -288,7 +288,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
   if (data.managerSignatureDataUrl) {
     try {
       // Position signature on the dotted line, not overlapping the date above
-      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 2, sigW, sigH);
+      doc.addImage(data.managerSignatureDataUrl, "PNG", sig20X, sigLine20Y - sigH / 2 - 4, sigW, sigH);
     } catch (e) { console.warn("Could not add manager signature", e); }
   }
   y += 10;
@@ -381,7 +381,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
       const stampW = 34;
       const stampH = 14;
-      const baseX = W - margin - stampW - 8 + randX;
+      const baseX = W - margin - stampW - 2 + randX;
       const baseY = sigLine20Y - 9 + randY;
 
       doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
