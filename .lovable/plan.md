@@ -1,95 +1,65 @@
 
+Objetivo: corrigir de forma definitiva o caso em que o `gap_end_date` volta a avançar (como aconteceu novamente para o Paulo, de 03:21 para 11:56), e ajustar o registo já afetado.
 
-# Corrigir gap_end_date nas declaracoes
+Diagnóstico confirmado
+- A declaração `b24b7085-dd4a-4b86-82a0-59a2f33b192a` está com:
+  - `gap_start_date`: `2026-02-24 13:05:43.966+00`
+  - `gap_end_date`: `2026-03-02 11:56:57.808+00` (errado)
+- Existe evento real em `card_events` para o mesmo motorista:
+  - `event_type='inserted'` em `2026-03-02 03:19:40.703+00` (hora correta de retorno/cartão inserido)
+- A lógica atual em `supabase/functions/sync-trackit-data/index.ts` continua vulnerável a “arrasto” porque usa `decl.gap_end_date` como âncora e procura a próxima atividade `> gap_end_date`, empurrando o fim do gap a cada sincronização.
 
-## Problema
-O `gap_end_date` da declaracao do Paulo Cardoso mostra **10:51** (ultima atividade atual) em vez de **~03:19** (momento em que o cartao foi inserido / retorno real).
+Implementação proposta
 
-## Causa raiz
-No ficheiro `supabase/functions/sync-trackit-data/index.ts`, linhas 812-818, o codigo busca a atividade **mais recente** do motorista (ORDER BY start_time DESC LIMIT 1) e usa-a como gap_end_date. Como o motorista continua a trabalhar ao longo do dia, o gap_end_date vai sendo atualizado para a ultima atividade a cada sincronizacao.
+1) Corrigir a lógica no `sync-trackit-data` para usar âncora estável
+- Ficheiro: `supabase/functions/sync-trackit-data/index.ts` (bloco “UPDATE gap_end_date ON DRAFT DECLARATIONS”).
+- Alterar o `select` de declarações para incluir `gap_start_date`:
+  - de: `select("id, driver_id, gap_end_date")`
+  - para: `select("id, driver_id, gap_start_date, gap_end_date")`
+- Nova regra de cálculo do candidato a `gap_end_date`:
+  1. Preferir primeiro `card_events.event_at` com `event_type='inserted'` e `event_at > decl.gap_start_date` (ordem ascendente, `limit 1`).
+  2. Fallback para `driver_activities.start_time` com `start_time > decl.gap_start_date` (ordem ascendente, `limit 1`).
+- Isto fixa o “primeiro retorno real após início do gap” e impede avanço para últimas atividades do dia.
 
-O correto e usar a **primeira atividade apos o inicio do gap** (a que marca o retorno real do motorista).
+2) Impedir atualização para horários mais tardios
+- Aplicar regra de segurança antes do `update`:
+  - Só atualizar quando houver `candidateGapEnd` e:
+    - `decl.gap_end_date` vazio, ou
+    - `candidateGapEnd < decl.gap_end_date`.
+- Resultado: o sistema só pode corrigir para mais cedo (ou preencher), nunca “arrastar” para frente.
 
-## Solucao
+3) Corrigir o registo atual do Paulo (dados)
+- Atualizar a declaração existente para o valor correto do retorno:
+  - `gap_end_date = '2026-03-02T03:19:40.703Z'`
+  - `WHERE id = 'b24b7085-dd4a-4b86-82a0-59a2f33b192a'`
+- Como a declaração está `signed`, manter `status` e assinaturas; apenas corrigir o campo temporal.
+- Observação: atualmente `signed_pdf_url` está nulo nesse registo, portanto não há PDF final assinado a desalinhar com este ajuste.
 
-### 1. Corrigir a query no sync-trackit-data (linhas 812-818)
+4) Validação técnica após aplicar
+- Validar no backend:
+  - Query da declaração do Paulo confirma `gap_end_date` em `03:19:40.703+00`.
+- Validar estabilidade:
+  - Executar/simular nova sincronização.
+  - Confirmar que o mesmo `gap_end_date` não muda para 04:21, 10:51, 11:56, etc.
+- Validar UI:
+  - Em `/admin/declaracoes`, verificar que a linha do Paulo mostra intervalo correto (24/02 13:05 → 02/03 03:19).
 
-Alterar de:
-```typescript
-const { data: latestActivity } = await supabaseAdmin
-  .from("driver_activities")
-  .select("start_time")
-  .eq("driver_id", decl.driver_id)
-  .order("start_time", { ascending: false })
-  .limit(1)
-  .maybeSingle();
-```
+Riscos e mitigação
+- Risco: múltiplos eventos “inserted” após o gap.
+  - Mitigação: usar sempre o mais antigo (`order asc limit 1`).
+- Risco: ausência de evento em `card_events`.
+  - Mitigação: fallback para primeira `driver_activity` após `gap_start_date`.
+- Risco: regressão futura por mudança de lógica.
+  - Mitigação: condição monotónica (`candidate < current`) + logs explícitos de decisão (updated/skipped).
 
-Para:
-```typescript
-const { data: firstReturnActivity } = await supabaseAdmin
-  .from("driver_activities")
-  .select("start_time")
-  .eq("driver_id", decl.driver_id)
-  .gt("start_time", decl.gap_end_date)
-  .order("start_time", { ascending: true })
-  .limit(1)
-  .maybeSingle();
-```
+Sequência de execução
+1. Atualizar lógica da função `sync-trackit-data`.
+2. Aplicar correção de dados na declaração do Paulo.
+3. Validar via queries.
+4. Confirmar no ecrã de Declarações que o horário ficou estável e correto.
 
-Isto busca a primeira atividade **depois** do gap_end_date atual da declaracao, usando ordem ascendente. Uma vez encontrada e atualizada, como o novo gap_end_date sera anterior as atividades seguintes, a query nao voltara a atualizar (estabiliza no valor correto).
-
-Tambem atualizar a referencia na linha 820-823:
-```typescript
-if (firstReturnActivity?.start_time) {
-  const { error: updateDeclErr } = await supabaseAdmin
-    .from("activity_declarations")
-    .update({ gap_end_date: firstReturnActivity.start_time })
-    .eq("id", decl.id);
-```
-
-### 2. Usar card_events como fonte preferencial
-
-Melhor ainda: verificar primeiro se existe um evento de insercao de cartao (`card_events` com `event_type = 'inserted'`) para o motorista apos o gap_start_date, pois esse e o momento exato do retorno.
-
-Adicionar antes da query de atividades:
-```typescript
-// Prefer card insertion time as gap end
-const { data: cardInsert } = await supabaseAdmin
-  .from("card_events")
-  .select("event_at, driver_name")
-  .eq("driver_name", driverName)  // needs driver name lookup
-  .eq("event_type", "inserted")
-  .gt("event_at", decl.gap_end_date)
-  .order("event_at", { ascending: true })
-  .limit(1)
-  .maybeSingle();
-
-const newGapEnd = cardInsert?.event_at || firstReturnActivity?.start_time;
-```
-
-Para obter o driver_name, sera necessario fazer join com profiles. Alternativa mais simples: usar apenas a primeira atividade (solucao 1), que ja e suficientemente precisa (04:21 vs 03:19 -- diferenca de ~1h que corresponde ao tempo entre insercao e inicio de trabalho efetivo).
-
-**Recomendacao**: Implementar apenas a solucao 1 (corrigir a query de atividades) por ser mais simples e robusta. A diferenca entre insercao do cartao e primeira atividade e marginal.
-
-### 3. Corrigir a declaracao existente do Paulo Cardoso
-
-Atualizar manualmente o gap_end_date da declaracao draft para o valor correto:
-
-```sql
-UPDATE activity_declarations 
-SET gap_end_date = '2026-03-02T04:21:35.962Z'
-WHERE id = 'b24b7085-dd4a-4b86-82a0-59a2f33b192a';
-```
-
-(Usando 04:21 -- inicio da primeira atividade apos o retorno, que em hora de Lisboa corresponde a ~04:21.)
-
-### 4. Evitar re-atualizacao apos correcao
-
-A query corrigida com `.gt("start_time", decl.gap_end_date)` ja resolve isto naturalmente: uma vez que gap_end_date e 04:21, nao havera atividades com start_time > gap_end_date que sejam anteriores a esse valor, portanto nao sera re-atualizado.
-
-## Impacto
-- Declaracoes futuras terao o gap_end_date correto (primeira atividade apos o gap)
-- A declaracao do Paulo Cardoso sera corrigida imediatamente
-- Sem impacto noutras funcionalidades
-
+Secção técnica (resumo de regra final)
+- `gap_end_date` deve representar o primeiro sinal de retorno após `gap_start_date`.
+- Fonte de verdade preferencial: `card_events(inserted)`.
+- Fonte secundária: `driver_activities(start_time)`.
+- Atualização só permitida se mover para trás (mais cedo), nunca para frente.
