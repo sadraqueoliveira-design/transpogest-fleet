@@ -1,38 +1,49 @@
 
 
-# Corrigir deteção de remoção de cartão na sincronização Trackit
+# Corrigir deteção de re-inserção do mesmo cartão
 
-## Problema raiz
+## Problema
 
-A sincronização Trackit deteta cartões inseridos corretamente, mas **não deteta remoções** para dispositivos que reportam via `tac.1.idc` em vez de `dc1`. O campo `tac.1.idc` é um valor persistente/cached — nunca limpa mesmo após a remoção física do cartão. Resultado: 192 veículos mostram cartões "inseridos" há dias/meses quando na realidade foram removidos.
+Quando o mesmo motorista remove e re-insere o mesmo cartão (ex: fim do turno e início do turno seguinte), o sistema não deteta a mudança porque a lógica atual (linhas 513-516) apenas compara o número do cartão:
 
-Dados concretos:
-- 03-QA-30: `dc1=null`, `tac.1.idc` com cartão, `ds1=0` (repouso) — cartão "inserido" desde 26/02
-- 37-ST-22: mesmo padrão — `ds1=0` mas `card_present=true` desde 26/02
-- Veículos com `dc1` preenchido e `ds1=2/3` (conduzindo) são legítimos
+```
+Se oldCardNumber === newCardNumber → preservar timestamp antigo
+```
+
+Resultado: o 42-HX-75 mostra "Cartão 02/03, 05:20" quando na realidade o Manuel retirou o cartão, e voltou a inserir hoje ~04:20h. Como o número do cartão não mudou entre syncs, o sistema nunca consulta os eventos 45/46.
 
 ## Solução
 
-Alterações em `supabase/functions/sync-trackit-data/index.ts`:
+No ficheiro `supabase/functions/sync-trackit-data/index.ts`, alterar o bloco "same card still inserted" (linhas 513-516) para também consultar eventos quando o cartão está inserido há mais de **12 horas**:
 
-### 1. Não confiar em `tac.1.idc` como fonte exclusiva quando `ds1=0`
-Na lógica de determinação de `hasValidCard` (linhas 164-178), quando a fonte do cartão é `tac.1.idc` (e não `dc1`) e `ds1 === 0` (repouso sem atividade), tratar como cartão ausente. A lógica seria:
-
+### Lógica atual (linha 513-516):
 ```
-Se card_source === "tac.1.idc" E ds1 === 0 → hasValidCard = false
+Se mesmo cartão → preservar card_inserted_at existente
 ```
 
-Isto resolve o problema para ~60% dos casos (dispositivos sem `dc1`).
+### Lógica corrigida:
+```
+Se mesmo cartão E card_inserted_at < 12h atrás → preservar (sem custo de API)
+Se mesmo cartão E card_inserted_at >= 12h atrás → consultar eventos 45/46
+  → Se encontra evento 46 (removal) seguido de 45 (insertion) mais recente
+    que o card_inserted_at atual → atualizar timestamp e criar eventos
+  → Se não encontra nada novo → preservar timestamp existente
+```
 
-### 2. Consultar evento 46 (Card Removed) na API Trackit
-Atualmente a sync já consulta evento 45 (Card Inserted). Adicionar consulta ao evento **46** (Card Removed Slot 1) no mesmo pedido de eventos, para detetar remoções que o polling falha. Quando um evento 46 é encontrado mais recente que o último evento 45, marcar o cartão como removido.
+Isto garante que:
+- Sessões curtas (< 12h) não fazem chamadas extra à API
+- Sessões longas (>= 12h, típico de remoção noturna + re-inserção matinal) verificam se houve remoção+re-inserção
+- O histórico de card_events regista corretamente a sessão real
 
-### 3. Adicionar limpeza de sessões obsoletas
-Após o processamento, se `card_inserted_at` tem mais de **48 horas** e `ds1 === 0` e `last_speed === 0`, limpar `card_inserted_at` e criar evento de remoção automática com nota "auto-cleared (stale)".
+### Alteração concreta
 
-## Impacto esperado
+1. No bloco `else if (newHasCard && existing.card_inserted_at)` com `oldCardNumber === newCardNumber`, verificar a idade do `card_inserted_at`
+2. Se >= 12h, adicionar a `cardEventLookups` com eventType `"recheck"` 
+3. No processamento dos resultados, tratar `"recheck"`: se encontra evento 45 mais recente que o `card_inserted_at` atual, atualizar o timestamp e criar eventos de remoção + inserção
 
-- Veículos com cartões genuinamente inseridos (ds1=2/3, conduzindo) não são afetados
-- Veículos parados com dados cached de `tac.1.idc` passam a mostrar "Sem Cartão"
-- O histórico de card_events reflete remoções reais em vez de sessões infinitas
+## Impacto
+
+- 42-HX-75 passaria a mostrar a inserção real de hoje (~04:20h) em vez de 02/03
+- Todos os veículos onde o mesmo motorista re-insere o cartão diariamente serão corrigidos
+- Custo: chamadas extra à API Trackit apenas para veículos com sessões > 12h (tipicamente poucos por sync)
 
