@@ -381,7 +381,7 @@ export function generateDeclarationPDF(data: DeclarationPDFData, options?: Gener
 
       const stampW = 34;
       const stampH = 14;
-      const baseX = W - margin - stampW + 2 + randX;
+      const baseX = sig20X + sigW + 2 + randX;
       const baseY = sigLine20Y - 9 + randY;
 
       doc.addImage(stampDataUrl, "PNG", baseX, baseY, stampW, stampH);
