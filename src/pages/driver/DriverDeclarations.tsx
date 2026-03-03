@@ -349,8 +349,17 @@ export default function DriverDeclarations() {
                           try {
                             const fetchImg = async (url: string): Promise<string | undefined> => {
                               try {
-                                const res = await fetch(url);
-                                const blob = await res.blob();
+                                const storageMatch = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)/);
+                                let blob: Blob;
+                                if (storageMatch) {
+                                  const [, bucket, path] = storageMatch;
+                                  const { data, error } = await supabase.storage.from(bucket).download(decodeURIComponent(path));
+                                  if (error || !data) throw error || new Error("Download failed");
+                                  blob = data;
+                                } else {
+                                  const res = await fetch(url);
+                                  blob = await res.blob();
+                                }
                                 return await new Promise<string>((resolve) => {
                                   const reader = new FileReader();
                                   reader.onloadend = () => resolve(reader.result as string);
@@ -371,7 +380,7 @@ export default function DriverDeclarations() {
                               gapEndDate: d.gap_end_date,
                               reasonCode: d.reason_code || "other",
                               reasonText: d.reason_text || undefined,
-                              managerName: d.manager_name || "—",
+                              managerName: (d.manager_name || "—").replace(/\s*\(Auto\)\s*$/i, "").trim() || "—",
                               companyName: d.company_name,
                               driverSignatureDataUrl: driverSig,
                               managerSignatureDataUrl: managerSig,
