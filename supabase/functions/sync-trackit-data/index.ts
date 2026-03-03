@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
         const driverListPromise = fetchWithRetry(
           "https://i.trackit.pt/ws/driverList",
           { headers: { Authorization: `Basic ${credentials}` } },
-          25000, // 25s timeout — must fit within edge function wall clock
+          50000, // 50s timeout — non-blocking so can be long
           0      // No retry — single attempt
         ).then(async (res) => {
           if (!res || !res.ok) {
@@ -1172,27 +1172,30 @@ Deno.serve(async (req) => {
           } else {
             results.push({ client: client.name, status: "success", count: vehiclesData.length });
 
-            // Wait for driverList — give it 5s grace after vehicle processing completes
+            // Wait for driverList — give it 10s grace after vehicle processing completes
             driverListData = await Promise.race([
               driverListPromise,
-              new Promise<any[]>(r => setTimeout(() => r([]), 5000))
+              new Promise<any[]>(r => setTimeout(() => r([]), 10000))
             ]);
             console.log(`[DRIVERLIST] ${client.name}: resolved with ${driverListData.length} drivers after vehicle upserts`);
 
             // === Process driverList data ===
+            // FIX: Use vehicleRecords (mapped data with trackit_id) instead of vehiclesData (raw API)
             if (driverListData.length > 0) {
               let matchCount = 0;
               for (const drv of driverListData) {
                 const td = drv.tacho_data;
                 if (!td || !td.current_mobile || !td.is_auth) continue;
                 
-                const matchingVehicle = vehiclesData.find((v: any) => 
-                  parseInt(v.trackit_id) === td.current_mobile
+                // Match using vehicleRecords which has trackit_id and tachograph_status
+                const matchingRecord = vehicleRecords.find((r: any) => 
+                  parseInt(r.trackit_id) === td.current_mobile
                 );
-                if (!matchingVehicle) continue;
+                if (!matchingRecord) continue;
 
+                // Parse the tachograph_status we already built during vehicle mapping
                 let existingStatus: any = {};
-                try { existingStatus = JSON.parse(matchingVehicle.tachograph_status || "{}"); } catch { /* ok */ }
+                try { existingStatus = JSON.parse(matchingRecord.tachograph_status || "{}"); } catch { /* ok */ }
                 
                 existingStatus.tacho_compliance = {
                   total_drive_journay: td.total_drive_journay ?? 0,
@@ -1211,11 +1214,15 @@ Deno.serve(async (req) => {
                   updated_at: new Date().toISOString(),
                 };
 
-                await supabaseAdmin
+                const { error: complianceErr } = await supabaseAdmin
                   .from("vehicles")
                   .update({ tachograph_status: JSON.stringify(existingStatus) })
                   .eq("trackit_id", String(td.current_mobile));
-                matchCount++;
+                if (complianceErr) {
+                  console.warn(`[DRIVERLIST-MATCH] ${client.name}: error updating ${matchingRecord.plate}: ${complianceErr.message}`);
+                } else {
+                  matchCount++;
+                }
               }
               console.log(`[DRIVERLIST-MATCH] ${client.name}: ${matchCount} vehicles updated with tacho compliance`);
             }
