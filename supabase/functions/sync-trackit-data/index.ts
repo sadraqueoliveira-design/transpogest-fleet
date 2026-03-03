@@ -545,13 +545,19 @@ Deno.serve(async (req) => {
                 console.log(`[CARD-CHANGE] ${rec.plate}: card changed from ${oldCardNumber} to ${newCardNumber}, fetching new timestamp`);
                 cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
               } else {
-                // Same card still inserted — check if session is stale (>12h)
+                // Same card still inserted — check if session is stale
                 const sessionAge = existing.card_inserted_at
                   ? Date.now() - new Date(existing.card_inserted_at).getTime()
                   : 0;
                 const TWENTY_HOURS = 20 * 60 * 60 * 1000;
-                if (sessionAge >= TWENTY_HOURS) {
-                  // Session older than 20h → recheck events 45/46 for re-insertion
+                const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+                if (sessionAge >= SEVEN_DAYS) {
+                  // Ancient session (>7 days) — auto-clear without API call
+                  // Trackit events API only returns last 24h, so querying is pointless
+                  (rec as any).card_inserted_at = null;
+                  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old, auto-clearing card_inserted_at`);
+                } else if (sessionAge >= TWENTY_HOURS) {
+                  // Session 20h-7d → recheck events 45/46 for re-insertion
                   console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
                   cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
                 } else {
@@ -577,10 +583,10 @@ Deno.serve(async (req) => {
               const pa = priority[a.eventType] ?? 5;
               const pb = priority[b.eventType] ?? 5;
               if (pa !== pb) return pa - pb;
-              // Within same type, oldest sessions first (for rechecks)
+              // Within same type, newest sessions first (most likely to have real events)
               const aTime = a.existingCardInsertedAt ? new Date(a.existingCardInsertedAt).getTime() : 0;
               const bTime = b.existingCardInsertedAt ? new Date(b.existingCardInsertedAt).getTime() : 0;
-              return aTime - bTime;
+              return bTime - aTime;
             });
             // Restore existing timestamps for dropped lookups
             const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
