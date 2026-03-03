@@ -43,44 +43,6 @@ Deno.serve(async (req) => {
       const credentials = btoa(`${client.trackit_username}:${client.trackit_password}`);
 
       try {
-        // Helper: fetch with retry for unreliable endpoints
-        const fetchWithRetry = async (url: string, opts: RequestInit, timeoutMs: number, retries = 1): Promise<Response | null> => {
-          for (let attempt = 0; attempt <= retries; attempt++) {
-            try {
-              const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
-              if (res.ok) return res;
-              console.warn(`[DRIVERLIST] ${client.name}: attempt ${attempt + 1}: HTTP ${res.status}`);
-            } catch (e: any) {
-              console.warn(`[DRIVERLIST] ${client.name}: attempt ${attempt + 1} failed: ${e.message || e}`);
-            }
-            if (attempt < retries) {
-              console.log(`[DRIVERLIST] ${client.name}: retrying in 2s...`);
-              await new Promise(r => setTimeout(r, 2000));
-            }
-          }
-          return null;
-        };
-
-        // Fire driverList in background — don't block vehicle processing
-        const driverListPromise = fetchWithRetry(
-          "https://i.trackit.pt/ws/driverList",
-          { headers: { Authorization: `Basic ${credentials}` } },
-          50000, // 50s timeout — non-blocking so can be long
-          0      // No retry — single attempt
-        ).then(async (res) => {
-          if (!res || !res.ok) {
-            if (res) console.warn(`[DRIVERLIST] ${client.name}: HTTP ${res.status}`);
-            return [];
-          }
-          const json = await res.json();
-          const data = json.data || json || [];
-          console.log(`[DRIVERLIST] ${client.name}: fetched ${data.length} drivers`);
-          return data;
-        }).catch((e: any) => {
-          console.warn(`[DRIVERLIST] ${client.name}: background fetch failed: ${e.message || e}`);
-          return [] as any[];
-        });
-
         // Fetch vehicles (fast path, ~2-5s)
         const trackitResponse = await fetch("https://i.trackit.pt/ws/vehiclesForUser", {
           method: "GET",
@@ -90,8 +52,6 @@ Deno.serve(async (req) => {
           },
         });
 
-        // driverListData will be populated after vehicle processing
-        let driverListData: any[] = [];
 
         if (!trackitResponse.ok) {
           results.push({ client: client.name, status: "error", message: `Falha na API Trackit [${trackitResponse.status}]` });
@@ -1171,61 +1131,6 @@ Deno.serve(async (req) => {
             results.push({ client: client.name, status: "error", message: upsertError.message });
           } else {
             results.push({ client: client.name, status: "success", count: vehiclesData.length });
-
-            // Wait for driverList — give it 10s grace after vehicle processing completes
-            driverListData = await Promise.race([
-              driverListPromise,
-              new Promise<any[]>(r => setTimeout(() => r([]), 10000))
-            ]);
-            console.log(`[DRIVERLIST] ${client.name}: resolved with ${driverListData.length} drivers after vehicle upserts`);
-
-            // === Process driverList data ===
-            // FIX: Use vehicleRecords (mapped data with trackit_id) instead of vehiclesData (raw API)
-            if (driverListData.length > 0) {
-              let matchCount = 0;
-              for (const drv of driverListData) {
-                const td = drv.tacho_data;
-                if (!td || !td.current_mobile || !td.is_auth) continue;
-                
-                // Match using vehicleRecords which has trackit_id and tachograph_status
-                const matchingRecord = vehicleRecords.find((r: any) => 
-                  parseInt(r.trackit_id) === td.current_mobile
-                );
-                if (!matchingRecord) continue;
-
-                // Parse the tachograph_status we already built during vehicle mapping
-                let existingStatus: any = {};
-                try { existingStatus = JSON.parse(matchingRecord.tachograph_status || "{}"); } catch { /* ok */ }
-                
-                existingStatus.tacho_compliance = {
-                  total_drive_journay: td.total_drive_journay ?? 0,
-                  total_drive_week: td.total_drive_week ?? 0,
-                  total_drive_fortnight: td.total_drive_fortnight ?? 0,
-                  perc_drive_journay: td.perc_drive_journay ?? 0,
-                  perc_drive_week: td.perc_drive_week ?? 0,
-                  perc_drive_fortnight: td.perc_drive_fortnight ?? 0,
-                  extended_driver_count: td.extended_driver_count ?? 0,
-                  current_state: td.current_state ?? 0,
-                  is_old_data: td.is_old_data ?? false,
-                  last_daily_rest: td.last_daily_rest ?? null,
-                  last_weekly_rest: td.last_weekly_rest ?? null,
-                  driver_uid: drv.uid,
-                  dr_code: drv.dr_code,
-                  updated_at: new Date().toISOString(),
-                };
-
-                const { error: complianceErr } = await supabaseAdmin
-                  .from("vehicles")
-                  .update({ tachograph_status: JSON.stringify(existingStatus) })
-                  .eq("trackit_id", String(td.current_mobile));
-                if (complianceErr) {
-                  console.warn(`[DRIVERLIST-MATCH] ${client.name}: error updating ${matchingRecord.plate}: ${complianceErr.message}`);
-                } else {
-                  matchCount++;
-                }
-              }
-              console.log(`[DRIVERLIST-MATCH] ${client.name}: ${matchCount} vehicles updated with tacho compliance`);
-            }
           }
         } else {
           results.push({ client: client.name, status: "success", count: 0, message: "Nenhum veículo retornado" });
