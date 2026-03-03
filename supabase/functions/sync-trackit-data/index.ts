@@ -515,9 +515,9 @@ Deno.serve(async (req) => {
                 const sessionAge = existing.card_inserted_at
                   ? Date.now() - new Date(existing.card_inserted_at).getTime()
                   : 0;
-                const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-                if (sessionAge >= TWELVE_HOURS) {
-                  // Session older than 12h → recheck events 45/46 for re-insertion
+                const TWENTY_HOURS = 20 * 60 * 60 * 1000;
+                if (sessionAge >= TWENTY_HOURS) {
+                  // Session older than 20h → recheck events 45/46 for re-insertion
                   console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
                   cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
                 } else {
@@ -530,6 +530,32 @@ Deno.serve(async (req) => {
               cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "backfill_only", oldCardNumber: null, newCardNumber, existingCardInsertedAt: null });
             }
             // If no card on both sides, card_inserted_at stays null
+          }
+
+          // Cap recheck lookups to prevent timeouts
+          const MAX_RECHECKS = 15;
+          const recheckLookups = cardEventLookups.filter(l => l.eventType === "recheck");
+          if (recheckLookups.length > MAX_RECHECKS) {
+            // Sort by oldest session first, keep only MAX_RECHECKS
+            recheckLookups.sort((a, b) => {
+              const aTime = a.existingCardInsertedAt ? new Date(a.existingCardInsertedAt).getTime() : 0;
+              const bTime = b.existingCardInsertedAt ? new Date(b.existingCardInsertedAt).getTime() : 0;
+              return aTime - bTime;
+            });
+            const keepSet = new Set(recheckLookups.slice(0, MAX_RECHECKS));
+            // Remove excess rechecks — preserve their existing timestamp instead
+            for (let r = recheckLookups.length - 1; r >= 0; r--) {
+              const lookup = recheckLookups[r];
+              if (!keepSet.has(lookup)) {
+                const rec = vehicleRecords[lookup.idx];
+                (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                const removeIdx = cardEventLookups.indexOf(lookup);
+                if (removeIdx !== -1) cardEventLookups.splice(removeIdx, 1);
+              }
+            }
+            console.log(`[RECHECK-CAP] ${recheckLookups.length} recheck lookups queued, capped to ${MAX_RECHECKS}`);
+          } else if (recheckLookups.length > 0) {
+            console.log(`[RECHECK-CAP] ${recheckLookups.length} recheck lookups queued (under cap)`);
           }
 
           // Batch fetch event timestamps for vehicles that need it (max 5 concurrent)
