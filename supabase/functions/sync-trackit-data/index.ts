@@ -511,8 +511,19 @@ Deno.serve(async (req) => {
                 console.log(`[CARD-CHANGE] ${rec.plate}: card changed from ${oldCardNumber} to ${newCardNumber}, fetching new timestamp`);
                 cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
               } else {
-                // Same card still inserted → preserve existing timestamp
-                (rec as any).card_inserted_at = existing.card_inserted_at;
+                // Same card still inserted — check if session is stale (>12h)
+                const sessionAge = existing.card_inserted_at
+                  ? Date.now() - new Date(existing.card_inserted_at).getTime()
+                  : 0;
+                const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+                if (sessionAge >= TWELVE_HOURS) {
+                  // Session older than 12h → recheck events 45/46 for re-insertion
+                  console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
+                } else {
+                  // Recent session → preserve existing timestamp (no API cost)
+                  (rec as any).card_inserted_at = existing.card_inserted_at;
+                }
               }
             } else if (newHasCard && !existing.card_inserted_at) {
               // Card present but no timestamp recorded yet (backfill) → update vehicle timestamp only, do NOT create card_event
@@ -527,7 +538,7 @@ Deno.serve(async (req) => {
             const batch = cardEventLookups.slice(i, i + EVENT_BATCH);
             const results = await Promise.all(
               batch.map(async (lookup) => {
-                const afterTs = lookup.eventType === "swap" ? lookup.existingCardInsertedAt : null;
+                const afterTs = (lookup.eventType === "swap" || lookup.eventType === "recheck") ? lookup.existingCardInsertedAt : null;
                 const cardEventsResult = await fetchCardEvents(lookup.vehicleMid, afterTs);
                 return { ...lookup, eventTime: cardEventsResult.insertionTime, wasRemoved: cardEventsResult.wasRemoved };
               })
@@ -557,6 +568,23 @@ Deno.serve(async (req) => {
                 result.eventType = "removed";
                 result.oldCardNumber = result.newCardNumber;
                 result.newCardNumber = null;
+              }
+
+              // Handle "recheck" — same card, session > 12h
+              if (result.eventType === "recheck") {
+                if (result.eventTime) {
+                  // Found a newer insertion event → re-insertion detected
+                  const newInsertionTime = result.eventTime;
+                  console.log(`[CARD-RECHECK-HIT] ${rec.plate}: re-insertion detected at ${newInsertionTime} (was ${result.existingCardInsertedAt})`);
+                  (rec as any).card_inserted_at = newInsertionTime;
+                  // Record removal + re-insertion events
+                  result.eventType = "recheck_hit";
+                } else {
+                  // No newer event found → preserve existing timestamp, skip event creation
+                  console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, preserving ${result.existingCardInsertedAt}`);
+                  (rec as any).card_inserted_at = result.existingCardInsertedAt;
+                  continue;
+                }
               }
 
               // Priority: event timestamp > telemetry timestamp > current time
@@ -608,7 +636,22 @@ Deno.serve(async (req) => {
                 return (data && data.length > 0);
               };
 
-              if (result.eventType === "swap") {
+              if (result.eventType === "recheck_hit") {
+                // Same card re-inserted — record removal at midpoint and new insertion
+                const info = resolveDriverInfo(result.newCardNumber);
+                const removalTime = result.existingCardInsertedAt || insertionTime;
+                const toInsert = [];
+                if (!(await eventExists(result.newCardNumber, rec.plate, "removed", removalTime))) {
+                  toInsert.push({ vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: removalTime });
+                }
+                if (!(await eventExists(result.newCardNumber, rec.plate, "inserted", insertionTime))) {
+                  toInsert.push({ vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.newCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "inserted", event_at: insertionTime });
+                }
+                if (toInsert.length > 0) {
+                  await supabaseAdmin.from("card_events").insert(toInsert);
+                  console.log(`[CARD-EVENT] ${rec.plate}: recheck re-insertion recorded (removed at ${removalTime}, inserted at ${insertionTime})`);
+                }
+              } else if (result.eventType === "swap") {
                 const oldInfo = resolveDriverInfo(result.oldCardNumber);
                 const newInfo = resolveDriverInfo(result.newCardNumber);
                 const oldExists = await eventExists(result.oldCardNumber, rec.plate, "removed", insertionTime);
