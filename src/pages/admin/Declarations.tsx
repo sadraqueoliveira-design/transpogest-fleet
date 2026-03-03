@@ -186,12 +186,21 @@ export default function Declarations() {
     const metadata = await collectSigningMetadata(user!.id);
     const signedAt = format(new Date(), "dd/MM/yyyy HH:mm:ss", { locale: pt });
 
-    // Fetch driver signature data URL if available
+    // Fetch driver signature data URL if available (using Storage SDK)
     let driverSigDataUrl: string | undefined;
     if (decl.driver_signature_url) {
       try {
-        const res = await fetch(decl.driver_signature_url);
-        const blob = await res.blob();
+        const storageMatch = decl.driver_signature_url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)/);
+        let blob: Blob;
+        if (storageMatch) {
+          const [, bucket, path] = storageMatch;
+          const { data, error } = await supabase.storage.from(bucket).download(decodeURIComponent(path));
+          if (error || !data) throw error || new Error("Download failed");
+          blob = data;
+        } else {
+          const res = await fetch(decl.driver_signature_url);
+          blob = await res.blob();
+        }
         driverSigDataUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -282,7 +291,7 @@ export default function Declarations() {
         signature_url: savedManagerSig,
       });
 
-      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, finalManagerSigDataUrl, managerName || "—", managerAuditVerificationId);
+      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, finalManagerSigDataUrl, cleanManagerName(managerName), managerAuditVerificationId);
 
       // Update audit log with PDF URL
       await supabase
@@ -356,7 +365,7 @@ export default function Declarations() {
         signature_url: managerSigUrl,
       });
 
-      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, dataUrl, managerName || "—", manualVerificationId);
+      const { pdfUrl, metadata } = await generateAndUploadPDF(selectedDecl, dataUrl, cleanManagerName(managerName), manualVerificationId);
 
       // Update audit with PDF
       await supabase
@@ -479,11 +488,27 @@ export default function Declarations() {
     }
   };
 
+  // Helper to strip " (Auto)" suffix from manager name for PDF display
+  const cleanManagerName = (name: string | null | undefined): string => {
+    if (!name) return "—";
+    return name.replace(/\s*\(Auto\)\s*$/i, "").trim() || "—";
+  };
+
   // Helper: fetch a remote image URL, remove white background, and return a base64 data URL
   const fetchImageAsDataUrl = async (url: string): Promise<string | undefined> => {
     try {
-      const res = await fetch(url);
-      const blob = await res.blob();
+      // Detect Supabase Storage URLs and use SDK instead of direct fetch
+      const storageMatch = url.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)/);
+      let blob: Blob;
+      if (storageMatch) {
+        const [, bucket, path] = storageMatch;
+        const { data, error } = await supabase.storage.from(bucket).download(decodeURIComponent(path));
+        if (error || !data) throw error || new Error("Download failed");
+        blob = data;
+      } else {
+        const res = await fetch(url);
+        blob = await res.blob();
+      }
       const rawDataUrl = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -538,7 +563,7 @@ export default function Declarations() {
       gapEndDate: d.gap_end_date,
       reasonCode: d.reason_code || "other",
       reasonText: d.reason_text || undefined,
-      managerName: d.manager_name || "—",
+      managerName: cleanManagerName(d.manager_name),
       companyName: d.company_name,
       driverSignatureDataUrl: driverSigDataUrl,
       managerSignatureDataUrl: managerSigDataUrl,
