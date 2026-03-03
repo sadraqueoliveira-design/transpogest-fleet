@@ -13,7 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ChevronDown, Pencil, PenTool, Trash2 } from "lucide-react";
+import { FileText, RefreshCw, Download, AlertTriangle, CheckCircle2, Archive, ArchiveRestore, ChevronDown, Pencil, PenTool, Trash2, CheckSquare } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
 import { generateDeclarationPDF } from "@/lib/generateDeclarationPDF";
@@ -92,7 +93,10 @@ export default function Declarations() {
   const [showSaveSignature, setShowSaveSignature] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkRegenerating, setBulkRegenerating] = useState(false);
+  const [regenProgress, setRegenProgress] = useState({ current: 0, total: 0 });
   const [stampDataUrl, setStampDataUrl] = useState<string | null>(null);
+  const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | "draft" | "signed" | "archived">("all");
 
   // Preload stamp image
   useEffect(() => { loadStampDataUrl().then(setStampDataUrl).catch(() => {}); }, []);
@@ -434,6 +438,20 @@ export default function Declarations() {
     }
   };
 
+  const handleUnarchive = async (id: string) => {
+    const { error } = await supabase
+      .from("activity_declarations")
+      .update({ status: "signed" })
+      .eq("id", id);
+
+    if (error) {
+      toast({ title: "Erro", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Desarquivada", description: "A declaração voltou ao estado 'Assinada'." });
+      fetchDeclarations();
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Tem a certeza que deseja apagar esta declaração? Esta ação é irreversível.")) return;
     const { error } = await supabase
@@ -472,6 +490,10 @@ export default function Declarations() {
 
   const pendingCount = declarations.filter((d) => d.status === "draft").length;
 
+  const filteredDeclarations = activeStatusFilter === "all"
+    ? declarations
+    : declarations.filter((d) => d.status === activeStatusFilter);
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -481,11 +503,21 @@ export default function Declarations() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === declarations.length) {
+    if (selectedIds.size === filteredDeclarations.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(declarations.map((d) => d.id)));
+      setSelectedIds(new Set(filteredDeclarations.map((d) => d.id)));
     }
+  };
+
+  const handleSelectAllSigned = () => {
+    const signedInView = filteredDeclarations.filter((d) => d.status === "signed");
+    setSelectedIds(new Set(signedInView.map((d) => d.id)));
+  };
+
+  const handleStatusFilter = (status: "draft" | "signed" | "archived") => {
+    setActiveStatusFilter((prev) => prev === status ? "all" : status);
+    setSelectedIds(new Set());
   };
 
   // Helper to strip " (Auto)" suffix from manager name for PDF display
@@ -610,7 +642,10 @@ export default function Declarations() {
       toast({ title: "Nenhuma declaração assinada selecionada" });
       return;
     }
-    let count = 0;
+    setBulkRegenerating(true);
+    setRegenProgress({ current: 0, total: signed.length });
+    let successCount = 0;
+    const failedIds: string[] = [];
     for (const d of signed) {
       try {
         const pdfData = await buildPdfForDecl(d);
@@ -618,13 +653,17 @@ export default function Declarations() {
         const pdfBlob = pdf.output("blob");
         const pdfUrl = await uploadSignedPDF(pdfBlob, d.id);
         await supabase.from("activity_declarations").update({ signed_pdf_url: pdfUrl } as any).eq("id", d.id);
-        count++;
+        successCount++;
       } catch (err) {
         console.error("Erro ao re-gerar PDF:", err);
+        failedIds.push(d.id);
       }
+      setRegenProgress((prev) => ({ ...prev, current: prev.current + 1 }));
     }
-    toast({ title: `${count} PDF(s) re-gerado(s)`, description: "Os ficheiros foram atualizados com os dados atuais." });
-    setSelectedIds(new Set());
+    setBulkRegenerating(false);
+    const failMsg = failedIds.length > 0 ? ` (${failedIds.length} falharam)` : "";
+    toast({ title: `${successCount} PDF(s) re-gerado(s)${failMsg}`, description: "Os ficheiros foram atualizados com os dados atuais." });
+    setSelectedIds(failedIds.length > 0 ? new Set(failedIds) : new Set());
     fetchDeclarations();
   };
 
@@ -688,62 +727,97 @@ export default function Declarations() {
         </Card>
       )}
 
-      {/* Summary cards */}
+      {/* Summary cards – clickable filters */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all ${activeStatusFilter === "draft" ? "ring-2 ring-destructive" : "hover:bg-muted/50"}`}
+          onClick={() => handleStatusFilter("draft")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-8 w-8 text-destructive" />
             <div>
               <p className="text-2xl font-bold">{pendingCount}</p>
               <p className="text-xs text-muted-foreground">Pendentes</p>
             </div>
+            {activeStatusFilter === "draft" && <Badge variant="destructive" className="ml-auto text-[10px]">Filtro ativo</Badge>}
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all ${activeStatusFilter === "signed" ? "ring-2 ring-primary" : "hover:bg-muted/50"}`}
+          onClick={() => handleStatusFilter("signed")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <CheckCircle2 className="h-8 w-8 text-primary" />
             <div>
               <p className="text-2xl font-bold">{declarations.filter((d) => d.status === "signed").length}</p>
               <p className="text-xs text-muted-foreground">Assinadas</p>
             </div>
+            {activeStatusFilter === "signed" && <Badge className="ml-auto text-[10px]">Filtro ativo</Badge>}
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-all ${activeStatusFilter === "archived" ? "ring-2 ring-muted-foreground" : "hover:bg-muted/50"}`}
+          onClick={() => handleStatusFilter("archived")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <Archive className="h-8 w-8 text-muted-foreground" />
             <div>
               <p className="text-2xl font-bold">{declarations.filter((d) => d.status === "archived").length}</p>
               <p className="text-xs text-muted-foreground">Arquivadas</p>
             </div>
+            {activeStatusFilter === "archived" && <Badge variant="secondary" className="ml-auto text-[10px]">Filtro ativo</Badge>}
           </CardContent>
         </Card>
       </div>
 
+      {/* Bulk actions bar – always visible */}
+      <Card className="border-dashed">
+        <CardContent className="p-3 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={handleSelectAllSigned} disabled={bulkRegenerating}>
+            <CheckSquare className="h-4 w-4 mr-1" /> Selecionar todas as assinadas
+          </Button>
+          <Button size="sm" onClick={handleBulkDownload} disabled={selectedIds.size === 0 || bulkRegenerating}>
+            <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleBulkRegenerate} disabled={selectedIds.size === 0 || bulkRegenerating}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${bulkRegenerating ? "animate-spin" : ""}`} /> Re-gerar PDFs
+          </Button>
+          <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={selectedIds.size === 0 || bulkRegenerating}>
+            <Trash2 className="h-4 w-4 mr-1" /> Apagar ({selectedIds.size})
+          </Button>
+          {selectedIds.size === 0 && (
+            <span className="text-xs text-muted-foreground ml-2">Selecione declarações para ações em massa</span>
+          )}
+          {bulkRegenerating && (
+            <div className="flex items-center gap-2 ml-auto w-48">
+              <Progress value={(regenProgress.current / regenProgress.total) * 100} className="h-2" />
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{regenProgress.current}/{regenProgress.total}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Table */}
       <Card>
         <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-base">Todas as Declarações</CardTitle>
-          {selectedIds.size > 0 && (
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleBulkDownload}>
-                <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
+          <CardTitle className="text-base">
+            {activeStatusFilter === "all" ? "Todas as Declarações" : `Declarações — ${STATUS_CONFIG[activeStatusFilter]?.label || activeStatusFilter}`}
+            {activeStatusFilter !== "all" && (
+              <Button variant="ghost" size="sm" className="ml-2 text-xs" onClick={() => { setActiveStatusFilter("all"); setSelectedIds(new Set()); }}>
+                Limpar filtro
               </Button>
-              <Button size="sm" variant="outline" onClick={handleBulkRegenerate}>
-                <RefreshCw className="h-4 w-4 mr-1" /> Re-gerar PDFs
-              </Button>
-              <Button size="sm" variant="destructive" onClick={handleBulkDelete}>
-                <Trash2 className="h-4 w-4 mr-1" /> Apagar ({selectedIds.size})
-              </Button>
-            </div>
-          )}
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex justify-center py-8">
               <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
             </div>
-          ) : declarations.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">Nenhuma declaração encontrada. Clique "Verificar Lacunas" para detectar.</p>
+          ) : filteredDeclarations.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">
+              {declarations.length === 0 ? 'Nenhuma declaração encontrada. Clique "Verificar Lacunas" para detectar.' : "Nenhuma declaração neste estado."}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -751,7 +825,7 @@ export default function Declarations() {
                   <TableRow>
                     <TableHead className="w-10">
                       <Checkbox
-                        checked={declarations.length > 0 && selectedIds.size === declarations.length}
+                        checked={filteredDeclarations.length > 0 && selectedIds.size === filteredDeclarations.length}
                         onCheckedChange={toggleSelectAll}
                       />
                     </TableHead>
@@ -765,7 +839,7 @@ export default function Declarations() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {declarations.map((d) => {
+                  {filteredDeclarations.map((d) => {
                     const cfg = STATUS_CONFIG[d.status] || STATUS_CONFIG.draft;
                     return (
                       <TableRow key={d.id}>
@@ -805,21 +879,38 @@ export default function Declarations() {
                           )}
                           {d.status === "signed" && (
                             <>
-                              {d.signed_pdf_url ? (
+                              {d.signed_pdf_url && (
                                 <Button size="sm" variant="outline" asChild>
                                   <a href={d.signed_pdf_url} target="_blank" rel="noopener noreferrer">
-                                    <Download className="h-3 w-3 mr-1" /> PDF Assinado
+                                    <Download className="h-3 w-3 mr-1" /> PDF guardado
                                   </a>
                                 </Button>
-                              ) : (
-                                <Button size="sm" variant="outline" onClick={() => handleSingleDownload(d)}>
-                                  <Download className="h-3 w-3 mr-1" /> PDF
-                                </Button>
                               )}
+                              <Button size="sm" variant="outline" onClick={async () => {
+                                try {
+                                  const pdfData = await buildPdfForDecl(d);
+                                  const pdf = generateDeclarationPDF(pdfData);
+                                  const pdfBlob = pdf.output("blob");
+                                  const pdfUrl = await uploadSignedPDF(pdfBlob, d.id);
+                                  await supabase.from("activity_declarations").update({ signed_pdf_url: pdfUrl } as any).eq("id", d.id);
+                                  window.open(pdfUrl, "_blank");
+                                  toast({ title: "PDF re-gerado", description: "O ficheiro foi atualizado." });
+                                  fetchDeclarations();
+                                } catch (err: any) {
+                                  toast({ title: "Erro", description: err.message, variant: "destructive" });
+                                }
+                              }}>
+                                <RefreshCw className="h-3 w-3 mr-1" /> Re-gerar
+                              </Button>
                               <Button size="sm" variant="ghost" onClick={() => handleArchive(d.id)}>
                                 <Archive className="h-3 w-3 mr-1" /> Arquivar
                               </Button>
                             </>
+                          )}
+                          {d.status === "archived" && (
+                            <Button size="sm" variant="outline" onClick={() => handleUnarchive(d.id)}>
+                              <ArchiveRestore className="h-3 w-3 mr-1" /> Desarquivar
+                            </Button>
                           )}
                           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(d.id)}>
                             <Trash2 className="h-3 w-3" />
