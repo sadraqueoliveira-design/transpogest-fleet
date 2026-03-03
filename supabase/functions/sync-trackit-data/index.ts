@@ -61,36 +61,37 @@ Deno.serve(async (req) => {
           return null;
         };
 
-        // Fire both API calls in parallel for efficiency
-        const [trackitResponse, driverListResponse] = await Promise.all([
-          fetch("https://i.trackit.pt/ws/vehiclesForUser", {
-            method: "GET",
-            headers: {
-              Authorization: `Basic ${credentials}`,
-              "Content-Type": "application/json",
-            },
-          }),
-          fetchWithRetry(
-            "https://i.trackit.pt/ws/driverList",
-            { headers: { Authorization: `Basic ${credentials}` } },
-            55000, // 55s timeout (up from 45s)
-            1      // 1 retry = 2 total attempts
-          ),
-        ]);
-
-        // Process driverList response (store for later use after upsert)
-        let driverListData: any[] = [];
-        if (driverListResponse && driverListResponse.ok) {
-          try {
-            const dlJson = await driverListResponse.json();
-            driverListData = dlJson.data || dlJson || [];
-            console.log(`[DRIVERLIST] ${client.name}: fetched ${driverListData.length} drivers`);
-          } catch (e) {
-            console.warn(`[DRIVERLIST] ${client.name}: JSON parse error`);
+        // Fire driverList in background — don't block vehicle processing
+        const driverListPromise = fetchWithRetry(
+          "https://i.trackit.pt/ws/driverList",
+          { headers: { Authorization: `Basic ${credentials}` } },
+          25000, // 25s timeout — must fit within edge function wall clock
+          0      // No retry — single attempt
+        ).then(async (res) => {
+          if (!res || !res.ok) {
+            if (res) console.warn(`[DRIVERLIST] ${client.name}: HTTP ${res.status}`);
+            return [];
           }
-        } else if (driverListResponse) {
-          console.warn(`[DRIVERLIST] ${client.name}: HTTP ${driverListResponse.status}`);
-        }
+          const json = await res.json();
+          const data = json.data || json || [];
+          console.log(`[DRIVERLIST] ${client.name}: fetched ${data.length} drivers`);
+          return data;
+        }).catch((e: any) => {
+          console.warn(`[DRIVERLIST] ${client.name}: background fetch failed: ${e.message || e}`);
+          return [] as any[];
+        });
+
+        // Fetch vehicles (fast path, ~2-5s)
+        const trackitResponse = await fetch("https://i.trackit.pt/ws/vehiclesForUser", {
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${credentials}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        // driverListData will be populated after vehicle processing
+        let driverListData: any[] = [];
 
         if (!trackitResponse.ok) {
           results.push({ client: client.name, status: "error", message: `Falha na API Trackit [${trackitResponse.status}]` });
@@ -1171,7 +1172,14 @@ Deno.serve(async (req) => {
           } else {
             results.push({ client: client.name, status: "success", count: vehiclesData.length });
 
-            // === Process driverList data (already fetched in parallel) ===
+            // Wait for driverList — give it 5s grace after vehicle processing completes
+            driverListData = await Promise.race([
+              driverListPromise,
+              new Promise<any[]>(r => setTimeout(() => r([]), 5000))
+            ]);
+            console.log(`[DRIVERLIST] ${client.name}: resolved with ${driverListData.length} drivers after vehicle upserts`);
+
+            // === Process driverList data ===
             if (driverListData.length > 0) {
               let matchCount = 0;
               for (const drv of driverListData) {
