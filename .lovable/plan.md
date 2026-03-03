@@ -1,45 +1,71 @@
 
 
-# Correção: Sessões de cartão fantasma em dezenas de veículos
+# Correção: Timestamps exatos de remoção de cartão
 
-## Problema
+## Problema identificado
 
-Os logs mostram **~60 veículos com CARD-RECHECK** com sessões de 94-146 horas (4-6 dias). Estes cartões foram quase certamente retirados, mas o sistema não os deteta porque:
+Ao analisar o código, encontrei **dois bugs** que fazem com que as horas de remoção nos `card_events` sejam imprecisas:
 
-1. **CARD-STALE-REST** só atua quando `ds1=0` — muitos veículos reportam `ds1 != 0` mesmo parados (ex: ds1=1 "disponível")
-2. **CARD-RECHECK** tem prioridade 4 (a mais baixa) e o cap é de apenas **10 lookups** — com 60+ rechecks, a maioria é **descartada**
-3. Os descartados mantêm o `card_inserted_at` antigo → o ciclo repete-se infinitamente
+### Bug 1: `fetchCardEvents` descarta o timestamp do evento 46
 
-## Solução em duas frentes
+Quando a API devolve um evento 46 (remoção), a função retorna `{ insertionTime: null, wasRemoved: true }` (linha 485). O **timestamp exato da remoção** (`mostRecentRemoval.timestamp`) é descartado — apenas sabemos que houve remoção, mas não quando.
 
-### 1. Reduzir o threshold de auto-clear de 7 dias para 48 horas
-
-Nenhum motorista mantém legitimamente um cartão inserido por 48 horas contínuas (o regulamento EU 561 obriga a pausas). Sessões com >48h são quase certamente dados stale da Trackit.
-
-**Alteração em `sync-trackit-data/index.ts` (linha ~597):**
-- Mover o `SEVEN_DAYS` auto-clear para **48 horas** (`FORTY_EIGHT_HOURS`)
-- Quando `sessionAge >= 48h`, forçar remoção diretamente sem depender da API de eventos
-- Registar como `[CARD-STALE-CLEAR]` com evento de remoção no `card_events`
-- O recheck (20-48h) continua para sessões intermédias
-
-### 2. Aumentar o MAX_TOTAL_LOOKUPS de 10 para 25
-
-Para as sessões entre 20-48h que ainda fazem recheck, aumentar o número de chamadas à API por ciclo. Com batches de 5 e timeout de 60s, 25 lookups é viável.
-
-### Fluxo resultante
-
-```text
-Sessão < 20h       → preservar timestamp (sem custo API)
-Sessão 20-48h      → CARD-RECHECK via API de eventos (prioridade 4)
-Sessão > 12h + ds1=0 → CARD-STALE-REST (remoção forçada) ← já existe
-Sessão > 48h       → CARD-STALE-CLEAR (remoção forçada, sem API) ← NOVO
-Sessão > 7 dias    → removido (já existia, agora coberto pelo 48h)
+Depois, no processamento (linha 704), o `event_at` da remoção é calculado como:
 ```
+insertionTime = result.eventTime || tachoTimestamp || now()
+```
+Como `eventTime` é `null` (veio de `insertionTime`), o sistema usa `tachoTimestamp` (hora da última telemetria) ou `now()` como hora da remoção — ambos incorretos.
+
+### Bug 2: CARD-STALE-CLEAR e CARD-STALE-REST fazem API call desnecessário
+
+Estas remoções forçadas são empurradas para `cardEventLookups` como `eventType: "removed"`, passando pelo `fetchCardEvents`. Mas a API só tem 24h de histórico — para sessões >48h o evento 46 real já desapareceu. O resultado: gastam um slot dos 25 lookups sem ganho.
+
+## Solução
+
+### 1. Retornar `removalTime` de `fetchCardEvents`
+
+Adicionar um campo `removalTime` ao retorno da função. Quando o evento 46 é encontrado, guardar o seu timestamp.
+
+```typescript
+// Antes:
+return { insertionTime: null, wasRemoved: true };
+
+// Depois:
+return { insertionTime: null, wasRemoved: true, removalTime: mostRecentRemoval.timestamp };
+```
+
+### 2. Usar `removalTime` no registo de eventos de remoção
+
+No processamento de resultados (linha 704), para eventos de remoção:
+
+```typescript
+// Para removals, usar removalTime do event 46 quando disponível
+const eventAt = result.eventType === "removed" || result.wasRemoved
+  ? (result.removalTime || tachoTimestamp || new Date().toISOString())
+  : (result.eventTime || tachoTimestamp || new Date().toISOString());
+```
+
+### 3. CARD-STALE-CLEAR e CARD-STALE-REST: não fazer API call
+
+Em vez de empurrar para `cardEventLookups` (que consome um slot e faz uma chamada API inútil), registar o evento diretamente inline. O `event_at` da remoção forçada será:
+- Para CARD-STALE-REST: `tachoTimestamp` (última telemetria) ou `now()` — aceitável porque a remoção real foi recente (ds1=0 indica que o veículo parou há pouco)
+- Para CARD-STALE-CLEAR (>48h): `now()` — o melhor que conseguimos, pois o evento 46 real já não existe na API
 
 ### Ficheiro a editar
 
-- `supabase/functions/sync-trackit-data/index.ts`
-  - Linha 588: substituir `SEVEN_DAYS` por `FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000`
-  - Linha 597-601: no bloco `sessionAge >= FORTY_EIGHT_HOURS`, adicionar criação de evento de remoção em `card_events` (igual ao CARD-STALE-REST)
-  - Linha 619: alterar `MAX_TOTAL_LOOKUPS` de 10 para 25
+`supabase/functions/sync-trackit-data/index.ts`:
+
+1. **Linha 426-514**: Alterar assinatura de retorno de `fetchCardEvents` para incluir `removalTime: string | null`
+2. **Linhas 480-490**: Quando evento 46 é encontrado, retornar `removalTime: new Date(mostRecentRemoval.timestamp).toISOString()`
+3. **Linhas 593-602**: CARD-STALE-REST e CARD-STALE-CLEAR — registar evento de remoção diretamente na BD em vez de empurrar para `cardEventLookups`
+4. **Linhas 650-657**: Propagar `removalTime` no resultado do batch
+5. **Linhas 700-714**: Usar `removalTime` para calcular `event_at` de remoções em vez de `insertionTime`
+
+### Resultado esperado
+
+- **Remoções normais** (CARD-REMOVE): `event_at` = hora atual ± 5 min (já correto)
+- **Remoções via evento 46**: `event_at` = timestamp exato do tacógrafo
+- **CARD-STALE-REST**: `event_at` = última telemetria (± minutos)
+- **CARD-STALE-CLEAR**: `event_at` = hora da deteção (melhor aproximação possível)
+- **Mais slots livres**: STALE-REST e STALE-CLEAR não consomem dos 25 lookups
 
