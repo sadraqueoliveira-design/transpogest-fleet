@@ -1,48 +1,150 @@
 
 
-# Fix: Stale sessions waste recheck slots — clear ancient sessions directly
+# Fix: Tachograph Compliance Times — Use Trackit's Pre-Calculated Data
 
 ## Problem
 
-The LOOKUP-CAP logic exists but **98 vehicles** trigger CARD-RECHECK. Many have absurdly old sessions (18,167h, 24,840h, 9,556h) — these are inactive/abandoned vehicles. The Trackit events API only returns data from the last 24h, so querying events for a vehicle with a 2-year-old session is pointless. These waste the 10 lookup slots and push the function to timeout.
+The current `check-driving-limits` function calculates driving times (continuous, daily, weekly, bi-weekly) by summing `driver_activities` records stored in the database. These records are created during `sync-trackit-data` every 5 minutes by detecting changes in the `ds1` (driver state) field.
 
-42-HX-75 (30h session) gets deprioritized behind these ancient sessions in the sort order.
+This approach has fundamental accuracy problems:
+1. **State transitions between sync intervals are missed** — if a driver starts driving, takes a 10-min break, then resumes, all within one 5-min window, it's recorded as continuous driving
+2. **The continuous driving counter is approximated** — walking backwards through activity records to find 45-min breaks is unreliable when gaps exist
+3. **Sync timeouts cause missing activity records** — if the sync function times out (as it has been), entire periods of driver activity go unrecorded
+4. **Daily/weekly totals drift** — small timing errors compound across hundreds of records
+
+## Discovery: Trackit `/ws/driverList` API
+
+The Trackit API documentation (both the PDF manual and the online docs at `trackit.targatelematics.com`) reveals a **`/ws/driverList`** endpoint that returns pre-calculated tachograph compliance data directly from the vehicle unit:
+
+```text
+GET /ws/driverList → tacho_data object per driver:
+├── total_drive_journay     → Daily driving minutes (from tachograph unit)
+├── total_drive_week        → Weekly driving minutes
+├── total_drive_fortnight   → Bi-weekly driving minutes
+├── extended_driver_count   → 10h extensions used this week
+├── current_state           → 0:Rest, 1:Available, 2:Work, 3:Drive
+├── is_auth                 → Currently authenticated in vehicle
+├── current_mobile          → Vehicle MID (maps to trackit_id)
+├── last_daily_rest         → Last daily rest timestamp
+├── last_weekly_rest        → Last weekly rest timestamp
+├── is_old_data             → Boolean: true if data is stale
+├── perc_drive_journay      → % of daily limit used
+├── perc_drive_week         → % of weekly limit used
+└── perc_drive_fortnight    → % of bi-weekly limit used
+```
+
+This data is calculated by the tachograph unit itself — it's the **authoritative source** for EU 561/2006 compliance, not our approximation from 5-minute polling.
 
 ## Solution
 
-In `supabase/functions/sync-trackit-data/index.ts`, add two changes:
+Modify `check-driving-limits` to call `/ws/driverList` directly and use the tachograph unit's pre-calculated data as the primary source.
 
-### 1. Auto-clear sessions older than 7 days (168h) without API calls
-If `card_inserted_at` is older than 7 days and `ds1 === 0` (driver resting) or speed is 0, directly clear the session — no API lookup needed. These are definitively stale. This eliminates ~60+ of the 98 rechecks.
+### Flow
 
-For sessions between 20h-168h (the interesting range), keep the existing recheck logic.
-
-### 2. Flip sort order: prioritize NEWEST sessions first for rechecks
-Currently oldest sessions get priority (line 582). But the oldest are the most stale/useless. **Newest sessions** (20-48h) are the ones likely to have real re-insertions (overnight card removal + morning re-insertion). Change sort to `bTime - aTime` for rechecks.
+1. Driver opens TachoWidget → calls `check-driving-limits` with `driver_id`
+2. Function looks up the driver's vehicle → gets `client_id` → gets Trackit credentials
+3. Calls `GET /ws/driverList` with those credentials
+4. Finds the matching driver by matching `dr_code` against the driver's `card_number` (from `tachograph_cards` or vehicle's `tachograph_status.card_slot_1`)
+5. Uses `tacho_data` fields for compliance counters (journey, week, fortnight, extensions, current state)
+6. Falls back to current `driver_activities` calculation if Trackit data is unavailable or `is_old_data: true`
 
 ### Concrete changes
 
-In the detection loop (~line 548-556), before pushing to `cardEventLookups`:
+**File: `supabase/functions/check-driving-limits/index.ts`**
+
+After getting the target driver ID and their vehicle, add:
+
 ```typescript
-const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-if (sessionAge >= SEVEN_DAYS) {
-  // Ancient session — auto-clear without API call
-  (rec as any).card_inserted_at = null;
-  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge/3600000)}h old, auto-clearing`);
-  continue; // skip adding to cardEventLookups
+// 1. Find driver's vehicle and client
+const { data: driverVehicle } = await supabaseAdmin
+  .from("vehicles")
+  .select("id, trackit_id, client_id, tachograph_status")
+  .eq("current_driver_id", targetDriverId)
+  .limit(1)
+  .maybeSingle();
+
+// 2. If vehicle found, get Trackit credentials
+let trackitTachoData = null;
+if (driverVehicle?.client_id) {
+  const { data: clientCreds } = await supabaseAdmin
+    .from("clients")
+    .select("trackit_username, trackit_password")
+    .eq("id", driverVehicle.client_id)
+    .single();
+  
+  if (clientCreds?.trackit_username) {
+    // 3. Call /ws/driverList
+    const credentials = btoa(`${clientCreds.trackit_username}:${clientCreds.trackit_password}`);
+    const res = await fetch("https://i.trackit.pt/ws/driverList", {
+      headers: { Authorization: `Basic ${credentials}` }
+    });
+    const json = await res.json();
+    
+    // 4. Find matching driver by card number or current_mobile
+    const vehicleMid = parseInt(driverVehicle.trackit_id);
+    const driverEntry = (json.data || []).find((d: any) => 
+      d.tacho_data?.current_mobile === vehicleMid && d.tacho_data?.is_auth
+    );
+    
+    if (driverEntry?.tacho_data && !driverEntry.tacho_data.is_old_data) {
+      trackitTachoData = driverEntry.tacho_data;
+    }
+  }
 }
 ```
 
-In the sort comparator (~line 582):
+Then, in the per-driver compliance calculation, prefer Trackit data:
+
 ```typescript
-return bTime - aTime; // Newest first (most likely to have real events)
+// Use Trackit's authoritative data if available
+const continuousDriving = trackitTachoData 
+  ? /* calculate from current_state + last_daily_rest */
+  : /* existing driver_activities calculation */;
+
+const dailyDriving = trackitTachoData?.total_drive_journay ?? /* fallback */;
+const weeklyDriving = trackitTachoData?.total_drive_week ?? /* fallback */;
+const biweeklyDriving = trackitTachoData?.total_drive_fortnight ?? /* fallback */;
+const extensionsUsed = trackitTachoData?.extended_driver_count ?? /* fallback */;
 ```
+
+Map `current_state` to activity type:
+```typescript
+const stateMap = { 0: "rest", 1: "available", 2: "work", 3: "driving" };
+const currentActivity = trackitTachoData 
+  ? stateMap[trackitTachoData.current_state] 
+  : currentOpen?.activity_type;
+```
+
+### Continuous driving calculation
+
+The `driverList` API doesn't directly provide continuous driving minutes. For this, we need the `driverStatePerDriver/{did}` endpoint which gives the full activity state history. However, we'd need the Trackit driver UID (`did`), which we can get from the matched `driverList` entry (`uid` field).
+
+Add a second API call for the current driver only:
+```typescript
+if (trackitTachoData && driverEntry?.uid) {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+  
+  const stateRes = await fetch(
+    `https://i.trackit.pt/ws/driverStatePerDriver/${driverEntry.uid}?dateBegin=${fmt(todayStart)}&dateEnd=${fmt(now)}`,
+    { headers: { Authorization: `Basic ${credentials}` } }
+  );
+  // Parse state transitions to calculate actual continuous driving
+}
+```
+
+### Fallback strategy
+
+If the Trackit API call fails or returns `is_old_data: true`, the function falls back to the existing `driver_activities` calculation — ensuring the widget always shows something.
 
 ## Expected impact
 
-- ~60+ ancient sessions auto-cleared instantly (no API cost)
-- ~30-38 rechecks remain, capped to 10 — now prioritizing 20-48h sessions
-- 42-HX-75 (30h) gets processed in the first batch
-- Function completes well within timeout
-- Stale data cleaned from the fleet view
+- **Accurate daily/weekly/bi-weekly counters** — from the tachograph unit, not approximated from 5-min polling
+- **Correct extension count** — directly from `extended_driver_count`
+- **Accurate continuous driving** — from `driverStatePerDriver` state transitions with second-level precision
+- **Real-time current state** — from `current_state` instead of last sync snapshot
+- **No database schema changes needed** — all data flows through the existing function interface
+- **Graceful degradation** — falls back to current calculation if API is unavailable
 
