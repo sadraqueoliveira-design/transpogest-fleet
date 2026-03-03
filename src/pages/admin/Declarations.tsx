@@ -95,6 +95,7 @@ export default function Declarations() {
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [bulkRegenerating, setBulkRegenerating] = useState(false);
   const [regenProgress, setRegenProgress] = useState({ current: 0, total: 0 });
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [stampDataUrl, setStampDataUrl] = useState<string | null>(null);
   const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | "draft" | "signed" | "archived">("all");
 
@@ -580,28 +581,32 @@ export default function Declarations() {
     });
   };
 
-  const buildPdfForDecl = async (d: Declaration) => {
+  const buildPdfForDecl = async (d: Declaration): Promise<{ pdfData: any; missingSigs: string[] }> => {
+    const missingSigs: string[] = [];
     const [driverSigDataUrl, managerSigDataUrl] = await Promise.all([
-      d.driver_signature_url ? fetchImageAsDataUrl(d.driver_signature_url) : Promise.resolve(undefined),
-      d.manager_signature_url ? fetchImageAsDataUrl(d.manager_signature_url) : Promise.resolve(undefined),
+      d.driver_signature_url ? fetchImageAsDataUrl(d.driver_signature_url).then(r => { if (!r) missingSigs.push("motorista"); return r; }) : Promise.resolve(undefined),
+      d.manager_signature_url ? fetchImageAsDataUrl(d.manager_signature_url).then(r => { if (!r) missingSigs.push("gestor"); return r; }) : Promise.resolve(undefined),
     ]);
 
     return {
-      driverName: d.driver_name || "Desconhecido",
-      licenseNumber: d.license_number || "",
-      birthDate: d.birth_date,
-      hireDate: d.hire_date,
-      gapStartDate: d.gap_start_date,
-      gapEndDate: d.gap_end_date,
-      reasonCode: d.reason_code || "other",
-      reasonText: d.reason_text || undefined,
-      managerName: cleanManagerName(d.manager_name),
-      companyName: d.company_name,
-      driverSignatureDataUrl: driverSigDataUrl,
-      managerSignatureDataUrl: managerSigDataUrl,
-      signedAt: d.signed_pdf_url ? undefined : undefined,
-      _stampDataUrl: stampDataUrl || undefined,
-      ...editFields,
+      pdfData: {
+        driverName: d.driver_name || "Desconhecido",
+        licenseNumber: d.license_number || "",
+        birthDate: d.birth_date,
+        hireDate: d.hire_date,
+        gapStartDate: d.gap_start_date,
+        gapEndDate: d.gap_end_date,
+        reasonCode: d.reason_code || "other",
+        reasonText: d.reason_text || undefined,
+        managerName: cleanManagerName(d.manager_name),
+        companyName: d.company_name,
+        driverSignatureDataUrl: driverSigDataUrl,
+        managerSignatureDataUrl: managerSigDataUrl,
+        signedAt: d.signed_pdf_url ? undefined : undefined,
+        _stampDataUrl: stampDataUrl || undefined,
+        ...editFields,
+      },
+      missingSigs,
     };
   };
 
@@ -610,11 +615,11 @@ export default function Declarations() {
     if (selected.length === 0) return;
 
     try {
-      // First declaration creates the doc
-      const doc = generateDeclarationPDF(await buildPdfForDecl(selected[0]));
-      // Subsequent declarations append pages
+      const { pdfData: firstData } = await buildPdfForDecl(selected[0]);
+      const doc = generateDeclarationPDF(firstData);
       for (let i = 1; i < selected.length; i++) {
-        generateDeclarationPDF(await buildPdfForDecl(selected[i]), { existingDoc: doc });
+        const { pdfData } = await buildPdfForDecl(selected[i]);
+        generateDeclarationPDF(pdfData, { existingDoc: doc });
       }
       const dateSlug = format(new Date(), "yyyyMMdd");
       doc.save(`Declaracoes_Lote_${dateSlug}.pdf`);
@@ -627,7 +632,8 @@ export default function Declarations() {
 
   const handleSingleDownload = async (d: Declaration) => {
     try {
-      const pdf = generateDeclarationPDF(await buildPdfForDecl(d));
+      const { pdfData } = await buildPdfForDecl(d);
+      const pdf = generateDeclarationPDF(pdfData);
       const driverSlug = (d.driver_name || "motorista").replace(/\s+/g, "_");
       const dateSlug = format(new Date(d.gap_start_date), "yyyyMMdd");
       pdf.save(`Declaracao_Atividade_${driverSlug}_${dateSlug}.pdf`);
@@ -637,18 +643,24 @@ export default function Declarations() {
   };
 
   const handleBulkRegenerate = async () => {
+    if (selectedIds.size === 0) {
+      toast({ title: "Selecione declarações primeiro", description: "Use 'Selecionar todas as assinadas' para selecionar rapidamente." });
+      return;
+    }
     const signed = declarations.filter((d) => selectedIds.has(d.id) && d.status === "signed");
     if (signed.length === 0) {
-      toast({ title: "Nenhuma declaração assinada selecionada" });
+      toast({ title: "Nenhuma declaração assinada selecionada", description: "Apenas declarações assinadas podem ser re-geradas." });
       return;
     }
     setBulkRegenerating(true);
     setRegenProgress({ current: 0, total: signed.length });
     let successCount = 0;
+    let totalMissingSigs = 0;
     const failedIds: string[] = [];
     for (const d of signed) {
       try {
-        const pdfData = await buildPdfForDecl(d);
+        const { pdfData, missingSigs } = await buildPdfForDecl(d);
+        totalMissingSigs += missingSigs.length;
         const pdf = generateDeclarationPDF(pdfData);
         const pdfBlob = pdf.output("blob");
         const pdfUrl = await uploadSignedPDF(pdfBlob, d.id);
@@ -661,8 +673,10 @@ export default function Declarations() {
       setRegenProgress((prev) => ({ ...prev, current: prev.current + 1 }));
     }
     setBulkRegenerating(false);
-    const failMsg = failedIds.length > 0 ? ` (${failedIds.length} falharam)` : "";
-    toast({ title: `${successCount} PDF(s) re-gerado(s)${failMsg}`, description: "Os ficheiros foram atualizados com os dados atuais." });
+    const parts: string[] = ["Os ficheiros foram atualizados com os dados atuais."];
+    if (failedIds.length > 0) parts.push(`${failedIds.length} falharam.`);
+    if (totalMissingSigs > 0) parts.push(`${totalMissingSigs} assinatura(s) não encontrada(s).`);
+    toast({ title: `${successCount} PDF(s) re-gerado(s)`, description: parts.join(" ") });
     setSelectedIds(failedIds.length > 0 ? new Set(failedIds) : new Set());
     fetchDeclarations();
   };
@@ -779,8 +793,9 @@ export default function Declarations() {
           <Button size="sm" onClick={handleBulkDownload} disabled={selectedIds.size === 0 || bulkRegenerating}>
             <Download className="h-4 w-4 mr-1" /> Download ({selectedIds.size})
           </Button>
-          <Button size="sm" variant="outline" onClick={handleBulkRegenerate} disabled={selectedIds.size === 0 || bulkRegenerating}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${bulkRegenerating ? "animate-spin" : ""}`} /> Re-gerar PDFs
+          <Button size="sm" variant="outline" onClick={handleBulkRegenerate} disabled={bulkRegenerating}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${bulkRegenerating ? "animate-spin" : ""}`} />
+            {selectedIds.size > 0 ? `Re-gerar PDFs (${selectedIds.size})` : "Re-gerar PDFs"}
           </Button>
           <Button size="sm" variant="destructive" onClick={handleBulkDelete} disabled={selectedIds.size === 0 || bulkRegenerating}>
             <Trash2 className="h-4 w-4 mr-1" /> Apagar ({selectedIds.size})
@@ -886,21 +901,28 @@ export default function Declarations() {
                                   </a>
                                 </Button>
                               )}
-                              <Button size="sm" variant="outline" onClick={async () => {
+                              <Button size="sm" variant="outline" disabled={regeneratingId === d.id} onClick={async () => {
+                                if (regeneratingId) return;
+                                setRegeneratingId(d.id);
                                 try {
-                                  const pdfData = await buildPdfForDecl(d);
+                                  const { pdfData, missingSigs } = await buildPdfForDecl(d);
                                   const pdf = generateDeclarationPDF(pdfData);
                                   const pdfBlob = pdf.output("blob");
                                   const pdfUrl = await uploadSignedPDF(pdfBlob, d.id);
                                   await supabase.from("activity_declarations").update({ signed_pdf_url: pdfUrl } as any).eq("id", d.id);
                                   window.open(pdfUrl, "_blank");
-                                  toast({ title: "PDF re-gerado", description: "O ficheiro foi atualizado." });
+                                  const desc = missingSigs.length > 0
+                                    ? `Ficheiro atualizado. Assinatura(s) em falta: ${missingSigs.join(", ")}.`
+                                    : "O ficheiro foi atualizado.";
+                                  toast({ title: "PDF re-gerado", description: desc });
                                   fetchDeclarations();
                                 } catch (err: any) {
                                   toast({ title: "Erro", description: err.message, variant: "destructive" });
+                                } finally {
+                                  setRegeneratingId(null);
                                 }
                               }}>
-                                <RefreshCw className="h-3 w-3 mr-1" /> Re-gerar
+                                <RefreshCw className={`h-3 w-3 mr-1 ${regeneratingId === d.id ? "animate-spin" : ""}`} /> Re-gerar
                               </Button>
                               <Button size="sm" variant="ghost" onClick={() => handleArchive(d.id)}>
                                 <Archive className="h-3 w-3 mr-1" /> Arquivar
