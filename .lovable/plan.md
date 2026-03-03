@@ -1,71 +1,45 @@
 
 
-# Correção: Timestamps exatos de remoção de cartão
+# Correção: Cartão do João Roseiro sem nome nos eventos
 
-## Problema identificado
+## Problema raiz
 
-Ao analisar o código, encontrei **dois bugs** que fazem com que as horas de remoção nos `card_events` sejam imprecisas:
+O cartão `0000001236405002` não está associado ao nome do João Roseiro porque:
 
-### Bug 1: `fetchCardEvents` descarta o timestamp do evento 46
+1. **Tabela `tachograph_cards`**: o registo existe mas `driver_name` é `NULL`
+2. **Tabela `employees`**: o `card_number` está guardado como `5B.0000001236405002` (com prefixo país)
+3. **API Trackit**: devolve `0000001236405002` (sem prefixo)
+4. **`sync-trackit-data`**: ao procurar o match na BD, não encontra correspondência porque os formatos diferem
 
-Quando a API devolve um evento 46 (remoção), a função retorna `{ insertionTime: null, wasRemoved: true }` (linha 485). O **timestamp exato da remoção** (`mostRecentRemoval.timestamp`) é descartado — apenas sabemos que houve remoção, mas não quando.
+## Solução (2 partes)
 
-Depois, no processamento (linha 704), o `event_at` da remoção é calculado como:
-```
-insertionTime = result.eventTime || tachoTimestamp || now()
-```
-Como `eventTime` é `null` (veio de `insertionTime`), o sistema usa `tachoTimestamp` (hora da última telemetria) ou `now()` como hora da remoção — ambos incorretos.
+### 1. Normalizar o match de cartões no `sync-trackit-data`
 
-### Bug 2: CARD-STALE-CLEAR e CARD-STALE-REST fazem API call desnecessário
-
-Estas remoções forçadas são empurradas para `cardEventLookups` como `eventType: "removed"`, passando pelo `fetchCardEvents`. Mas a API só tem 24h de histórico — para sessões >48h o evento 46 real já desapareceu. O resultado: gastam um slot dos 25 lookups sem ganho.
-
-## Solução
-
-### 1. Retornar `removalTime` de `fetchCardEvents`
-
-Adicionar um campo `removalTime` ao retorno da função. Quando o evento 46 é encontrado, guardar o seu timestamp.
+No bloco que faz lookup do `card_number` para obter `driver_name` e `employee_number`, aplicar strip do prefixo país (ex: `5B.`, `5B,`) antes de comparar:
 
 ```typescript
-// Antes:
-return { insertionTime: null, wasRemoved: true };
-
-// Depois:
-return { insertionTime: null, wasRemoved: true, removalTime: mostRecentRemoval.timestamp };
+// Normalizar: remover prefixo país (ex: "5B." ou "5B,")
+const normalizeCard = (c: string) => c.replace(/^[A-Z]{1,3}[.,]/, '');
 ```
 
-### 2. Usar `removalTime` no registo de eventos de remoção
+Usar esta função ao comparar `tachograph_cards.card_number` e `employees.card_number` com o valor da API.
 
-No processamento de resultados (linha 704), para eventos de remoção:
+**Ficheiro**: `supabase/functions/sync-trackit-data/index.ts` — no bloco que resolve `driver_name`/`employee_number` a partir do `card_number`.
 
-```typescript
-// Para removals, usar removalTime do event 46 quando disponível
-const eventAt = result.eventType === "removed" || result.wasRemoved
-  ? (result.removalTime || tachoTimestamp || new Date().toISOString())
-  : (result.eventTime || tachoTimestamp || new Date().toISOString());
+### 2. Corrigir o registo existente na tabela `tachograph_cards`
+
+Atualizar o `driver_name` do cartão `0000001236405002` para "JOAO JOSE ANASTACIO ROSEIRO" via migração SQL, e garantir que o trigger `sync_tachograph_to_employee` mantém a sincronização futura.
+
+**Migração SQL**:
+```sql
+UPDATE tachograph_cards 
+SET driver_name = 'JOAO JOSE ANASTACIO ROSEIRO'
+WHERE card_number = '0000001236405002';
 ```
-
-### 3. CARD-STALE-CLEAR e CARD-STALE-REST: não fazer API call
-
-Em vez de empurrar para `cardEventLookups` (que consome um slot e faz uma chamada API inútil), registar o evento diretamente inline. O `event_at` da remoção forçada será:
-- Para CARD-STALE-REST: `tachoTimestamp` (última telemetria) ou `now()` — aceitável porque a remoção real foi recente (ds1=0 indica que o veículo parou há pouco)
-- Para CARD-STALE-CLEAR (>48h): `now()` — o melhor que conseguimos, pois o evento 46 real já não existe na API
-
-### Ficheiro a editar
-
-`supabase/functions/sync-trackit-data/index.ts`:
-
-1. **Linha 426-514**: Alterar assinatura de retorno de `fetchCardEvents` para incluir `removalTime: string | null`
-2. **Linhas 480-490**: Quando evento 46 é encontrado, retornar `removalTime: new Date(mostRecentRemoval.timestamp).toISOString()`
-3. **Linhas 593-602**: CARD-STALE-REST e CARD-STALE-CLEAR — registar evento de remoção diretamente na BD em vez de empurrar para `cardEventLookups`
-4. **Linhas 650-657**: Propagar `removalTime` no resultado do batch
-5. **Linhas 700-714**: Usar `removalTime` para calcular `event_at` de remoções em vez de `insertionTime`
 
 ### Resultado esperado
 
-- **Remoções normais** (CARD-REMOVE): `event_at` = hora atual ± 5 min (já correto)
-- **Remoções via evento 46**: `event_at` = timestamp exato do tacógrafo
-- **CARD-STALE-REST**: `event_at` = última telemetria (± minutos)
-- **CARD-STALE-CLEAR**: `event_at` = hora da deteção (melhor aproximação possível)
-- **Mais slots livres**: STALE-REST e STALE-CLEAR não consomem dos 25 lookups
+- Todos os futuros `card_events` do cartão `0000001236405002` terão `driver_name` e `employee_number` preenchidos
+- A página de histórico de cartões mostrará "JOAO JOSE ANASTACIO ROSEIRO" em vez de "—"
+- O mesmo fix aplica-se a qualquer outro cartão com prefixo país na tabela de employees
 
