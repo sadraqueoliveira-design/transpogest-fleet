@@ -1116,6 +1116,127 @@ Deno.serve(async (req) => {
             }
           }
 
+          // === DRIVING WITHOUT CARD DETECTION ===
+          // If speed > 5 and card_present === false → create compliance_violation
+          const drivingWithoutCardAlerts: Array<{
+            vehicle_id: string;
+            plate: string;
+            speed: number;
+            lat: number | null;
+            lng: number | null;
+            location: string | null;
+          }> = [];
+
+          for (const rec of vehicleRecords) {
+            const existing = existingMap.get(rec.trackit_id);
+            if (!existing) continue;
+            const speed = rec.last_speed ?? 0;
+            if (speed <= 5) continue;
+
+            // Check card_present from tachograph_status
+            let cardPresent = true;
+            if (rec.tachograph_status) {
+              try {
+                const tacho = JSON.parse(rec.tachograph_status);
+                cardPresent = !!tacho.card_present;
+              } catch { /* ignore */ }
+            }
+            if (cardPresent) continue;
+
+            drivingWithoutCardAlerts.push({
+              vehicle_id: existing.id,
+              plate: rec.plate,
+              speed,
+              lat: rec.last_lat,
+              lng: rec.last_lng,
+              location: rec.last_location_name,
+            });
+          }
+
+          // Deduplicate: only create violation if none exists for this vehicle in last 4h
+          const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+          const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+          for (const alert of drivingWithoutCardAlerts) {
+            const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+            const { data: recentViolation } = await supabaseAdmin
+              .from("compliance_violations")
+              .select("id")
+              .eq("violation_type", "driving_without_card")
+              .gte("detected_at", fourHoursAgo)
+              .limit(100);
+
+            // Check if any recent violation matches this vehicle (details->plate)
+            let alreadyExists = false;
+            if (recentViolation && recentViolation.length > 0) {
+              // Query with details filter
+              const { data: matchingViolation } = await supabaseAdmin
+                .from("compliance_violations")
+                .select("id")
+                .eq("violation_type", "driving_without_card")
+                .gte("detected_at", fourHoursAgo)
+                .contains("details", { plate: alert.plate })
+                .limit(1);
+              alreadyExists = !!(matchingViolation && matchingViolation.length > 0);
+            }
+
+            if (!alreadyExists) {
+              // Use a placeholder driver_id since the column is NOT NULL
+              // Use the vehicle's current_driver_id if available, otherwise use a system UUID
+              const driverId = vehicleRecords.find((r: any) => r.plate === alert.plate)?.current_driver_id
+                || "00000000-0000-0000-0000-000000000000";
+
+              const { error: violationErr } = await supabaseAdmin
+                .from("compliance_violations")
+                .insert({
+                  driver_id: driverId,
+                  violation_type: "driving_without_card",
+                  severity: "critical",
+                  details: {
+                    plate: alert.plate,
+                    speed: alert.speed,
+                    lat: alert.lat,
+                    lng: alert.lng,
+                    location: alert.location,
+                    detected_at: new Date().toISOString(),
+                  },
+                });
+
+              if (violationErr) {
+                console.error(`[NO-CARD-ALERT] Error creating violation for ${alert.plate}:`, violationErr.message);
+              } else {
+                console.log(`[NO-CARD-ALERT] ⚠️ ${alert.plate} em movimento a ${alert.speed} km/h sem cartão de tacógrafo!`);
+
+                // Send push notification to admins
+                try {
+                  const { data: adminRoles } = await supabaseAdmin
+                    .from("user_roles")
+                    .select("user_id")
+                    .in("role", ["admin", "manager"]);
+
+                  const adminIds = (adminRoles || []).map((r: any) => r.user_id);
+                  if (adminIds.length > 0) {
+                    await fetch(`${SUPABASE_URL}/functions/v1/send-fcm`, {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                        "apikey": SUPABASE_ANON_KEY,
+                      },
+                      body: JSON.stringify({
+                        user_ids: adminIds,
+                        title: "⚠️ Condução sem cartão",
+                        body: `${alert.plate} em movimento a ${alert.speed} km/h sem cartão de tacógrafo${alert.location ? ` (${alert.location})` : ""}`,
+                        data: { route: "/admin/compliance" },
+                      }),
+                    });
+                    console.log(`[NO-CARD-ALERT] Push notification sent to ${adminIds.length} admin(s)`);
+                  }
+                } catch (pushErr) {
+                  console.error(`[NO-CARD-ALERT] Push notification error:`, pushErr);
+                }
+              }
+            }
+          }
+
           // Upsert trailers
           if (trailerRecords.length > 0) {
             // Link trailer to vehicle IDs
