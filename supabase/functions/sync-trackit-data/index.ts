@@ -585,7 +585,7 @@ Deno.serve(async (req) => {
                   : 0;
                 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
                 const TWENTY_HOURS = 20 * 60 * 60 * 1000;
-                const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+                const FORTY_EIGHT_HOURS = 48 * 60 * 60 * 1000;
 
                 // CARD-STALE-REST: When ds1=0 (rest) and session >12h, Trackit's dc1 field
                 // is likely stale/cached. Treat as removal. If the card is truly inserted,
@@ -594,13 +594,14 @@ Deno.serve(async (req) => {
                   (rec as any).card_inserted_at = null;
                   console.log(`[CARD-STALE-REST] ${rec.plate}: ds1=0 (rest) and session ${Math.round(sessionAge / 3600000)}h old, treating dc1 as stale → forcing removal`);
                   cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber: newCardNumber, newCardNumber: null, existingCardInsertedAt: existing.card_inserted_at });
-                } else if (sessionAge >= SEVEN_DAYS) {
-                  // Ancient session (>7 days) — auto-clear without API call
-                  // Trackit events API only returns last 24h, so querying is pointless
+                } else if (sessionAge >= FORTY_EIGHT_HOURS) {
+                  // Session >48h — no driver legitimately keeps a card inserted this long (EU 561)
+                  // Force removal and register event in card_events for audit trail
                   (rec as any).card_inserted_at = null;
-                  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old, auto-clearing card_inserted_at`);
+                  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old (>48h), forcing removal with audit event`);
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber: newCardNumber, newCardNumber: null, existingCardInsertedAt: existing.card_inserted_at });
                 } else if (sessionAge >= TWENTY_HOURS) {
-                  // Session 20h-7d → recheck events 45/46 for re-insertion
+                  // Session 20h-48h → recheck events 45/46 for re-insertion
                   console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
                   cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
                 } else {
@@ -616,7 +617,7 @@ Deno.serve(async (req) => {
           }
 
           // Cap total event lookups to prevent timeouts (max ~25 API calls per sync)
-          const MAX_TOTAL_LOOKUPS = 10;
+          const MAX_TOTAL_LOOKUPS = 25;
           const totalBefore = cardEventLookups.length;
           
           if (totalBefore > MAX_TOTAL_LOOKUPS) {
