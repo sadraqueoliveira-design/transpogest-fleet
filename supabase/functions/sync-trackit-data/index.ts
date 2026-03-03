@@ -104,13 +104,24 @@ Deno.serve(async (req) => {
               .map((c: any) => [c.card_number, c.driver_name])
           );
 
-          // Pre-fetch employees for employee_number lookup by name
+          // Normalize card number: strip country prefix (e.g. "5B.", "PT,", "E.")
+          const normalizeCardNumber = (c: string) => c.replace(/^[A-Z]{1,3}[.,]\s*/, '');
+
+          // Pre-fetch employees for employee_number lookup by name AND card_number
           const { data: employeesData } = await supabaseAdmin
             .from("employees")
-            .select("full_name, employee_number");
+            .select("full_name, employee_number, card_number");
           const nameToEmployeeNumber = new Map(
             (employeesData || []).map((e: any) => [e.full_name?.toLowerCase()?.trim(), e.employee_number])
           );
+          // Build normalized card → employee lookup (for cards stored with country prefix)
+          const cardToEmployee = new Map<string, { full_name: string; employee_number: number }>();
+          for (const emp of (employeesData || [])) {
+            if (emp.card_number) {
+              const normCard = normalizeCardNumber(emp.card_number).replace(/[\s]/g, "").toUpperCase();
+              cardToEmployee.set(normCard, { full_name: emp.full_name, employee_number: emp.employee_number });
+            }
+          }
 
           const filteredVehicles = vehiclesData
             .filter((v: any) => v.mid || v.plate || v.info?.plate || v.registration || v.name);
@@ -607,7 +618,15 @@ Deno.serve(async (req) => {
                       if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { staleRestDriverName = name as string; break; }
                     }
                   }
-                  const staleRestEmpNum = staleRestDriverName ? (nameToEmployeeNumber.get(staleRestDriverName.toLowerCase().trim()) || null) : null;
+                  // Fallback: employees table (handles country prefix)
+                  let staleRestEmpNum: number | null = null;
+                  if (!staleRestDriverName) {
+                    const emp = cardToEmployee.get(staleRestNormalized);
+                    if (emp) { staleRestDriverName = emp.full_name; staleRestEmpNum = emp.employee_number; }
+                  }
+                  if (!staleRestEmpNum && staleRestDriverName) {
+                    staleRestEmpNum = nameToEmployeeNumber.get(staleRestDriverName.toLowerCase().trim()) || null;
+                  }
                   await supabaseAdmin.from("card_events").insert({
                     vehicle_id: staleRestVehicleDbId, plate: rec.plate, card_number: staleRestCardNum, driver_name: staleRestDriverName, employee_number: staleRestEmpNum, event_type: "removed", event_at: staleRestEventAt,
                   });
@@ -629,7 +648,15 @@ Deno.serve(async (req) => {
                       if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { staleClearDriverName = name as string; break; }
                     }
                   }
-                  const staleClearEmpNum = staleClearDriverName ? (nameToEmployeeNumber.get(staleClearDriverName.toLowerCase().trim()) || null) : null;
+                  // Fallback: employees table (handles country prefix)
+                  let staleClearEmpNum: number | null = null;
+                  if (!staleClearDriverName) {
+                    const emp = cardToEmployee.get(staleClearNormalized);
+                    if (emp) { staleClearDriverName = emp.full_name; staleClearEmpNum = emp.employee_number; }
+                  }
+                  if (!staleClearEmpNum && staleClearDriverName) {
+                    staleClearEmpNum = nameToEmployeeNumber.get(staleClearDriverName.toLowerCase().trim()) || null;
+                  }
                   await supabaseAdmin.from("card_events").insert({
                     vehicle_id: staleClearVehicleDbId, plate: rec.plate, card_number: staleClearCardNum, driver_name: staleClearDriverName, employee_number: staleClearEmpNum, event_type: "removed", event_at: staleClearEventAt,
                   });
@@ -766,13 +793,24 @@ Deno.serve(async (req) => {
                 const normalized = cardNum.replace(/[\s]/g, "").toUpperCase();
                 let dName = cardToDriverName.get(normalized) || null;
                 if (!dName) {
-                  // Try stripped matching
+                  // Try stripped matching on tachograph_cards
                   const stripped = normalized.replace(/^0+/, "").slice(0, -2);
                   for (const [cn, name] of cardToDriverName.entries()) {
                     if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { dName = name as string; break; }
                   }
                 }
-                const empNum = dName ? (nameToEmployeeNumber.get(dName.toLowerCase().trim()) || null) : null;
+                // Fallback: try employees table (handles country prefix like "5B.")
+                let empNum: number | null = null;
+                if (!dName) {
+                  const emp = cardToEmployee.get(normalized);
+                  if (emp) {
+                    dName = emp.full_name;
+                    empNum = emp.employee_number;
+                  }
+                }
+                if (!empNum && dName) {
+                  empNum = nameToEmployeeNumber.get(dName.toLowerCase().trim()) || null;
+                }
                 return { dName, empNum };
               };
 
