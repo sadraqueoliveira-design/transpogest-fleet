@@ -1,59 +1,43 @@
 
 
-# Diagnose: driverList still not resolving
+# Diagnóstico: driverList da Trackit excede o limite de 60s da Edge Function
 
-## Findings from logs
+## Resultados do Teste
 
-- **Vehicle sync works**: "321 veículos encontrados" at 11:52:59, card processing at 11:53:00
-- **No `[DRIVERLIST]` log entries at all** — not even the "resolved with 0 drivers" line (1180), meaning the function is killed before the Promise.race on line 1176 completes
-- The 321-vehicle upsert + card event processing likely consumes most of the ~60s wall clock, leaving no time for the 10s grace period
+- **11:59:10** — Função iniciou (boot 23ms)
+- **11:59:11** — `[COMPLIANCE] Auchan: fetching driverList...`
+- **12:00:06** — `[COMPLIANCE] Auchan: Signal timed out.` (55s depois)
+- **12:00:15** — Shutdown
 
-## Root cause
+O endpoint `/ws/driverList` da Trackit demora consistentemente **>55 segundos** para a conta Auchan. O limite máximo da Edge Function é ~60s, tornando impossível receber a resposta dentro de uma única execução.
 
-The Trackit `/ws/driverList` API consistently takes 30-50s to respond. Combined with vehicle processing (~50s for 321 vehicles with card events), the total exceeds the edge function's 60s limit. The "non-blocking" pattern doesn't help because there's simply no wall clock left.
+## Solução: Invocar por cliente individual
 
-## Solution: Dedicated edge function for driverList
+O problema é que a conta Auchan tem centenas de veículos, e a API Trackit demora demasiado a responder com todos. A solução é **invocar a função para um cliente específico por vez**, e usar o endpoint alternativo `/ws/driverListByPage` se disponível, ou aceitar que este endpoint específico é demasiado lento.
 
-Create a separate `sync-driver-compliance` edge function that:
-1. Fetches `/ws/driverList` with a 55s timeout (has the full 60s wall clock to itself)
-2. Matches drivers to vehicles by `current_mobile` = `trackit_id`
-3. Updates `tachograph_status.tacho_compliance` on matching vehicles
-4. Runs on its own cron (every 5 min, offset from vehicle sync)
+**Abordagem pragmática — usar o endpoint `vehiclesForUser` que já funciona:**
 
-Remove the driverList logic from `sync-trackit-data` entirely so it focuses only on vehicle telemetry.
+O `vehiclesForUser` já retorna dados de tacógrafo por veículo (campo `tac` no JSON). Em vez de depender do lento `driverList`, podemos extrair os dados de compliance diretamente da resposta `vehiclesForUser` que já é processada no `sync-trackit-data`.
 
-### Changes
+### Alterações
 
-**New file: `supabase/functions/sync-driver-compliance/index.ts`**
-- Fetch all active clients with Trackit credentials
-- For each client, call `/ws/driverList` (55s timeout)
-- Load existing vehicles with their `trackit_id`
-- Match `tacho_data.current_mobile` to `trackit_id`
-- Update `tachograph_status` JSON with compliance data
-- Log match counts
+**Editar `supabase/functions/sync-trackit-data/index.ts`:**
+- Durante o processamento de cada veículo, extrair campos de compliance do objeto `tac` (que já existe na resposta `vehiclesForUser`)
+- Guardar esses dados no `tachograph_status.tacho_compliance` durante o upsert normal
+- Campos como `ds1` (driver state), `tac.1.idc` (card number), velocidade, RPM já estão disponíveis
 
-**Edit: `supabase/functions/sync-trackit-data/index.ts`**
-- Remove `fetchWithRetry` helper
-- Remove `driverListPromise` (lines 64-82)
-- Remove Promise.race and driverList processing (lines 1175-1228)
-- Function now only handles vehicle telemetry + card events
+**Remover `supabase/functions/sync-driver-compliance/index.ts`:**
+- Já não é necessário — os dados são extraídos inline durante o sync de veículos
 
-**Edit: `supabase/config.toml`**
-- Add `[functions.sync-driver-compliance]` with `verify_jwt = false`
+### Alternativa se precisamos mesmo do driverList
 
-### Technical details
+Se os campos específicos do `driverList` (como `total_drive_journay`, `perc_drive_week`, limites de condução) não estão disponíveis no `vehiclesForUser`, então:
 
-The new function will be ~80 lines:
-```typescript
-// Pseudocode
-for each client with trackit credentials:
-  fetch /ws/driverList (55s timeout)
-  fetch vehicles from DB where client_id matches
-  for each driver with tacho_data.current_mobile:
-    find vehicle where trackit_id = current_mobile
-    merge tacho_compliance into tachograph_status
-    update vehicle
-```
+1. **Filtrar por cliente** — passar `client_id` como parâmetro e invocar a função separadamente para cada cliente
+2. **Aumentar para o máximo** — edge functions podem ter até 150s com `wall_clock_timeout` no config, mas o Lovable Cloud pode não suportar isto
+3. **Cache parcial** — se a API responder parcialmente (streaming), ler o que vier antes do timeout
 
-This guarantees the driverList has the full 60s wall clock independently, and vehicle sync completes faster without waiting for it.
+### Recomendação
+
+Verificar primeiro se o `vehiclesForUser` já traz dados suficientes de compliance por veículo. Se sim, eliminamos completamente a dependência do lento `driverList`. Preciso verificar o que o JSON do `vehiclesForUser` contém para cada veículo relativamente a dados de condução/descanso.
 
