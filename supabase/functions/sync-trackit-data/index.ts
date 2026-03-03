@@ -603,7 +603,8 @@ Deno.serve(async (req) => {
                 // the next sync with ds1 != 0 will re-detect it.
                 if (sessionAge >= TWELVE_HOURS && newDriverState1 === 0) {
                   (rec as any).card_inserted_at = null;
-                  const staleRestTachoTs = origVehicle?.data?.drs?.tmx || origVehicle?.data?.pos?.tmx || null;
+                  const origV = filteredVehicles[idx];
+                  const staleRestTachoTs = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
                   const staleRestEventAt = staleRestTachoTs ? new Date(staleRestTachoTs).toISOString() : new Date().toISOString();
                   console.log(`[CARD-STALE-REST] ${rec.plate}: ds1=0 (rest) and session ${Math.round(sessionAge / 3600000)}h old, treating dc1 as stale → forcing removal (event_at=${staleRestEventAt})`);
                   // Register removal directly — no API call needed (saves a lookup slot)
