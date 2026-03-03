@@ -423,7 +423,7 @@ Deno.serve(async (req) => {
           // Helper: fetch the most recent card insertion event timestamp for a vehicle
           // Fetch card insertion/removal events from Trackit API
           // Returns { insertionTime, wasRemoved } — wasRemoved=true if event 46 is more recent than event 45
-          const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean }> => {
+          const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }> => {
             try {
               const now = new Date();
               const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -447,19 +447,19 @@ Deno.serve(async (req) => {
               if (!eventsRes.ok) {
                 console.log(`[CARD-EVENTS] Failed to fetch events for mid=${vehicleMid}: HTTP ${eventsRes.status}`);
                 await eventsRes.text();
-                return { insertionTime: null, wasRemoved: false };
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
               const eventsJson = await eventsRes.json();
               if (eventsJson.error) {
                 console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message}`);
-                return { insertionTime: null, wasRemoved: false };
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
               const allEvents = eventsJson.data || [];
               if (allEvents.length === 0) {
                 console.log(`[CARD-EVENTS] No events 45/46 found for mid=${vehicleMid} in last 24h`);
-                return { insertionTime: null, wasRemoved: false };
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
               // Separate insertion (45) and removal (46) events
@@ -482,16 +482,16 @@ Deno.serve(async (req) => {
                 const insertionMs = new Date(mostRecentInsertion.timestamp).getTime();
                 if (removalMs > insertionMs) {
                   console.log(`[CARD-EVENTS] mid=${vehicleMid}: removal (${mostRecentRemoval.timestamp}) is more recent than insertion (${mostRecentInsertion.timestamp})`);
-                  return { insertionTime: null, wasRemoved: true };
+                  return { insertionTime: null, wasRemoved: true, removalTime: new Date(mostRecentRemoval.timestamp).toISOString() };
                 }
               } else if (mostRecentRemoval && !mostRecentInsertion) {
                 console.log(`[CARD-EVENTS] mid=${vehicleMid}: only removal found (${mostRecentRemoval.timestamp}), no insertion`);
-                return { insertionTime: null, wasRemoved: true };
+                return { insertionTime: null, wasRemoved: true, removalTime: new Date(mostRecentRemoval.timestamp).toISOString() };
               }
 
               // Process insertion events (original logic)
               if (insertions.length === 0) {
-                return { insertionTime: null, wasRemoved: false };
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
               const afterMs = afterTimestamp ? new Date(afterTimestamp).getTime() : 0;
@@ -502,14 +502,14 @@ Deno.serve(async (req) => {
               const mostRecent = activeEvents[0] || (afterTimestamp ? null : insertions[insertions.length - 1]);
               if (!mostRecent) {
                 console.log(`[CARD-EVENTS] No event 45 found for mid=${vehicleMid} after ${afterTimestamp}`);
-                return { insertionTime: null, wasRemoved: false };
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
               const eventTimestamp = mostRecent.timestamp;
               console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${insertions.length}${afterTimestamp ? `, filtered after=${afterTimestamp}` : ""}`);
-              return { insertionTime: eventTimestamp ? new Date(eventTimestamp).toISOString() : null, wasRemoved: false };
+              return { insertionTime: eventTimestamp ? new Date(eventTimestamp).toISOString() : null, wasRemoved: false, removalTime: null };
             } catch (err) {
               console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
-              return { insertionTime: null, wasRemoved: false };
+              return { insertionTime: null, wasRemoved: false, removalTime: null };
             }
           };
 
@@ -592,14 +592,49 @@ Deno.serve(async (req) => {
                 // the next sync with ds1 != 0 will re-detect it.
                 if (sessionAge >= TWELVE_HOURS && newDriverState1 === 0) {
                   (rec as any).card_inserted_at = null;
-                  console.log(`[CARD-STALE-REST] ${rec.plate}: ds1=0 (rest) and session ${Math.round(sessionAge / 3600000)}h old, treating dc1 as stale → forcing removal`);
-                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber: newCardNumber, newCardNumber: null, existingCardInsertedAt: existing.card_inserted_at });
+                  const staleRestTachoTs = origVehicle?.data?.drs?.tmx || origVehicle?.data?.pos?.tmx || null;
+                  const staleRestEventAt = staleRestTachoTs ? new Date(staleRestTachoTs).toISOString() : new Date().toISOString();
+                  console.log(`[CARD-STALE-REST] ${rec.plate}: ds1=0 (rest) and session ${Math.round(sessionAge / 3600000)}h old, treating dc1 as stale → forcing removal (event_at=${staleRestEventAt})`);
+                  // Register removal directly — no API call needed (saves a lookup slot)
+                  const staleRestExisting = existingMap.get(rec.trackit_id);
+                  const staleRestVehicleDbId = staleRestExisting?.id || null;
+                  const staleRestCardNum = newCardNumber;
+                  const staleRestNormalized = staleRestCardNum?.replace(/[\s]/g, "").toUpperCase() || "";
+                  let staleRestDriverName = cardToDriverName.get(staleRestNormalized) || null;
+                  if (!staleRestDriverName) {
+                    const stripped = staleRestNormalized.replace(/^0+/, "").slice(0, -2);
+                    for (const [cn, name] of cardToDriverName.entries()) {
+                      if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { staleRestDriverName = name as string; break; }
+                    }
+                  }
+                  const staleRestEmpNum = staleRestDriverName ? (nameToEmployeeNumber.get(staleRestDriverName.toLowerCase().trim()) || null) : null;
+                  await supabaseAdmin.from("card_events").insert({
+                    vehicle_id: staleRestVehicleDbId, plate: rec.plate, card_number: staleRestCardNum, driver_name: staleRestDriverName, employee_number: staleRestEmpNum, event_type: "removed", event_at: staleRestEventAt,
+                  });
+                  console.log(`[CARD-EVENT] ${rec.plate}: STALE-REST removal recorded (event_at=${staleRestEventAt})`);
                 } else if (sessionAge >= FORTY_EIGHT_HOURS) {
                   // Session >48h — no driver legitimately keeps a card inserted this long (EU 561)
-                  // Force removal and register event in card_events for audit trail
+                  // Force removal directly — API has no data this old, saves a lookup slot
                   (rec as any).card_inserted_at = null;
-                  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old (>48h), forcing removal with audit event`);
-                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber: newCardNumber, newCardNumber: null, existingCardInsertedAt: existing.card_inserted_at });
+                  const staleClearEventAt = new Date().toISOString();
+                  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old (>48h), forcing removal (event_at=${staleClearEventAt})`);
+                  const staleClearExisting = existingMap.get(rec.trackit_id);
+                  const staleClearVehicleDbId = staleClearExisting?.id || null;
+                  const staleClearCardNum = newCardNumber;
+                  const staleClearNormalized = staleClearCardNum?.replace(/[\s]/g, "").toUpperCase() || "";
+                  let staleClearDriverName = cardToDriverName.get(staleClearNormalized) || null;
+                  if (!staleClearDriverName) {
+                    const stripped = staleClearNormalized.replace(/^0+/, "").slice(0, -2);
+                    for (const [cn, name] of cardToDriverName.entries()) {
+                      if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { staleClearDriverName = name as string; break; }
+                    }
+                  }
+                  const staleClearEmpNum = staleClearDriverName ? (nameToEmployeeNumber.get(staleClearDriverName.toLowerCase().trim()) || null) : null;
+                  await supabaseAdmin.from("card_events").insert({
+                    vehicle_id: staleClearVehicleDbId, plate: rec.plate, card_number: staleClearCardNum, driver_name: staleClearDriverName, employee_number: staleClearEmpNum, event_type: "removed", event_at: staleClearEventAt,
+                  });
+                  console.log(`[CARD-EVENT] ${rec.plate}: STALE-CLEAR removal recorded (event_at=${staleClearEventAt})`);
+
                 } else if (sessionAge >= TWENTY_HOURS) {
                   // Session 20h-48h → recheck events 45/46 for re-insertion
                   console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
@@ -653,7 +688,7 @@ Deno.serve(async (req) => {
               batch.map(async (lookup) => {
                 const afterTs = (lookup.eventType === "swap" || lookup.eventType === "recheck") ? lookup.existingCardInsertedAt : null;
                 const cardEventsResult = await fetchCardEvents(lookup.vehicleMid, afterTs);
-                return { ...lookup, eventTime: cardEventsResult.insertionTime, wasRemoved: cardEventsResult.wasRemoved };
+                return { ...lookup, eventTime: cardEventsResult.insertionTime, wasRemoved: cardEventsResult.wasRemoved, removalTime: cardEventsResult.removalTime };
               })
             );
 
@@ -700,17 +735,23 @@ Deno.serve(async (req) => {
                 }
               }
 
-              // Priority: event timestamp > telemetry timestamp > current time
+              // Priority for insertions: event-45 timestamp > telemetry timestamp > current time
+              // Priority for removals: event-46 removalTime > telemetry timestamp > current time
               const insertionTime = result.eventTime
+                || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
+                || new Date().toISOString();
+              const removalEventAt = result.removalTime
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
 
               if (result.eventType !== "removed") {
                 (rec as any).card_inserted_at = insertionTime;
               }
-              const source = result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now");
-              const label = result.isBackfill ? "CARD-BACKFILL" : "CARD-INSERT";
-              console.log(`[${label}] ${rec.plate}: card_inserted_at=${insertionTime} (source=${source})`);
+              const source = result.eventType === "removed"
+                ? (result.removalTime ? "event-46" : (tachoTimestamp ? "tmx" : "now"))
+                : (result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now"));
+              const label = result.isBackfill ? "CARD-BACKFILL" : (result.eventType === "removed" ? "CARD-REMOVE" : "CARD-INSERT");
+              console.log(`[${label}] ${rec.plate}: ${result.eventType === "removed" ? `removal_at=${removalEventAt}` : `card_inserted_at=${insertionTime}`} (source=${source})`);
 
               // Skip card_events for backfill_only (no real state change detected)
               if (result.eventType === "backfill_only") continue;
@@ -778,11 +819,11 @@ Deno.serve(async (req) => {
                 }
               } else if (result.eventType === "removed") {
                 const info = resolveDriverInfo(result.oldCardNumber);
-                if (!(await eventExists(result.oldCardNumber, rec.plate, "removed", insertionTime))) {
+                if (!(await eventExists(result.oldCardNumber, rec.plate, "removed", removalEventAt))) {
                   await supabaseAdmin.from("card_events").insert({
-                    vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: insertionTime,
+                    vehicle_id: vehicleDbId, plate: rec.plate, card_number: result.oldCardNumber, driver_name: info.dName, employee_number: info.empNum, event_type: "removed", event_at: removalEventAt,
                   });
-                  console.log(`[CARD-EVENT] ${rec.plate}: removal recorded`);
+                  console.log(`[CARD-EVENT] ${rec.plate}: removal recorded (event_at=${removalEventAt}, source=${source})`);
                 }
               } else {
                 // inserted (or backfill)
