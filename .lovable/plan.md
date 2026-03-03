@@ -1,39 +1,46 @@
 
 
-# Fix: Recheck logic causes timeout — 168 vehicles trigger event lookups
+# Fix: Sync function times out — reverse geocoding is the real bottleneck
 
 ## Problem
 
-The recheck logic works correctly in code, but it's causing the edge function to **time out**. There are 168 vehicles with `card_present=true` and `card_inserted_at > 12h ago`, each triggering an additional API call to Trackit's `/ws/events` endpoint. At 5 concurrent calls per batch, that's 34 extra batches of slow HTTP requests, pushing the function well past its execution limit.
+The sync function times out before reaching the RECHECK-CAP logic. The real bottleneck is **reverse geocoding**, not the recheck lookups:
 
-Result: the function times out before completing, and 42-HX-75 never gets its `card_inserted_at` updated.
+- 321 Auchan vehicles are geocoded in batches of 5
+- Each batch has a **1.1 second delay** (line 262) to respect Nominatim rate limits
+- 64 batches × 1.1s = **~70 seconds of delays alone** (plus HTTP latency)
+- Edge functions have a ~60s timeout → function dies before reaching card recheck code
+
+The RECHECK-CAP log never appears because the function never gets that far.
 
 ## Solution
 
 Two changes in `supabase/functions/sync-trackit-data/index.ts`:
 
-### 1. Increase recheck threshold from 12h to 20h
-Most drivers do daily shifts. A 20h threshold (instead of 12h) will only trigger rechecks for genuinely overnight sessions while excluding vehicles that were just checked a few hours ago. This alone reduces the recheck count significantly.
+### 1. Skip geocoding for vehicles whose position hasn't changed
+Only reverse geocode vehicles where `last_lat`/`last_lng` actually changed from the existing record. Vehicles that haven't moved already have a `last_location_name` — no need to re-geocode them. This should reduce the geocoding count from ~321 to ~30-50 moving vehicles.
 
-### 2. Cap recheck lookups per sync cycle
-Add a maximum of **15 recheck lookups per client sync** to prevent timeouts. Prioritize the oldest sessions first (most likely to be stale). Vehicles that don't get rechecked in this cycle will be picked up in the next 5-minute sync.
+**How**: Move the geocoding AFTER `existingMap` is built (line 300). Compare `rec.last_lat`/`rec.last_lng` with `existing.last_lat`/`existing.last_lng` — if both match (within ~0.0005° / ~50m), reuse `existing.last_location_name` instead of calling Nominatim.
 
-### 3. Add a log before the batch loop showing the count
-Add `console.log` showing how many recheck lookups are queued vs capped, to help debug future issues.
+### 2. Reduce the inter-batch delay from 1100ms to 300ms
+Nominatim's policy is 1 req/sec per IP. Since we batch 5 concurrent requests, a 300ms delay between batches is still conservative (5 requests then pause). With only ~30-50 vehicles to geocode, this means ~3-5 seconds total instead of 70+.
 
-### Concrete changes
+### 3. Move existingVehicles query before geocoding
+Currently `existingVehicles` is fetched at line 295, AFTER geocoding. We need to move it before the geocoding loop so we can compare positions. Also add `last_lat, last_lng, last_location_name` to the select.
 
-In the recheck block (~line 519):
-- Change `TWELVE_HOURS` to `TWENTY_HOURS` (20 * 60 * 60 * 1000)
+## Concrete changes
 
-After the card event detection loop (~line 533):
-- Filter `cardEventLookups` to cap "recheck" entries at 15 per batch, sorted by oldest `existingCardInsertedAt` first
-- Log: `[RECHECK-CAP] X recheck lookups queued, capped to Y`
+1. **Move the existingVehicles query** (lines 294-301) to before the reverse geocoding block (before line 252)
+2. **Add columns** to the select: `last_lat, last_lng, last_location_name`
+3. **In the geocoding loop** (lines 254-264), add a position-change check:
+   - If existing vehicle has same lat/lng (within 0.001°), set `rec.last_location_name = existing.last_location_name` and skip geocoding
+4. **Reduce delay** from `1100` to `300`ms (line 262)
 
 ## Expected impact
 
-- Recheck count drops from ~168 to ~15 per cycle (capped)
-- Oldest sessions (like 42-HX-75) get priority and are corrected first
-- Function completes within timeout
-- All stale sessions are corrected within ~1 hour (across multiple 5-min sync cycles)
+- Geocoding calls drop from ~321 to ~30-50 per cycle (only vehicles that moved)
+- Total geocoding time: ~3-5 seconds instead of ~70+ seconds
+- Function completes well within timeout
+- RECHECK-CAP and card recheck logic finally executes
+- 42-HX-75 gets its `card_inserted_at` corrected
 
