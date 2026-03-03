@@ -249,19 +249,64 @@ Deno.serve(async (req) => {
             };
           });
 
-          // Batch reverse geocode
+          // Fetch existing vehicles BEFORE geocoding so we can skip unchanged positions
+          const trackitIds = vehicleRecords.map((r: any) => r.trackit_id);
+          const { data: existingVehicles } = await supabaseAdmin
+            .from("vehicles")
+            .select("id, trackit_id, fuel_level_percent, tachograph_status, card_inserted_at, last_lat, last_lng, last_location_name")
+            .in("trackit_id", trackitIds);
+
+          const existingMap = new Map(
+            (existingVehicles || []).map((v: any) => [v.trackit_id, v])
+          );
+
+          // Batch reverse geocode — skip vehicles whose position hasn't changed
           const BATCH = 5;
-          for (let i = 0; i < vehicleRecords.length; i += BATCH) {
-            const batch = vehicleRecords.slice(i, i + BATCH);
-            await Promise.all(batch.map(async (rec: any) => {
-              if (rec.last_lat != null && rec.last_lng != null) {
-                rec.last_location_name = await reverseGeocode(rec.last_lat, rec.last_lng);
-              }
-            }));
-            if (i + BATCH < vehicleRecords.length) {
-              await new Promise(r => setTimeout(r, 1100));
+          const POSITION_THRESHOLD = 0.005; // ~500m — accounts for GPS drift on parked vehicles
+          let geocodeSkipped = 0;
+          let geocodeFetched = 0;
+          const toGeocode: any[] = [];
+
+          for (const rec of vehicleRecords) {
+            if (rec.last_lat == null || rec.last_lng == null) continue;
+            const existing = existingMap.get(rec.trackit_id);
+            if (
+              existing &&
+              existing.last_lat != null &&
+              existing.last_lng != null &&
+              Math.abs(rec.last_lat - existing.last_lat) < POSITION_THRESHOLD &&
+              Math.abs(rec.last_lng - existing.last_lng) < POSITION_THRESHOLD
+            ) {
+              // Position unchanged — reuse existing location name (may be null)
+              rec.last_location_name = existing.last_location_name || null;
+              geocodeSkipped++;
+            } else {
+              toGeocode.push(rec);
             }
           }
+
+          // Further cap geocoding to max 50 to guarantee fast execution
+          const MAX_GEOCODE = 50;
+          if (toGeocode.length > MAX_GEOCODE) {
+            console.log(`[GEOCODE] Capping from ${toGeocode.length} to ${MAX_GEOCODE}`);
+            // Keep first MAX_GEOCODE, set rest to null location
+            toGeocode.splice(MAX_GEOCODE);
+          }
+
+          console.log(`[GEOCODE] ${toGeocode.length} vehicles to geocode, ${geocodeSkipped} skipped (unchanged position)`);
+
+          for (let i = 0; i < toGeocode.length; i += BATCH) {
+            const batch = toGeocode.slice(i, i + BATCH);
+            await Promise.all(batch.map(async (rec: any) => {
+              rec.last_location_name = await reverseGeocode(rec.last_lat, rec.last_lng);
+              geocodeFetched++;
+            }));
+            if (i + BATCH < toGeocode.length) {
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
+
+          console.log(`[GEOCODE] Completed: ${geocodeFetched} fetched`);
 
           // Auto-register unknown cards (deferred from sync map above)
           const unknownCards = new Set<string>();
@@ -289,17 +334,6 @@ Deno.serve(async (req) => {
               console.log(`[CARD-AUTOREGISTER] Registered ${unknownCards.size} unknown cards: ${Array.from(unknownCards).join(", ")}`);
             }
           }
-
-          // Detect refueling events & card insertion changes
-          const trackitIds = vehicleRecords.map((r: any) => r.trackit_id);
-          const { data: existingVehicles } = await supabaseAdmin
-            .from("vehicles")
-            .select("id, trackit_id, fuel_level_percent, tachograph_status, card_inserted_at")
-            .in("trackit_id", trackitIds);
-
-          const existingMap = new Map(
-            (existingVehicles || []).map((v: any) => [v.trackit_id, v])
-          );
 
           const refuelingEvents: Array<{
             vehicle_id: string;
@@ -532,30 +566,33 @@ Deno.serve(async (req) => {
             // If no card on both sides, card_inserted_at stays null
           }
 
-          // Cap recheck lookups to prevent timeouts
-          const MAX_RECHECKS = 15;
-          const recheckLookups = cardEventLookups.filter(l => l.eventType === "recheck");
-          if (recheckLookups.length > MAX_RECHECKS) {
-            // Sort by oldest session first, keep only MAX_RECHECKS
-            recheckLookups.sort((a, b) => {
+          // Cap total event lookups to prevent timeouts (max ~25 API calls per sync)
+          const MAX_TOTAL_LOOKUPS = 10;
+          const totalBefore = cardEventLookups.length;
+          
+          if (totalBefore > MAX_TOTAL_LOOKUPS) {
+            // Prioritize: inserted > swap > removed > backfill_only > recheck
+            const priority: Record<string, number> = { inserted: 0, swap: 1, removed: 2, backfill_only: 3, recheck: 4 };
+            cardEventLookups.sort((a, b) => {
+              const pa = priority[a.eventType] ?? 5;
+              const pb = priority[b.eventType] ?? 5;
+              if (pa !== pb) return pa - pb;
+              // Within same type, oldest sessions first (for rechecks)
               const aTime = a.existingCardInsertedAt ? new Date(a.existingCardInsertedAt).getTime() : 0;
               const bTime = b.existingCardInsertedAt ? new Date(b.existingCardInsertedAt).getTime() : 0;
               return aTime - bTime;
             });
-            const keepSet = new Set(recheckLookups.slice(0, MAX_RECHECKS));
-            // Remove excess rechecks — preserve their existing timestamp instead
-            for (let r = recheckLookups.length - 1; r >= 0; r--) {
-              const lookup = recheckLookups[r];
-              if (!keepSet.has(lookup)) {
+            // Restore existing timestamps for dropped lookups
+            const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
+            for (const lookup of dropped) {
+              if (lookup.eventType === "recheck" || lookup.eventType === "backfill_only") {
                 const rec = vehicleRecords[lookup.idx];
                 (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
-                const removeIdx = cardEventLookups.indexOf(lookup);
-                if (removeIdx !== -1) cardEventLookups.splice(removeIdx, 1);
               }
             }
-            console.log(`[RECHECK-CAP] ${recheckLookups.length} recheck lookups queued, capped to ${MAX_RECHECKS}`);
-          } else if (recheckLookups.length > 0) {
-            console.log(`[RECHECK-CAP] ${recheckLookups.length} recheck lookups queued (under cap)`);
+            console.log(`[LOOKUP-CAP] ${totalBefore} lookups queued, capped to ${MAX_TOTAL_LOOKUPS} (dropped ${dropped.length}: ${dropped.map(d => d.eventType).join(',')})`);
+          } else {
+            console.log(`[LOOKUP-CAP] ${totalBefore} lookups queued (under cap)`);
           }
 
           // Batch fetch event timestamps for vehicles that need it (max 5 concurrent)
