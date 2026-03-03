@@ -172,10 +172,20 @@ Deno.serve(async (req) => {
 
             // Determine if a valid card is inserted
             const EMPTY_CARD = "0000000000000000";
+            const cardSource = drs.dc1 ? "dc1" : tacSlot1 ? "tac.1.idc" : d.exd?.eco?.idc ? "exd.eco.idc" : drs.idc ? "drs.idc" : "none";
+            
+            // FIX: Don't trust tac.1.idc when ds1=0 (rest) — it's a cached/persistent value
+            const isCachedCardOnly = cardSource === "tac.1.idc" && driverState1 === 0;
+            
             const hasValidCard = driverCardNumber
               && driverCardNumber !== ""
               && driverCardNumber !== EMPTY_CARD
-              && driverCardNumber !== "0";
+              && driverCardNumber !== "0"
+              && !isCachedCardOnly;
+            
+            if (isCachedCardOnly && driverCardNumber) {
+              console.log(`[CARD-CACHED] ${plate}: ignoring tac.1.idc=${driverCardNumber} because ds1=0 (rest/cached)`);
+            }
 
             let resolvedDriverId: string | null = null;
             if (hasValidCard) {
@@ -345,13 +355,15 @@ Deno.serve(async (req) => {
           // Falls back to drs.tmx if events are unavailable.
 
           // Helper: fetch the most recent card insertion event timestamp for a vehicle
-          const fetchCardInsertionTime = async (vehicleMid: number, afterTimestamp?: string | null): Promise<string | null> => {
+          // Fetch card insertion/removal events from Trackit API
+          // Returns { insertionTime, wasRemoved } — wasRemoved=true if event 46 is more recent than event 45
+          const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean }> => {
             try {
-              // Query last 24h of events for this vehicle, event 45 = card inserted slot 1
               const now = new Date();
               const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
               const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
 
+              // Query both event 45 (Card Inserted Slot 1) and event 46 (Card Removed Slot 1)
               const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
                 method: "POST",
                 headers: {
@@ -360,7 +372,7 @@ Deno.serve(async (req) => {
                 },
                 body: JSON.stringify({
                   vehicles: [vehicleMid],
-                  events: [45],
+                  events: [45, 46],
                   dateBegin: fmt(yesterday),
                   dateEnd: fmt(now),
                 }),
@@ -368,42 +380,77 @@ Deno.serve(async (req) => {
 
               if (!eventsRes.ok) {
                 console.log(`[CARD-EVENTS] Failed to fetch events for mid=${vehicleMid}: HTTP ${eventsRes.status}`);
-                await eventsRes.text(); // consume body
-                return null;
+                await eventsRes.text();
+                return { insertionTime: null, wasRemoved: false };
               }
 
               const eventsJson = await eventsRes.json();
               if (eventsJson.error) {
                 console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message}`);
-                return null;
+                return { insertionTime: null, wasRemoved: false };
               }
 
-              const events = eventsJson.data || [];
-              if (events.length === 0) {
-                console.log(`[CARD-EVENTS] No event 45 found for mid=${vehicleMid} in last 24h`);
-                return null;
+              const allEvents = eventsJson.data || [];
+              if (allEvents.length === 0) {
+                console.log(`[CARD-EVENTS] No events 45/46 found for mid=${vehicleMid} in last 24h`);
+                return { insertionTime: null, wasRemoved: false };
               }
 
-              // Get the most recent event 45 (card inserted) — eventStatus=1 means active
-              // If afterTimestamp is provided (swap case), only consider events after that time
+              // Separate insertion (45) and removal (46) events
+              const insertions = allEvents.filter((e: any) => e.eventType === 45 || e.eventId === 45);
+              const removals = allEvents.filter((e: any) => e.eventType === 46 || e.eventId === 46);
+
+              console.log(`[CARD-EVENTS] mid=${vehicleMid}: ${insertions.length} insertions, ${removals.length} removals in last 24h`);
+
+              // Check if the most recent event overall is a removal
+              const mostRecentInsertion = insertions
+                .filter((e: any) => e.eventStatus === 1)
+                .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+              const mostRecentRemoval = removals
+                .filter((e: any) => e.eventStatus === 1)
+                .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
+              // If most recent removal is after most recent insertion → card was removed
+              if (mostRecentRemoval && mostRecentInsertion) {
+                const removalMs = new Date(mostRecentRemoval.timestamp).getTime();
+                const insertionMs = new Date(mostRecentInsertion.timestamp).getTime();
+                if (removalMs > insertionMs) {
+                  console.log(`[CARD-EVENTS] mid=${vehicleMid}: removal (${mostRecentRemoval.timestamp}) is more recent than insertion (${mostRecentInsertion.timestamp})`);
+                  return { insertionTime: null, wasRemoved: true };
+                }
+              } else if (mostRecentRemoval && !mostRecentInsertion) {
+                console.log(`[CARD-EVENTS] mid=${vehicleMid}: only removal found (${mostRecentRemoval.timestamp}), no insertion`);
+                return { insertionTime: null, wasRemoved: true };
+              }
+
+              // Process insertion events (original logic)
+              if (insertions.length === 0) {
+                return { insertionTime: null, wasRemoved: false };
+              }
+
               const afterMs = afterTimestamp ? new Date(afterTimestamp).getTime() : 0;
-              const activeEvents = events
+              const activeEvents = insertions
                 .filter((e: any) => e.eventStatus === 1 && (!afterTimestamp || new Date(e.timestamp).getTime() > afterMs))
                 .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-              // If filtering by afterTimestamp and no events found after it, return null (fall back to tmx)
-              const mostRecent = activeEvents[0] || (afterTimestamp ? null : events[events.length - 1]);
+              const mostRecent = activeEvents[0] || (afterTimestamp ? null : insertions[insertions.length - 1]);
               if (!mostRecent) {
                 console.log(`[CARD-EVENTS] No event 45 found for mid=${vehicleMid} after ${afterTimestamp}`);
-                return null;
+                return { insertionTime: null, wasRemoved: false };
               }
               const eventTimestamp = mostRecent.timestamp;
-              console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${events.length}${afterTimestamp ? `, filtered after=${afterTimestamp}` : ""}`);
-              return eventTimestamp ? new Date(eventTimestamp).toISOString() : null;
+              console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${insertions.length}${afterTimestamp ? `, filtered after=${afterTimestamp}` : ""}`);
+              return { insertionTime: eventTimestamp ? new Date(eventTimestamp).toISOString() : null, wasRemoved: false };
             } catch (err) {
               console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
-              return null;
+              return { insertionTime: null, wasRemoved: false };
             }
+          };
+
+          // Backward-compatible wrapper
+          const fetchCardInsertionTime = async (vehicleMid: number, afterTimestamp?: string | null): Promise<string | null> => {
+            const result = await fetchCardEvents(vehicleMid, afterTimestamp);
+            return result.insertionTime;
           };
 
           const EMPTY_CARD_VAL = "0000000000000000";
@@ -481,8 +528,8 @@ Deno.serve(async (req) => {
             const results = await Promise.all(
               batch.map(async (lookup) => {
                 const afterTs = lookup.eventType === "swap" ? lookup.existingCardInsertedAt : null;
-                const eventTime = await fetchCardInsertionTime(lookup.vehicleMid, afterTs);
-                return { ...lookup, eventTime };
+                const cardEventsResult = await fetchCardEvents(lookup.vehicleMid, afterTs);
+                return { ...lookup, eventTime: cardEventsResult.insertionTime, wasRemoved: cardEventsResult.wasRemoved };
               })
             );
 
@@ -491,6 +538,26 @@ Deno.serve(async (req) => {
               const origVehicle = filteredVehicles[result.idx];
               const origDrs = origVehicle?.data?.drs || {};
               const tachoTimestamp = origDrs.tmx || origVehicle?.data?.pos?.tmx || null;
+
+              // If event 46 (removal) is more recent than event 45, treat as removal
+              if (result.wasRemoved && result.eventType !== "removed") {
+                console.log(`[CARD-EVENT46] ${rec.plate}: event 46 detected removal — overriding card state`);
+                (rec as any).card_inserted_at = null;
+                // Override tachograph_status to reflect removal
+                if (rec.tachograph_status) {
+                  try {
+                    const tacho = JSON.parse(rec.tachograph_status);
+                    tacho.card_present = false;
+                    tacho.card_slot_1 = null;
+                    rec.tachograph_status = JSON.stringify(tacho);
+                  } catch { /* ignore */ }
+                }
+                rec.current_driver_id = null;
+                // Change event type to removed for card_events recording
+                result.eventType = "removed";
+                result.oldCardNumber = result.newCardNumber;
+                result.newCardNumber = null;
+              }
 
               // Priority: event timestamp > telemetry timestamp > current time
               const insertionTime = result.eventTime
@@ -610,6 +677,72 @@ Deno.serve(async (req) => {
           const { error: upsertError } = await supabaseAdmin
             .from("vehicles")
             .upsert(vehicleRecords, { onConflict: "trackit_id" });
+
+          // === STALE CARD SESSION CLEANUP ===
+          // If card_inserted_at > 48h AND ds1=0 AND speed=0, auto-clear as stale
+          const STALE_THRESHOLD_MS = 48 * 60 * 60 * 1000;
+          const nowMs = Date.now();
+          
+          for (const v of filteredVehicles) {
+            const d = v.data || {};
+            const drs = d.drs || {};
+            const ds1 = drs.ds1 ?? d.exd?.eco?.ds1 ?? null;
+            const plate = (v.info?.plate || v.plate || v.name || "").replace(/[\s]/g, "").toUpperCase();
+            const vRec = vehicleRecords.find((r: any) => r.plate === plate);
+            if (!vRec) continue;
+            
+            const existing = existingMap.get(vRec.trackit_id);
+            if (!existing?.card_inserted_at) continue;
+            
+            const insertedMs = new Date(existing.card_inserted_at).getTime();
+            const ageMs = nowMs - insertedMs;
+            const speed = vRec.last_speed ?? 0;
+            
+            if (ageMs > STALE_THRESHOLD_MS && ds1 === 0 && speed === 0) {
+              console.log(`[CARD-STALE] ${plate}: card_inserted_at=${existing.card_inserted_at} is ${Math.round(ageMs / 3600000)}h old, ds1=0, speed=0 → auto-clearing`);
+              
+              // Clear card_inserted_at on the vehicle
+              await supabaseAdmin
+                .from("vehicles")
+                .update({ card_inserted_at: null, current_driver_id: null })
+                .eq("id", existing.id);
+              
+              // Parse the old card number for the removal event
+              let staleCardNumber: string | null = null;
+              let stalDriverName: string | null = null;
+              let stalEmpNum: number | null = null;
+              if (existing.tachograph_status) {
+                try {
+                  const oldTacho = JSON.parse(existing.tachograph_status);
+                  staleCardNumber = oldTacho.card_slot_1 || oldTacho.dc1 || null;
+                  if (staleCardNumber) {
+                    const normalized = staleCardNumber.replace(/[\s]/g, "").toUpperCase();
+                    stalDriverName = cardToDriverName.get(normalized) as string || null;
+                    if (!stalDriverName) {
+                      const stripped = normalized.replace(/^0+/, "").slice(0, -2);
+                      for (const [cn, name] of cardToDriverName.entries()) {
+                        if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { stalDriverName = name as string; break; }
+                      }
+                    }
+                    stalEmpNum = stalDriverName ? (nameToEmployeeNumber.get(stalDriverName.toLowerCase().trim()) as number || null) : null;
+                  }
+                } catch { /* ignore */ }
+              }
+              
+              // Create auto-removal event
+              const removalTime = new Date().toISOString();
+              await supabaseAdmin.from("card_events").insert({
+                vehicle_id: existing.id,
+                plate,
+                card_number: staleCardNumber,
+                driver_name: stalDriverName,
+                employee_number: stalEmpNum,
+                event_type: "removed",
+                event_at: removalTime,
+              });
+              console.log(`[CARD-STALE] ${plate}: auto-removal event created (stale >48h)`);
+            }
+          }
 
           // === DRIVER ACTIVITY TRACKING (EU 561/2006) ===
           // Extract current tachograph state for each vehicle and upsert driver_activities
