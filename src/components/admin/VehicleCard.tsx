@@ -50,6 +50,17 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
   const adblue = (v as any).adblue_level_percent;
   const lowAdblue = adblue != null && adblue < 10;
 
+  // Detect driving without card
+  let cardPresent = true;
+  if (v.tachograph_status) {
+    try {
+      const tacho = JSON.parse(v.tachograph_status);
+      cardPresent = !!tacho.card_present;
+    } catch { /* ignore */ }
+  }
+  const drivingWithoutCard = isMoving && !cardPresent;
+  const showCriticalAlert = hasAlert || drivingWithoutCard;
+
   // Temperature data with set point deviation logic
   const td = v.temperature_data as any;
   const t1 = td?.t1 ?? td?.T1 ?? td?.tp1;
@@ -57,7 +68,6 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
   const hasTemp = typeof t1 === "number" || typeof t2 === "number";
   const sp1 = v.reefer_set_point_1;
   const sp2 = v.reefer_set_point_2;
-  // Highlight RED if deviation > 3°C from set point (or fallback to > 8°C if no set point)
   const t1Alert = typeof t1 === "number" && (sp1 != null ? Math.abs(t1 - sp1) > 3 : t1 > 8);
   const t2Alert = typeof t2 === "number" && (sp2 != null ? Math.abs(t2 - sp2) > 3 : t2 > 8);
   const highTemp = t1Alert || t2Alert;
@@ -81,10 +91,10 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
   const fuelColor = lowFuel ? "bg-destructive" : fuel != null && fuel < 30 ? "bg-warning" : "bg-success";
 
   return (
-    <Card className={`overflow-hidden transition-shadow hover:shadow-md cursor-pointer ${hasAlert ? "border-destructive/50 shadow-destructive/10" : ""}`} onClick={onClick}>
+    <Card className={`overflow-hidden transition-shadow hover:shadow-md cursor-pointer ${drivingWithoutCard ? "border-destructive border-2 shadow-destructive/20 shadow-lg" : showCriticalAlert ? "border-destructive/50 shadow-destructive/10" : ""}`} onClick={onClick}>
       <CardContent className="p-0">
         {/* Top status bar */}
-        <div className={`h-1 w-full ${isMoving ? "bg-success" : hasAlert ? "bg-destructive" : "bg-muted"}`} />
+        <div className={`h-1 w-full ${drivingWithoutCard ? "bg-destructive animate-pulse" : isMoving ? "bg-success" : hasAlert ? "bg-destructive" : "bg-muted"}`} />
 
         <div className="p-4 space-y-3">
           {/* Header */}
@@ -116,8 +126,21 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
                   <Activity className="h-3 w-3" />{v.rpm} rpm
                 </span>
               )}
+              {drivingWithoutCard && (
+                <Badge variant="destructive" className="text-[10px] h-5 animate-pulse">
+                  <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />Sem Cartão
+                </Badge>
+              )}
             </div>
           </div>
+
+          {/* Driving without card critical alert */}
+          {drivingWithoutCard && (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs bg-destructive/10 border border-destructive/30 text-destructive font-medium">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>⚠️ Em movimento sem cartão de tacógrafo!</span>
+            </div>
+          )}
 
           {/* Fuel bar */}
           <div className="space-y-1">
