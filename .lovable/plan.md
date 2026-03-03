@@ -1,16 +1,39 @@
 
+# Corrigir assinaturas e nome do gestor no PDF
 
-# Ajustar posicao da assinatura e carimbo no PDF
+## Problema 1: Nome do gestor aparece como "(Auto), Filipe..."
+O edge function `auto-approve-declaration` guarda o `manager_name` com sufixo " (Auto)" na base de dados (linha 191). Quando o PDF e gerado, a funcao `toSurnameFirst` trata "(Auto)" como apelido.
 
-## Alteracoes no ficheiro `src/lib/generateDeclarationPDF.ts`
+### Correcao
+- Em `buildPdfForDecl` (Declarations.tsx, linha 541): remover o sufixo " (Auto)" do `manager_name` antes de passar ao gerador de PDF
+- Em `generateAndUploadPDF` (Declarations.tsx, linha 285): mesma limpeza ao passar o nome do gestor
+- Manter o " (Auto)" na base de dados para rastreabilidade, mas limpar so na geracao do PDF
 
-### 1. Assinatura do gestor -- subir um pouco
-- Linha 291: alterar o offset vertical de `-2` para `-4` (sobe ~2mm)
-- Resultado: `sigLine20Y - sigH / 2 - 4`
+## Problema 2: Assinaturas nao aparecem no PDF
+A funcao `fetchImageAsDataUrl` usa `fetch()` direto para URLs do Supabase Storage. Isto pode falhar silenciosamente (CORS ou rede), retornando `undefined` -- o PDF fica sem assinaturas.
 
-### 2. Carimbo -- mover mais para a direita
-- Linha 384: reduzir o offset de `-8` para `-2`, ficando mais encostado ao lado direito
-- Resultado: `W - margin - stampW - 2 + randX`
+### Correcao
+- Alterar `fetchImageAsDataUrl` para detetar URLs do Supabase Storage e usar `supabase.storage.from(bucket).download(path)` em vez de `fetch()` direto
+- Isto garante autenticacao e contorna problemas de CORS
+- Manter o `fetch()` como fallback para URLs externas
 
-Duas alteracoes simples de posicionamento, ambas no mesmo ficheiro.
+## Ficheiros a alterar
 
+### `src/pages/admin/Declarations.tsx`
+1. Criar helper `cleanManagerName(name)` que remove " (Auto)" do final
+2. Usar nas linhas 541 e 285
+3. Alterar `fetchImageAsDataUrl` para extrair bucket e path de URLs Supabase e usar o SDK de Storage
+
+### Detalhes tecnicos
+
+```text
+cleanManagerName("Filipe Duarte Da Luz De Oliveira (Auto)")
+  -> "Filipe Duarte Da Luz De Oliveira"
+
+toSurnameFirst("Filipe Duarte Da Luz De Oliveira")
+  -> "Oliveira, Filipe Duarte Da Luz De"
+```
+
+Para assinaturas, detetar URLs no formato:
+`https://<project>.supabase.co/storage/v1/object/public/<bucket>/<path>`
+e extrair bucket + path para usar `supabase.storage.from(bucket).download(path)`.
