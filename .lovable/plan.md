@@ -1,49 +1,39 @@
 
 
-# Corrigir deteção de re-inserção do mesmo cartão
+# Fix: Recheck logic causes timeout — 168 vehicles trigger event lookups
 
-## Problema
+## Problem
 
-Quando o mesmo motorista remove e re-insere o mesmo cartão (ex: fim do turno e início do turno seguinte), o sistema não deteta a mudança porque a lógica atual (linhas 513-516) apenas compara o número do cartão:
+The recheck logic works correctly in code, but it's causing the edge function to **time out**. There are 168 vehicles with `card_present=true` and `card_inserted_at > 12h ago`, each triggering an additional API call to Trackit's `/ws/events` endpoint. At 5 concurrent calls per batch, that's 34 extra batches of slow HTTP requests, pushing the function well past its execution limit.
 
-```
-Se oldCardNumber === newCardNumber → preservar timestamp antigo
-```
+Result: the function times out before completing, and 42-HX-75 never gets its `card_inserted_at` updated.
 
-Resultado: o 42-HX-75 mostra "Cartão 02/03, 05:20" quando na realidade o Manuel retirou o cartão, e voltou a inserir hoje ~04:20h. Como o número do cartão não mudou entre syncs, o sistema nunca consulta os eventos 45/46.
+## Solution
 
-## Solução
+Two changes in `supabase/functions/sync-trackit-data/index.ts`:
 
-No ficheiro `supabase/functions/sync-trackit-data/index.ts`, alterar o bloco "same card still inserted" (linhas 513-516) para também consultar eventos quando o cartão está inserido há mais de **12 horas**:
+### 1. Increase recheck threshold from 12h to 20h
+Most drivers do daily shifts. A 20h threshold (instead of 12h) will only trigger rechecks for genuinely overnight sessions while excluding vehicles that were just checked a few hours ago. This alone reduces the recheck count significantly.
 
-### Lógica atual (linha 513-516):
-```
-Se mesmo cartão → preservar card_inserted_at existente
-```
+### 2. Cap recheck lookups per sync cycle
+Add a maximum of **15 recheck lookups per client sync** to prevent timeouts. Prioritize the oldest sessions first (most likely to be stale). Vehicles that don't get rechecked in this cycle will be picked up in the next 5-minute sync.
 
-### Lógica corrigida:
-```
-Se mesmo cartão E card_inserted_at < 12h atrás → preservar (sem custo de API)
-Se mesmo cartão E card_inserted_at >= 12h atrás → consultar eventos 45/46
-  → Se encontra evento 46 (removal) seguido de 45 (insertion) mais recente
-    que o card_inserted_at atual → atualizar timestamp e criar eventos
-  → Se não encontra nada novo → preservar timestamp existente
-```
+### 3. Add a log before the batch loop showing the count
+Add `console.log` showing how many recheck lookups are queued vs capped, to help debug future issues.
 
-Isto garante que:
-- Sessões curtas (< 12h) não fazem chamadas extra à API
-- Sessões longas (>= 12h, típico de remoção noturna + re-inserção matinal) verificam se houve remoção+re-inserção
-- O histórico de card_events regista corretamente a sessão real
+### Concrete changes
 
-### Alteração concreta
+In the recheck block (~line 519):
+- Change `TWELVE_HOURS` to `TWENTY_HOURS` (20 * 60 * 60 * 1000)
 
-1. No bloco `else if (newHasCard && existing.card_inserted_at)` com `oldCardNumber === newCardNumber`, verificar a idade do `card_inserted_at`
-2. Se >= 12h, adicionar a `cardEventLookups` com eventType `"recheck"` 
-3. No processamento dos resultados, tratar `"recheck"`: se encontra evento 45 mais recente que o `card_inserted_at` atual, atualizar o timestamp e criar eventos de remoção + inserção
+After the card event detection loop (~line 533):
+- Filter `cardEventLookups` to cap "recheck" entries at 15 per batch, sorted by oldest `existingCardInsertedAt` first
+- Log: `[RECHECK-CAP] X recheck lookups queued, capped to Y`
 
-## Impacto
+## Expected impact
 
-- 42-HX-75 passaria a mostrar a inserção real de hoje (~04:20h) em vez de 02/03
-- Todos os veículos onde o mesmo motorista re-insere o cartão diariamente serão corrigidos
-- Custo: chamadas extra à API Trackit apenas para veículos com sessões > 12h (tipicamente poucos por sync)
+- Recheck count drops from ~168 to ~15 per cycle (capped)
+- Oldest sessions (like 42-HX-75) get priority and are corrected first
+- Function completes within timeout
+- All stale sessions are corrected within ~1 hour (across multiple 5-min sync cycles)
 
