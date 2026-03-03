@@ -1,46 +1,48 @@
 
 
-# Fix: Sync function times out — reverse geocoding is the real bottleneck
+# Fix: Stale sessions waste recheck slots — clear ancient sessions directly
 
 ## Problem
 
-The sync function times out before reaching the RECHECK-CAP logic. The real bottleneck is **reverse geocoding**, not the recheck lookups:
+The LOOKUP-CAP logic exists but **98 vehicles** trigger CARD-RECHECK. Many have absurdly old sessions (18,167h, 24,840h, 9,556h) — these are inactive/abandoned vehicles. The Trackit events API only returns data from the last 24h, so querying events for a vehicle with a 2-year-old session is pointless. These waste the 10 lookup slots and push the function to timeout.
 
-- 321 Auchan vehicles are geocoded in batches of 5
-- Each batch has a **1.1 second delay** (line 262) to respect Nominatim rate limits
-- 64 batches × 1.1s = **~70 seconds of delays alone** (plus HTTP latency)
-- Edge functions have a ~60s timeout → function dies before reaching card recheck code
-
-The RECHECK-CAP log never appears because the function never gets that far.
+42-HX-75 (30h session) gets deprioritized behind these ancient sessions in the sort order.
 
 ## Solution
 
-Two changes in `supabase/functions/sync-trackit-data/index.ts`:
+In `supabase/functions/sync-trackit-data/index.ts`, add two changes:
 
-### 1. Skip geocoding for vehicles whose position hasn't changed
-Only reverse geocode vehicles where `last_lat`/`last_lng` actually changed from the existing record. Vehicles that haven't moved already have a `last_location_name` — no need to re-geocode them. This should reduce the geocoding count from ~321 to ~30-50 moving vehicles.
+### 1. Auto-clear sessions older than 7 days (168h) without API calls
+If `card_inserted_at` is older than 7 days and `ds1 === 0` (driver resting) or speed is 0, directly clear the session — no API lookup needed. These are definitively stale. This eliminates ~60+ of the 98 rechecks.
 
-**How**: Move the geocoding AFTER `existingMap` is built (line 300). Compare `rec.last_lat`/`rec.last_lng` with `existing.last_lat`/`existing.last_lng` — if both match (within ~0.0005° / ~50m), reuse `existing.last_location_name` instead of calling Nominatim.
+For sessions between 20h-168h (the interesting range), keep the existing recheck logic.
 
-### 2. Reduce the inter-batch delay from 1100ms to 300ms
-Nominatim's policy is 1 req/sec per IP. Since we batch 5 concurrent requests, a 300ms delay between batches is still conservative (5 requests then pause). With only ~30-50 vehicles to geocode, this means ~3-5 seconds total instead of 70+.
+### 2. Flip sort order: prioritize NEWEST sessions first for rechecks
+Currently oldest sessions get priority (line 582). But the oldest are the most stale/useless. **Newest sessions** (20-48h) are the ones likely to have real re-insertions (overnight card removal + morning re-insertion). Change sort to `bTime - aTime` for rechecks.
 
-### 3. Move existingVehicles query before geocoding
-Currently `existingVehicles` is fetched at line 295, AFTER geocoding. We need to move it before the geocoding loop so we can compare positions. Also add `last_lat, last_lng, last_location_name` to the select.
+### Concrete changes
 
-## Concrete changes
+In the detection loop (~line 548-556), before pushing to `cardEventLookups`:
+```typescript
+const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
+if (sessionAge >= SEVEN_DAYS) {
+  // Ancient session — auto-clear without API call
+  (rec as any).card_inserted_at = null;
+  console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge/3600000)}h old, auto-clearing`);
+  continue; // skip adding to cardEventLookups
+}
+```
 
-1. **Move the existingVehicles query** (lines 294-301) to before the reverse geocoding block (before line 252)
-2. **Add columns** to the select: `last_lat, last_lng, last_location_name`
-3. **In the geocoding loop** (lines 254-264), add a position-change check:
-   - If existing vehicle has same lat/lng (within 0.001°), set `rec.last_location_name = existing.last_location_name` and skip geocoding
-4. **Reduce delay** from `1100` to `300`ms (line 262)
+In the sort comparator (~line 582):
+```typescript
+return bTime - aTime; // Newest first (most likely to have real events)
+```
 
 ## Expected impact
 
-- Geocoding calls drop from ~321 to ~30-50 per cycle (only vehicles that moved)
-- Total geocoding time: ~3-5 seconds instead of ~70+ seconds
+- ~60+ ancient sessions auto-cleared instantly (no API cost)
+- ~30-38 rechecks remain, capped to 10 — now prioritizing 20-48h sessions
+- 42-HX-75 (30h) gets processed in the first batch
 - Function completes well within timeout
-- RECHECK-CAP and card recheck logic finally executes
-- 42-HX-75 gets its `card_inserted_at` corrected
+- Stale data cleaned from the fleet view
 
