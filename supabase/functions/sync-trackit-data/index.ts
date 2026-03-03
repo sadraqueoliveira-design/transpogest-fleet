@@ -43,6 +43,24 @@ Deno.serve(async (req) => {
       const credentials = btoa(`${client.trackit_username}:${client.trackit_password}`);
 
       try {
+        // Helper: fetch with retry for unreliable endpoints
+        const fetchWithRetry = async (url: string, opts: RequestInit, timeoutMs: number, retries = 1): Promise<Response | null> => {
+          for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+              const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
+              if (res.ok) return res;
+              console.warn(`[DRIVERLIST] ${client.name}: attempt ${attempt + 1}: HTTP ${res.status}`);
+            } catch (e: any) {
+              console.warn(`[DRIVERLIST] ${client.name}: attempt ${attempt + 1} failed: ${e.message || e}`);
+            }
+            if (attempt < retries) {
+              console.log(`[DRIVERLIST] ${client.name}: retrying in 2s...`);
+              await new Promise(r => setTimeout(r, 2000));
+            }
+          }
+          return null;
+        };
+
         // Fire both API calls in parallel for efficiency
         const [trackitResponse, driverListResponse] = await Promise.all([
           fetch("https://i.trackit.pt/ws/vehiclesForUser", {
@@ -52,13 +70,12 @@ Deno.serve(async (req) => {
               "Content-Type": "application/json",
             },
           }),
-          fetch("https://i.trackit.pt/ws/driverList", {
-            headers: { Authorization: `Basic ${credentials}` },
-            signal: AbortSignal.timeout(45000),
-          }).catch((e: any) => {
-            console.warn(`[DRIVERLIST] ${client.name}: fetch error: ${e.message || e}`);
-            return null;
-          }),
+          fetchWithRetry(
+            "https://i.trackit.pt/ws/driverList",
+            { headers: { Authorization: `Basic ${credentials}` } },
+            55000, // 55s timeout (up from 45s)
+            1      // 1 retry = 2 total attempts
+          ),
         ]);
 
         // Process driverList response (store for later use after upsert)
