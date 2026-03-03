@@ -48,5 +48,3 @@ verify_jwt = false
 [functions.create-driver]
 verify_jwt = false
 
-[functions.sync-driver-compliance]
-verify_jwt = false

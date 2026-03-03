@@ -231,12 +231,41 @@ Deno.serve(async (req) => {
               tachograph_status: (() => {
                 // Enrich tachograph_status with normalized card fields
                 const cardSource = drs.dc1 ? "dc1" : tacSlot1 ? "tac.1.idc" : d.exd?.eco?.idc ? "exd.eco.idc" : drs.idc ? "drs.idc" : "none";
-                const enriched = {
+                const enriched: any = {
                   ...drs,
                   card_slot_1: hasValidCard ? driverCardNumber : null,
                   card_present: !!hasValidCard,
                   card_source: cardSource,
                 };
+                // Extract compliance data from tac object (available in vehiclesForUser)
+                const tacData = d.tac || {};
+                const slot1 = tacData["1"] || {};
+                if (Object.keys(tacData).length > 0 || driverState1 != null) {
+                  enriched.tacho_compliance = {
+                    driver_state: driverState1,
+                    ds1_label: driverState1 === 0 ? "rest" : driverState1 === 1 ? "available" : driverState1 === 2 ? "work" : driverState1 === 3 ? "driving" : "unknown",
+                    // Slot 1 tachograph data
+                    slot1_card: slot1.idc || null,
+                    slot1_country: slot1.cnt || null,
+                    slot1_name: slot1.nm || null,
+                    slot1_surname: slot1.snm || null,
+                    // Driving/rest durations from tac object
+                    continuous_driving_time: tacData.cdt ?? drs.cdt ?? null,
+                    cumulative_break_time: tacData.cbt ?? drs.cbt ?? null,
+                    daily_driving_time: tacData.ddt ?? null,
+                    weekly_driving_time: tacData.wdt ?? null,
+                    // Activity durations
+                    current_activity_duration: tacData.cad ?? null,
+                    daily_rest_time: tacData.drt ?? null,
+                    weekly_rest_time: tacData.wrt ?? null,
+                    // Speed and position context
+                    speed: pos.gsp ?? null,
+                    rpm: rpmVal,
+                    // Timestamp
+                    tmx: drs.tmx || null,
+                    updated_at: new Date().toISOString(),
+                  };
+                }
                 return Object.keys(drs).length > 0 || hasValidCard ? JSON.stringify(enriched) : null;
               })(),
               adblue_level_percent: adblueLevel,
