@@ -552,11 +552,13 @@ Deno.serve(async (req) => {
             // Parse card presence and card number from new tachograph_status (enriched)
             let newCardPresent = false;
             let newCardNumber: string | null = null;
+            let newDriverState1: number | null = null;
             if (rec.tachograph_status) {
               try {
                 const newTacho = JSON.parse(rec.tachograph_status);
                 newCardPresent = !!newTacho.card_present;
                 newCardNumber = newTacho.card_slot_1 || null;
+                newDriverState1 = newTacho.ds1 ?? newTacho.tacho_compliance?.driver_state ?? null;
               } catch { /* ignore */ }
             }
             const newHasCard = newCardPresent;
@@ -581,9 +583,18 @@ Deno.serve(async (req) => {
                 const sessionAge = existing.card_inserted_at
                   ? Date.now() - new Date(existing.card_inserted_at).getTime()
                   : 0;
+                const TWELVE_HOURS = 12 * 60 * 60 * 1000;
                 const TWENTY_HOURS = 20 * 60 * 60 * 1000;
                 const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-                if (sessionAge >= SEVEN_DAYS) {
+
+                // CARD-STALE-REST: When ds1=0 (rest) and session >12h, Trackit's dc1 field
+                // is likely stale/cached. Treat as removal. If the card is truly inserted,
+                // the next sync with ds1 != 0 will re-detect it.
+                if (sessionAge >= TWELVE_HOURS && newDriverState1 === 0) {
+                  (rec as any).card_inserted_at = null;
+                  console.log(`[CARD-STALE-REST] ${rec.plate}: ds1=0 (rest) and session ${Math.round(sessionAge / 3600000)}h old, treating dc1 as stale → forcing removal`);
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber: newCardNumber, newCardNumber: null, existingCardInsertedAt: existing.card_inserted_at });
+                } else if (sessionAge >= SEVEN_DAYS) {
                   // Ancient session (>7 days) — auto-clear without API call
                   // Trackit events API only returns last 24h, so querying is pointless
                   (rec as any).card_inserted_at = null;
