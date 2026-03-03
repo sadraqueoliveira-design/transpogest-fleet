@@ -1,31 +1,27 @@
 
 
-# Alerta automático: Veículo em movimento sem cartão de tacógrafo
+# Fix: `origVehicle is not defined` crashes sync
 
-## Contexto
+## Root Cause
 
-O veículo 23-IS-70 está a circular a 84 km/h sem cartão de tacógrafo inserido (`card_present: false`, `ds1: 7`). Não existe motorista atribuído nem card_events para este veículo. Atualmente o sistema mostra "Sem Cartão" mas não gera nenhum alerta nem violação de compliance.
+The error `"Erro ao processar Auchan: origVehicle is not defined"` at line 606 crashes the entire client sync, resulting in **0 vehicles synchronized**.
 
-## Proposta
+At line 606, `origVehicle` is used to access `data.drs.tmx` for the stale-rest card removal timestamp. However, `origVehicle` is only defined later at line 724 inside the card event results loop. In the current scope (the card state change detection loop starting at line 537), the variable doesn't exist.
 
-### 1. Deteção automática no sync-trackit-data
+## Fix
 
-Adicionar lógica na edge function `sync-trackit-data` que, após atualizar cada veículo:
-- Se `speed > 5` e `card_present === false` → inserir uma `compliance_violation` do tipo `driving_without_card` com severidade `critical`
-- Incluir detalhes: matrícula, velocidade, localização GPS, timestamp
-- Usar deduplicação: só criar uma violação por veículo por período de 4 horas (evitar spam)
+**File**: `supabase/functions/sync-trackit-data/index.ts`
 
-### 2. Notificação push ao admin (opcional)
+At line 606, replace `origVehicle` with `filteredVehicles[idx]` — the same source used at line 724 to define `origVehicle`. This gives access to the raw Trackit API data for the vehicle.
 
-Chamar a edge function `send-fcm` para notificar admins quando a violação é criada, com mensagem tipo: "⚠️ 23-IS-70 em movimento sem cartão de tacógrafo (84 km/h)"
+```typescript
+// Line 606 — BEFORE:
+const staleRestTachoTs = origVehicle?.data?.drs?.tmx || origVehicle?.data?.pos?.tmx || null;
 
-### 3. Destaque visual no VehicleCard
+// Line 606 — AFTER:
+const origV = filteredVehicles[idx];
+const staleRestTachoTs = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+```
 
-No componente `VehicleCard`, quando o veículo está em movimento (`speed > 5`) e `card_present === false`:
-- Mudar o badge "Sem Cartão" para vermelho com ícone `AlertTriangle`
-- Adicionar borda vermelha ao card para chamar atenção imediata
-
-### Ficheiros a alterar
-- `supabase/functions/sync-trackit-data/index.ts` — adicionar deteção de condução sem cartão
-- `src/components/admin/VehicleCard.tsx` — destaque visual para alerta crítico
+Single line change, no other files affected. The sync should resume working immediately after deploy.
 
