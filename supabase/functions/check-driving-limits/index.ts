@@ -58,6 +58,35 @@ interface ComplianceStatus {
   violations: string[];
 }
 
+// Helper: calculate continuous driving from DB activities (fallback)
+function calcContinuousFromDB(activities: any[] | null, driverId: string, todayStart: Date, now: Date): number {
+  const drivingActivities = (activities || [])
+    .filter((a: any) => a.driver_id === driverId && a.activity_type === "driving")
+    .filter((a: any) => new Date(a.start_time) >= todayStart)
+    .sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+
+  const getRealDuration = (a: any) => {
+    if (!a.end_time) return Math.round((now.getTime() - new Date(a.start_time).getTime()) / 60000);
+    return a.duration_minutes || 0;
+  };
+
+  let continuous = 0;
+  for (const session of drivingActivities) {
+    const dur = getRealDuration(session);
+    continuous += dur;
+    const sessionStart = new Date(session.start_time);
+    const prevSession = drivingActivities.find((s: any) => {
+      const sEnd = new Date(s.end_time || s.start_time);
+      return sEnd < sessionStart;
+    });
+    if (prevSession) {
+      const gapMinutes = (sessionStart.getTime() - new Date(prevSession.end_time || prevSession.start_time).getTime()) / 60000;
+      if (gapMinutes >= 45) break;
+    }
+  }
+  return continuous;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -107,7 +136,7 @@ Deno.serve(async (req) => {
     // Get drivers with vehicles (active drivers)
     let driversQuery = supabaseAdmin
       .from("vehicles")
-      .select("current_driver_id")
+      .select("current_driver_id, trackit_id, client_id, tachograph_status")
       .not("current_driver_id", "is", null);
 
     if (targetDriverId) {
@@ -115,11 +144,17 @@ Deno.serve(async (req) => {
     }
 
     const { data: vehicleDrivers } = await driversQuery;
-    const activeDriverIds = [...new Set((vehicleDrivers || []).map((v: any) => v.current_driver_id).filter(Boolean))];
-    const driverIds = [...activeDriverIds];
+    const vehicleMap = new Map<string, any>();
+    const activeDriverIds: string[] = [];
+    for (const v of vehicleDrivers || []) {
+      if (v.current_driver_id) {
+        activeDriverIds.push(v.current_driver_id);
+        vehicleMap.set(v.current_driver_id, v);
+      }
+    }
+    const driverIds = [...new Set(activeDriverIds)];
 
     if (driverIds.length === 0) {
-      // If targeting a specific driver not currently assigned, still check them
       if (targetDriverId) {
         driverIds.push(targetDriverId);
       } else {
@@ -129,14 +164,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch all activities for these drivers in the biweekly window
+    // === Read cached Trackit driverList data from tachograph_status ===
+    // (Populated by sync-trackit-data cron every 5 min)
+
+    // === Fallback: fetch driver_activities from DB ===
     const { data: activities } = await supabaseAdmin
       .from("driver_activities")
       .select("driver_id, activity_type, start_time, end_time, duration_minutes")
       .in("driver_id", driverIds)
       .gte("start_time", biweekStart.toISOString());
 
-    // Also fetch the current open activity for each driver (any type)
     const { data: openActivities } = await supabaseAdmin
       .from("driver_activities")
       .select("driver_id, activity_type, start_time")
@@ -152,83 +189,127 @@ Deno.serve(async (req) => {
 
     const profileMap = new Map((profiles || []).map((p: any) => [p.id, p.full_name]));
 
+    // State map for Trackit current_state
+    const stateMap: Record<number, string> = { 0: "rest", 1: "available", 2: "work", 3: "driving" };
+
     // Process each driver
     const results: ComplianceStatus[] = [];
     const newViolations: Array<{ driver_id: string; violation_type: string; severity: string; details: any }> = [];
 
     for (const driverId of driverIds) {
-      const driverActivities = (activities || []).filter((a: any) => a.driver_id === driverId);
-      const drivingActivities = driverActivities.filter((a: any) => a.activity_type === "driving");
-
-      // Get current open activity for this driver
-      const currentOpen = (openActivities || []).find((a: any) => a.driver_id === driverId);
-      const currentActivity = currentOpen?.activity_type || null;
-      const currentActivityStart = currentOpen?.start_time || null;
-
-      // Helper: get real-time duration (for open sessions, compute from start_time to now)
-      const getRealDuration = (a: any) => {
-        if (!a.end_time) {
-          // Ongoing session — calculate from start_time to now
-          return Math.round((now.getTime() - new Date(a.start_time).getTime()) / 60000);
-        }
-        return a.duration_minutes || 0;
-      };
-
-      // Calculate continuous driving (latest unbroken driving session)
-      let continuousDriving = 0;
-      const todayDrivingSessions = drivingActivities
-        .filter((a: any) => new Date(a.start_time) >= todayStart)
-        .sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-
-      // Walk backwards from most recent to find continuous driving
-      for (const session of todayDrivingSessions) {
-        const dur = getRealDuration(session);
-        continuousDriving += dur;
-        // Check if there was a sufficient break before this session
-        const sessionStart = new Date(session.start_time);
-        const prevSession = todayDrivingSessions.find((s: any) => {
-          const sEnd = new Date(s.end_time || s.start_time);
-          return sEnd < sessionStart;
-        });
-        if (prevSession) {
-          const gapMinutes = (sessionStart.getTime() - new Date(prevSession.end_time || prevSession.start_time).getTime()) / 60000;
-          if (gapMinutes >= 45) break; // Valid break found, stop counting continuous
-        }
+      const vehicle = vehicleMap.get(driverId);
+      
+      // Parse cached tacho_compliance from tachograph_status
+      let cachedCompliance: any = null;
+      if (vehicle?.tachograph_status) {
+        try {
+          const status = typeof vehicle.tachograph_status === 'string' 
+            ? JSON.parse(vehicle.tachograph_status) 
+            : vehicle.tachograph_status;
+          if (status?.tacho_compliance && !status.tacho_compliance.is_old_data) {
+            // Check freshness: only use if updated within last 15 minutes
+            const updatedAt = status.tacho_compliance.updated_at ? new Date(status.tacho_compliance.updated_at).getTime() : 0;
+            const FIFTEEN_MIN = 15 * 60 * 1000;
+            if (now.getTime() - updatedAt < FIFTEEN_MIN) {
+              cachedCompliance = status.tacho_compliance;
+            }
+          }
+        } catch { /* parse error, use fallback */ }
       }
+      
+      const useTrackit = !!cachedCompliance;
 
-      // Daily driving total
-      const dailyDriving = drivingActivities
-        .filter((a: any) => new Date(a.start_time) >= todayStart)
-        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+      let continuousDriving = 0;
+      let dailyDriving = 0;
+      let dailyWork = 0;
+      let dailyAvailable = 0;
+      let weeklyDriving = 0;
+      let biweeklyDriving = 0;
+      let extensionsUsed = 0;
+      let currentActivity: string | null = null;
+      let currentActivityStart: string | null = null;
 
-      // Daily work total
-      const dailyWork = driverActivities
-        .filter((a: any) => a.activity_type === "work" && new Date(a.start_time) >= todayStart)
-        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+      if (useTrackit) {
+        // === PRIMARY: Cached Trackit tachograph data ===
+        const tc = cachedCompliance;
+        console.log(`[TRACKIT-CACHE] Driver ${driverId}: using cached compliance data`);
+        
+        // API docs say "minutes" but actual values are in seconds — convert
+        // Verify: if total_drive_journay > 1440 (24h in min), it's likely seconds
+        const isSeconds = tc.total_drive_journay > 1440 || tc.total_drive_week > 10080;
+        const divisor = isSeconds ? 60 : 1;
+        
+        dailyDriving = Math.round((tc.total_drive_journay ?? 0) / divisor);
+        weeklyDriving = Math.round((tc.total_drive_week ?? 0) / divisor);
+        biweeklyDriving = Math.round((tc.total_drive_fortnight ?? 0) / divisor);
+        extensionsUsed = tc.extended_driver_count ?? 0;
+        currentActivity = stateMap[tc.current_state] ?? null;
 
-      // Daily available total
-      const dailyAvailable = driverActivities
-        .filter((a: any) => a.activity_type === "available" && new Date(a.start_time) >= todayStart)
-        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+        // Daily work/available: estimate from DB (Trackit doesn't provide these)
+        const driverActivities = (activities || []).filter((a: any) => a.driver_id === driverId);
+        const getRealDuration = (a: any) => {
+          if (!a.end_time) return Math.round((now.getTime() - new Date(a.start_time).getTime()) / 60000);
+          return a.duration_minutes || 0;
+        };
+        dailyWork = driverActivities
+          .filter((a: any) => a.activity_type === "work" && new Date(a.start_time) >= todayStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+        dailyAvailable = driverActivities
+          .filter((a: any) => a.activity_type === "available" && new Date(a.start_time) >= todayStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
 
-      // Weekly driving total
-      const weeklyDriving = drivingActivities
-        .filter((a: any) => new Date(a.start_time) >= weekStart)
-        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+        // Continuous driving: fallback to DB (driverStatePerDriver is also slow)
+        continuousDriving = calcContinuousFromDB(activities, driverId, todayStart, now);
 
-      // Biweekly driving total
-      const biweeklyDriving = drivingActivities
-        .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+        // Activity start: from DB open activities
+        const currentOpen = (openActivities || []).find((a: any) => a.driver_id === driverId);
+        currentActivityStart = currentOpen?.start_time || null;
+      } else {
+        // === FALLBACK: Calculate from driver_activities in DB ===
 
-      // Count 10h extension days this week
-      const dailyTotals = new Map<string, number>();
-      drivingActivities
-        .filter((a: any) => new Date(a.start_time) >= weekStart)
-        .forEach((a: any) => {
-          const day = new Date(a.start_time).toISOString().split("T")[0];
-          dailyTotals.set(day, (dailyTotals.get(day) || 0) + getRealDuration(a));
-        });
-      const extensionsUsed = [...dailyTotals.values()].filter(v => v > DAILY_STANDARD).length;
+        const driverActivities = (activities || []).filter((a: any) => a.driver_id === driverId);
+        const drivingActivities = driverActivities.filter((a: any) => a.activity_type === "driving");
+
+        const currentOpen = (openActivities || []).find((a: any) => a.driver_id === driverId);
+        currentActivity = currentOpen?.activity_type || null;
+        currentActivityStart = currentOpen?.start_time || null;
+
+        const getRealDuration = (a: any) => {
+          if (!a.end_time) return Math.round((now.getTime() - new Date(a.start_time).getTime()) / 60000);
+          return a.duration_minutes || 0;
+        };
+
+        continuousDriving = calcContinuousFromDB(activities, driverId, todayStart, now);
+
+        dailyDriving = drivingActivities
+          .filter((a: any) => new Date(a.start_time) >= todayStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+        dailyWork = driverActivities
+          .filter((a: any) => a.activity_type === "work" && new Date(a.start_time) >= todayStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+        dailyAvailable = driverActivities
+          .filter((a: any) => a.activity_type === "available" && new Date(a.start_time) >= todayStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+        weeklyDriving = drivingActivities
+          .filter((a: any) => new Date(a.start_time) >= weekStart)
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+        biweeklyDriving = drivingActivities
+          .reduce((sum: number, a: any) => sum + getRealDuration(a), 0);
+
+        // Count 10h extension days this week
+        const dailyTotals = new Map<string, number>();
+        drivingActivities
+          .filter((a: any) => new Date(a.start_time) >= weekStart)
+          .forEach((a: any) => {
+            const day = new Date(a.start_time).toISOString().split("T")[0];
+            dailyTotals.set(day, (dailyTotals.get(day) || 0) + getRealDuration(a));
+          });
+        extensionsUsed = [...dailyTotals.values()].filter(v => v > DAILY_STANDARD).length;
+      }
 
       // Determine warnings and violations
       const warnings: string[] = [];
@@ -241,7 +322,7 @@ Deno.serve(async (req) => {
           driver_id: driverId,
           violation_type: "continuous_limit_exceeded",
           severity: "critical",
-          details: { minutes: continuousDriving, limit: CONTINUOUS_LIMIT },
+          details: { minutes: continuousDriving, limit: CONTINUOUS_LIMIT, source: useTrackit ? "trackit" : "db" },
         });
       } else if (continuousDriving >= CONTINUOUS_WARNING) {
         warnings.push("CONTINUOUS_LIMIT_NEAR");
@@ -253,7 +334,7 @@ Deno.serve(async (req) => {
           driver_id: driverId,
           violation_type: "daily_limit_exceeded",
           severity: "critical",
-          details: { minutes: dailyDriving, limit: dailyLimit },
+          details: { minutes: dailyDriving, limit: dailyLimit, source: useTrackit ? "trackit" : "db" },
         });
       } else if (dailyDriving >= DAILY_WARNING) {
         warnings.push("DAILY_LIMIT_NEAR");
@@ -265,7 +346,7 @@ Deno.serve(async (req) => {
           driver_id: driverId,
           violation_type: "weekly_limit_exceeded",
           severity: "critical",
-          details: { minutes: weeklyDriving, limit: WEEKLY_LIMIT },
+          details: { minutes: weeklyDriving, limit: WEEKLY_LIMIT, source: useTrackit ? "trackit" : "db" },
         });
       }
 
@@ -275,7 +356,7 @@ Deno.serve(async (req) => {
           driver_id: driverId,
           violation_type: "biweekly_limit_exceeded",
           severity: "critical",
-          details: { minutes: biweeklyDriving, limit: BIWEEKLY_LIMIT },
+          details: { minutes: biweeklyDriving, limit: BIWEEKLY_LIMIT, source: useTrackit ? "trackit" : "db" },
         });
       }
 
@@ -300,7 +381,8 @@ Deno.serve(async (req) => {
         biweekly_driving_limit: BIWEEKLY_LIMIT,
         warnings,
         violations,
-      });
+        data_source: useTrackit ? "trackit" : "database",
+      } as any);
     }
 
     // Log new violations and send push notifications (avoid duplicates within last hour)

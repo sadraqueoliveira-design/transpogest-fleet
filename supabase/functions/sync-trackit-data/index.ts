@@ -43,13 +43,37 @@ Deno.serve(async (req) => {
       const credentials = btoa(`${client.trackit_username}:${client.trackit_password}`);
 
       try {
-        const trackitResponse = await fetch("https://i.trackit.pt/ws/vehiclesForUser", {
-          method: "GET",
-          headers: {
-            Authorization: `Basic ${credentials}`,
-            "Content-Type": "application/json",
-          },
-        });
+        // Fire both API calls in parallel for efficiency
+        const [trackitResponse, driverListResponse] = await Promise.all([
+          fetch("https://i.trackit.pt/ws/vehiclesForUser", {
+            method: "GET",
+            headers: {
+              Authorization: `Basic ${credentials}`,
+              "Content-Type": "application/json",
+            },
+          }),
+          fetch("https://i.trackit.pt/ws/driverList", {
+            headers: { Authorization: `Basic ${credentials}` },
+            signal: AbortSignal.timeout(45000),
+          }).catch((e: any) => {
+            console.warn(`[DRIVERLIST] ${client.name}: fetch error: ${e.message || e}`);
+            return null;
+          }),
+        ]);
+
+        // Process driverList response (store for later use after upsert)
+        let driverListData: any[] = [];
+        if (driverListResponse && driverListResponse.ok) {
+          try {
+            const dlJson = await driverListResponse.json();
+            driverListData = dlJson.data || dlJson || [];
+            console.log(`[DRIVERLIST] ${client.name}: fetched ${driverListData.length} drivers`);
+          } catch (e) {
+            console.warn(`[DRIVERLIST] ${client.name}: JSON parse error`);
+          }
+        } else if (driverListResponse) {
+          console.warn(`[DRIVERLIST] ${client.name}: HTTP ${driverListResponse.status}`);
+        }
 
         if (!trackitResponse.ok) {
           results.push({ client: client.name, status: "error", message: `Falha na API Trackit [${trackitResponse.status}]` });
@@ -62,6 +86,7 @@ Deno.serve(async (req) => {
           results.push({ client: client.name, status: "error", message: trackitJson.message || "Erro Trackit" });
           continue;
         }
+
 
         const vehiclesData = Array.isArray(trackitJson)
           ? trackitJson
@@ -1128,6 +1153,47 @@ Deno.serve(async (req) => {
             results.push({ client: client.name, status: "error", message: upsertError.message });
           } else {
             results.push({ client: client.name, status: "success", count: vehiclesData.length });
+
+            // === Process driverList data (already fetched in parallel) ===
+            if (driverListData.length > 0) {
+              let matchCount = 0;
+              for (const drv of driverListData) {
+                const td = drv.tacho_data;
+                if (!td || !td.current_mobile || !td.is_auth) continue;
+                
+                const matchingVehicle = vehiclesData.find((v: any) => 
+                  parseInt(v.trackit_id) === td.current_mobile
+                );
+                if (!matchingVehicle) continue;
+
+                let existingStatus: any = {};
+                try { existingStatus = JSON.parse(matchingVehicle.tachograph_status || "{}"); } catch { /* ok */ }
+                
+                existingStatus.tacho_compliance = {
+                  total_drive_journay: td.total_drive_journay ?? 0,
+                  total_drive_week: td.total_drive_week ?? 0,
+                  total_drive_fortnight: td.total_drive_fortnight ?? 0,
+                  perc_drive_journay: td.perc_drive_journay ?? 0,
+                  perc_drive_week: td.perc_drive_week ?? 0,
+                  perc_drive_fortnight: td.perc_drive_fortnight ?? 0,
+                  extended_driver_count: td.extended_driver_count ?? 0,
+                  current_state: td.current_state ?? 0,
+                  is_old_data: td.is_old_data ?? false,
+                  last_daily_rest: td.last_daily_rest ?? null,
+                  last_weekly_rest: td.last_weekly_rest ?? null,
+                  driver_uid: drv.uid,
+                  dr_code: drv.dr_code,
+                  updated_at: new Date().toISOString(),
+                };
+
+                await supabaseAdmin
+                  .from("vehicles")
+                  .update({ tachograph_status: JSON.stringify(existingStatus) })
+                  .eq("trackit_id", String(td.current_mobile));
+                matchCount++;
+              }
+              console.log(`[DRIVERLIST-MATCH] ${client.name}: ${matchCount} vehicles updated with tacho compliance`);
+            }
           }
         } else {
           results.push({ client: client.name, status: "success", count: 0, message: "Nenhum veículo retornado" });
