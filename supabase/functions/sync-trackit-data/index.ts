@@ -455,38 +455,54 @@ Deno.serve(async (req) => {
           // Fetch card insertion/removal events from Trackit API
           // Returns { insertionTime, wasRemoved } — wasRemoved=true if event 46 is more recent than event 45
           const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null, customDateBegin?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }> => {
-            try {
-              const now = new Date();
-              const defaultBegin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-              const dateBegin = customDateBegin ? new Date(customDateBegin) : defaultBegin;
-              const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+            const MAX_RETRIES = 2;
+            const RETRY_DELAY_MS = 1500;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                if (attempt > 0) {
+                  console.log(`[CARD-EVENTS] Retry ${attempt}/${MAX_RETRIES} for mid=${vehicleMid}`);
+                  await new Promise(r => setTimeout(r, RETRY_DELAY_MS * attempt));
+                }
+                const now = new Date();
+                const defaultBegin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                const dateBegin = customDateBegin ? new Date(customDateBegin) : defaultBegin;
+                const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
 
-              // Query both event 45 (Card Inserted Slot 1) and event 46 (Card Removed Slot 1)
-              const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
-                method: "POST",
-                headers: {
-                  Authorization: `Basic ${credentials}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  vehicles: [vehicleMid],
-                  events: [45, 46],
-                  dateBegin: fmt(dateBegin),
-                  dateEnd: fmt(now),
-                }),
-              });
+                const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Basic ${credentials}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    vehicles: [vehicleMid],
+                    events: [45, 46],
+                    dateBegin: fmt(dateBegin),
+                    dateEnd: fmt(now),
+                  }),
+                });
 
-              if (!eventsRes.ok) {
-                console.log(`[CARD-EVENTS] Failed to fetch events for mid=${vehicleMid}: HTTP ${eventsRes.status}`);
-                await eventsRes.text();
-                return { insertionTime: null, wasRemoved: false, removalTime: null };
-              }
+                if (!eventsRes.ok) {
+                  console.log(`[CARD-EVENTS] Failed to fetch events for mid=${vehicleMid}: HTTP ${eventsRes.status}`);
+                  await eventsRes.text();
+                  if (attempt < MAX_RETRIES && eventsRes.status >= 500) continue;
+                  return { insertionTime: null, wasRemoved: false, removalTime: null };
+                }
 
-              const eventsJson = await eventsRes.json();
-              if (eventsJson.error) {
-                console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message || eventsJson.error || JSON.stringify(eventsJson)}`);
-                return { insertionTime: null, wasRemoved: false, removalTime: null };
-              }
+                let eventsJson: any;
+                try {
+                  eventsJson = await eventsRes.json();
+                } catch (parseErr) {
+                  console.log(`[CARD-EVENTS] JSON parse error for mid=${vehicleMid}: ${parseErr}`);
+                  if (attempt < MAX_RETRIES) continue;
+                  return { insertionTime: null, wasRemoved: false, removalTime: null };
+                }
+
+                if (eventsJson.error) {
+                  console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message || eventsJson.error || JSON.stringify(eventsJson)}`);
+                  if (attempt < MAX_RETRIES) continue;
+                  return { insertionTime: null, wasRemoved: false, removalTime: null };
+                }
 
               const allEvents = eventsJson.data || [];
               if (allEvents.length === 0) {
@@ -539,48 +555,78 @@ Deno.serve(async (req) => {
               const eventTimestamp = mostRecent.timestamp;
               console.log(`[CARD-EVENTS] Found event 45 for mid=${vehicleMid}: timestamp=${eventTimestamp}, total=${insertions.length}${afterTimestamp ? `, filtered after=${afterTimestamp}` : ""}`);
               return { insertionTime: eventTimestamp ? new Date(eventTimestamp).toISOString() : null, wasRemoved: false, removalTime: null };
-            } catch (err) {
-              console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
-              return { insertionTime: null, wasRemoved: false, removalTime: null };
+              } catch (err) {
+                console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid} (attempt ${attempt + 1}): ${err}`);
+                if (attempt < MAX_RETRIES) continue;
+                return { insertionTime: null, wasRemoved: false, removalTime: null };
+              }
             }
+            return { insertionTime: null, wasRemoved: false, removalTime: null };
           };
 
-          // Bulk fetch card events for multiple vehicles in a single API call
+          // Bulk fetch card events for multiple vehicles in a single API call (with 1 retry on 5xx)
           const fetchCardEventsBulk = async (vehicleMids: number[], dateBegin: Date): Promise<Map<number, { insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }>> => {
             const resultMap = new Map<number, { insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }>();
             if (vehicleMids.length === 0) return resultMap;
-            try {
-              const now = new Date();
-              const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
-              console.log(`[CARD-EVENTS-BULK] Fetching events 45/46 for ${vehicleMids.length} vehicles since ${fmt(dateBegin)}`);
 
-              const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
-                method: "POST",
-                headers: {
-                  Authorization: `Basic ${credentials}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  vehicles: vehicleMids,
-                  events: [45, 46],
-                  dateBegin: fmt(dateBegin),
-                  dateEnd: fmt(now),
-                }),
-              });
+            const BULK_MAX_RETRIES = 1;
+            const BULK_RETRY_DELAY_MS = 2000;
+            let allEvents: any[] = [];
 
-              if (!eventsRes.ok) {
-                console.log(`[CARD-EVENTS-BULK] Failed: HTTP ${eventsRes.status}`);
-                await eventsRes.text();
-                return resultMap;
+            for (let attempt = 0; attempt <= BULK_MAX_RETRIES; attempt++) {
+              try {
+                if (attempt > 0) {
+                  console.log(`[CARD-EVENTS-BULK] Retry ${attempt}/${BULK_MAX_RETRIES}`);
+                  await new Promise(r => setTimeout(r, BULK_RETRY_DELAY_MS));
+                }
+                const now = new Date();
+                const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+                if (attempt === 0) console.log(`[CARD-EVENTS-BULK] Fetching events 45/46 for ${vehicleMids.length} vehicles since ${fmt(dateBegin)}`);
+
+                const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Basic ${credentials}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    vehicles: vehicleMids,
+                    events: [45, 46],
+                    dateBegin: fmt(dateBegin),
+                    dateEnd: fmt(now),
+                  }),
+                });
+
+                if (!eventsRes.ok) {
+                  console.log(`[CARD-EVENTS-BULK] Failed: HTTP ${eventsRes.status}`);
+                  await eventsRes.text();
+                  if (attempt < BULK_MAX_RETRIES && eventsRes.status >= 500) continue;
+                  break;
+                }
+
+                let eventsJson: any;
+                try {
+                  eventsJson = await eventsRes.json();
+                } catch (parseErr) {
+                  console.log(`[CARD-EVENTS-BULK] JSON parse error: ${parseErr}`);
+                  if (attempt < BULK_MAX_RETRIES) continue;
+                  break;
+                }
+
+                if (eventsJson.error) {
+                  console.log(`[CARD-EVENTS-BULK] API error: ${eventsJson.message || JSON.stringify(eventsJson)}`);
+                  if (attempt < BULK_MAX_RETRIES) continue;
+                  break;
+                }
+
+                allEvents = eventsJson.data || [];
+                break; // success
+              } catch (err) {
+                console.log(`[CARD-EVENTS-BULK] Exception (attempt ${attempt + 1}): ${err}`);
+                if (attempt < BULK_MAX_RETRIES) continue;
               }
+            }
 
-              const eventsJson = await eventsRes.json();
-              if (eventsJson.error) {
-                console.log(`[CARD-EVENTS-BULK] API error: ${eventsJson.message || JSON.stringify(eventsJson)}`);
-                return resultMap;
-              }
-
-              const allEvents = eventsJson.data || [];
               console.log(`[CARD-EVENTS-BULK] Got ${allEvents.length} total events for ${vehicleMids.length} vehicles`);
 
               // Group events by vehicleId (normalize to number to avoid string/number mismatch)
@@ -595,10 +641,7 @@ Deno.serve(async (req) => {
               // Process per vehicle
               for (const mid of vehicleMids) {
                 const vEvents = byVehicle.get(mid) || [];
-                if (vEvents.length === 0) {
-                  // No events found for this vehicle
-                  continue;
-                }
+                if (vEvents.length === 0) continue;
 
                 const insertions = vEvents.filter((e: any) => e.eventType === 45 || e.eventId === 45);
                 const removals = vEvents.filter((e: any) => e.eventType === 46 || e.eventId === 46);
@@ -626,10 +669,6 @@ Deno.serve(async (req) => {
               }
 
               return resultMap;
-            } catch (err) {
-              console.log(`[CARD-EVENTS-BULK] Error: ${err}`);
-              return resultMap;
-            }
           };
 
           // Backward-compatible wrapper
