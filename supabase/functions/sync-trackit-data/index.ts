@@ -323,6 +323,21 @@ Deno.serve(async (req) => {
           }
           console.log(`[CARD-EVENTS-MAP] Pre-loaded last real insertions for ${lastRealInsertionMap.size} plates`);
 
+          // Pre-fetch last REAL removal event per plate from card_events
+          const { data: lastRemovals } = await supabaseAdmin
+            .from("card_events")
+            .select("plate, event_at")
+            .eq("event_type", "removed")
+            .in("plate", allPlates)
+            .order("event_at", { ascending: false });
+          const lastRealRemovalMap = new Map<string, string>();
+          for (const row of (lastRemovals || []) as Array<{ plate: string; event_at: string }>) {
+            if (!lastRealRemovalMap.has(row.plate)) {
+              lastRealRemovalMap.set(row.plate, row.event_at);
+            }
+          }
+          console.log(`[CARD-EVENTS-MAP] Pre-loaded last real removals for ${lastRealRemovalMap.size} plates`);
+
           // Batch reverse geocode — skip vehicles whose position hasn't changed
           const BATCH = 5;
           const POSITION_THRESHOLD = 0.005; // ~500m — accounts for GPS drift on parked vehicles
@@ -735,7 +750,18 @@ Deno.serve(async (req) => {
                 newDriverState1 = newTacho.ds1 ?? newTacho.tacho_compliance?.driver_state ?? null;
               } catch { /* ignore */ }
             }
-            const newHasCard = newCardPresent;
+            let newHasCard = newCardPresent;
+
+            // Override: if TMX says card_present but we have a real removal event
+            // that is more recent than the last real insertion, trust the removal
+            if (newHasCard) {
+              const lastRemoval = lastRealRemovalMap.get(rec.plate);
+              const lastInsertion = lastRealInsertionMap.get(rec.plate);
+              if (lastRemoval && (!lastInsertion || new Date(lastRemoval).getTime() > new Date(lastInsertion.timestamp).getTime())) {
+                console.log(`[CARD-OVERRIDE] ${rec.plate}: TMX reports card_present=true but last removal (${lastRemoval}) is newer than last insertion (${lastInsertion?.timestamp || 'none'}). Forcing newHasCard=false`);
+                newHasCard = false;
+              }
+            }
 
             if (!oldHasCard && newHasCard) {
               // Card just inserted → need event timestamp
