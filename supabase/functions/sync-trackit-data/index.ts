@@ -698,8 +698,10 @@ Deno.serve(async (req) => {
                 cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "swap", oldCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
               } else {
                 // Same card still inserted — check if session is stale
-                const sessionAge = existing.card_inserted_at
-                  ? Date.now() - new Date(existing.card_inserted_at).getTime()
+                const realInsertionForAge = lastRealInsertionMap.get(rec.plate);
+                const sessionAgeBase = realInsertionForAge?.timestamp || existing.card_inserted_at;
+                const sessionAge = sessionAgeBase
+                  ? Date.now() - new Date(sessionAgeBase).getTime()
                   : 0;
                 const TWELVE_HOURS = 12 * 60 * 60 * 1000;
                 const TWENTY_HOURS = 20 * 60 * 60 * 1000;
