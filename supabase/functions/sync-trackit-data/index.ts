@@ -303,6 +303,26 @@ Deno.serve(async (req) => {
             (existingVehicles || []).map((v: any) => [v.trackit_id, v])
           );
 
+          // Pre-fetch last REAL insertion event per plate from card_events
+          // This avoids relying on vehicles.card_inserted_at which may have been overwritten by tmx
+          const allPlates = vehicleRecords.map((r: any) => r.plate).filter(Boolean);
+          const { data: lastInsertions } = await supabaseAdmin
+            .from("card_events")
+            .select("plate, event_at")
+            .eq("event_type", "inserted")
+            .in("plate", allPlates)
+            .order("event_at", { ascending: false });
+          const lastRealInsertionMap = new Map<string, { date: string; timestamp: string }>();
+          for (const row of (lastInsertions || []) as Array<{ plate: string; event_at: string }>) {
+            if (!lastRealInsertionMap.has(row.plate)) {
+              lastRealInsertionMap.set(row.plate, {
+                date: new Date(row.event_at).toDateString(),
+                timestamp: row.event_at,
+              });
+            }
+          }
+          console.log(`[CARD-EVENTS-MAP] Pre-loaded last real insertions for ${lastRealInsertionMap.size} plates`);
+
           // Batch reverse geocode — skip vehicles whose position hasn't changed
           const BATCH = 5;
           const POSITION_THRESHOLD = 0.005; // ~500m — accounts for GPS drift on parked vehicles
@@ -752,19 +772,28 @@ Deno.serve(async (req) => {
 
                 } else if (sessionAge >= TWELVE_HOURS) {
                   // Session 12h-48h with ds1>0 → recheck events 45/46 for missed removal+reinsertion
-                  // Detect "exact recheck" cases: card_inserted_at from previous day but tmx from today
+                  // Detect "exact recheck" cases: LAST REAL card_event insertion from previous day but tmx from today
+                  // Use card_events table (not vehicles.card_inserted_at which may have been overwritten by tmx fallback)
                   const origVRecheck = filteredVehicles[idx];
                   const tmxRecheck = origVRecheck?.data?.drs?.tmx || origVRecheck?.data?.pos?.tmx || null;
-                  const insertedDate = existing.card_inserted_at ? new Date(existing.card_inserted_at).toDateString() : null;
                   const todayDate = new Date().toDateString();
                   const tmxDate = tmxRecheck ? new Date(tmxRecheck).toDateString() : null;
-                  const isStaleExact = insertedDate !== todayDate && tmxDate === todayDate;
+                  
+                  // Use the real last insertion from card_events, NOT from vehicles.card_inserted_at
+                  const lastRealInsertion = lastRealInsertionMap.get(rec.plate);
+                  const lastRealDate = lastRealInsertion?.date || null;
+                  const lastRealTimestamp = lastRealInsertion?.timestamp || existing.card_inserted_at;
+                  
+                  const isStaleExact = lastRealDate !== null 
+                    && lastRealDate !== todayDate 
+                    && tmxDate === todayDate;
                   if (isStaleExact) {
-                    console.log(`[CARD-RECHECK-QUEUED-EXACT] ${rec.plate}: card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago (${insertedDate}), tmx is today → priority exact recheck`);
+                    console.log(`[CARD-RECHECK-QUEUED-EXACT] ${rec.plate}: card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, last REAL event=${lastRealDate} (${lastRealTimestamp}), tmx is today → priority exact recheck`);
                   } else {
                     console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
                   }
-                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: isStaleExact ? "recheck_exact" : "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
+                  // Pass the REAL card_events timestamp as existingCardInsertedAt (not the tmx-overwritten one)
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: isStaleExact ? "recheck_exact" : "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: lastRealTimestamp });
                 } else {
                   // Recent session → preserve existing timestamp (no API cost)
                   (rec as any).card_inserted_at = existing.card_inserted_at;
