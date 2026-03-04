@@ -176,6 +176,7 @@ export type Database = {
           event_type: string
           id: string
           plate: string
+          source: string
           vehicle_id: string | null
         }
         Insert: {
@@ -187,6 +188,7 @@ export type Database = {
           event_type: string
           id?: string
           plate: string
+          source?: string
           vehicle_id?: string | null
         }
         Update: {
@@ -198,6 +200,7 @@ export type Database = {
           event_type?: string
           id?: string
           plate?: string
+          source?: string
           vehicle_id?: string | null
         }
         Relationships: [
