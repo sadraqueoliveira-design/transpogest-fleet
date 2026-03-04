@@ -1,27 +1,49 @@
 
 
-# Fix: `origVehicle is not defined` crashes sync
+# Fix: Veículos com cartão inserido mas sem horário de inserção
 
-## Root Cause
+## Problema
 
-The error `"Erro ao processar Auchan: origVehicle is not defined"` at line 606 crashes the entire client sync, resulting in **0 vehicles synchronized**.
+Após o fix do `origVehicle`, a sincronização funciona mas o horário de inserção do cartão desapareceu para muitos veículos. Causa: o cap de 25 lookups por ciclo está a descartar os backfills — 86 lookups foram pedidos, 61 foram descartados (a maioria `backfill_only`). A cada ciclo, estes veículos são enfileirados novamente e descartados outra vez, sem nunca resolver.
 
-At line 606, `origVehicle` is used to access `data.drs.tmx` for the stale-rest card removal timestamp. However, `origVehicle` is only defined later at line 724 inside the card event results loop. In the current scope (the card state change detection loop starting at line 537), the variable doesn't exist.
+Atualmente há **14 veículos ativos** (com `tmx` de hoje) que têm `card_present: true` mas `card_inserted_at = NULL`.
 
-## Fix
+## Solução
 
-**File**: `supabase/functions/sync-trackit-data/index.ts`
+### 1. Backfill sem API — usar timestamp da telemetria diretamente
 
-At line 606, replace `origVehicle` with `filteredVehicles[idx]` — the same source used at line 724 to define `origVehicle`. This gives access to the raw Trackit API data for the vehicle.
+Para `backfill_only`, não é necessário chamar a API de eventos (Event 45). O timestamp `tmx` da telemetria já existe nos dados do veículo e é suficiente. Em vez de enfileirar um lookup que vai ser descartado, definir `card_inserted_at` diretamente a partir de `tmx`.
+
+**Ficheiro**: `supabase/functions/sync-trackit-data/index.ts`
+
+Na secção de `backfill_only` (linha 675-678), em vez de adicionar ao `cardEventLookups`, aplicar o `tmx` diretamente:
 
 ```typescript
-// Line 606 — BEFORE:
-const staleRestTachoTs = origVehicle?.data?.drs?.tmx || origVehicle?.data?.pos?.tmx || null;
+// ANTES (linha 675-678):
+} else if (newHasCard && !existing.card_inserted_at) {
+  cardEventLookups.push({ idx, vehicleMid: ..., eventType: "backfill_only", ... });
+}
 
-// Line 606 — AFTER:
-const origV = filteredVehicles[idx];
-const staleRestTachoTs = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+// DEPOIS:
+} else if (newHasCard && !existing.card_inserted_at) {
+  // Backfill: use telemetry timestamp directly (no API call needed)
+  const origV = filteredVehicles[idx];
+  const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+  const backfillTs = tmx ? new Date(tmx).toISOString() : new Date().toISOString();
+  (rec as any).card_inserted_at = backfillTs;
+  console.log(`[CARD-BACKFILL] ${rec.plate}: card_inserted_at=${backfillTs} (source=tmx)`);
+}
 ```
 
-Single line change, no other files affected. The sync should resume working immediately after deploy.
+Isto elimina completamente os lookups `backfill_only` da fila, libertando slots para inserções reais e rechecks.
+
+### 2. Sem alterações ao UI
+
+O Dashboard (linha 918-925) já mostra o horário quando `card_inserted_at` está preenchido. Não precisa de alterações.
+
+### Impacto
+
+- Os 14+ veículos afetados recuperam o horário no próximo ciclo de sync (5 min)
+- Menos pressão no cap de lookups → rechecks também passam a correr mais vezes
+- Zero chamadas API adicionais
 
