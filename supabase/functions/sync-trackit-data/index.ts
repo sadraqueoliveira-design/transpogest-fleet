@@ -583,10 +583,11 @@ Deno.serve(async (req) => {
               const allEvents = eventsJson.data || [];
               console.log(`[CARD-EVENTS-BULK] Got ${allEvents.length} total events for ${vehicleMids.length} vehicles`);
 
-              // Group events by vehicleId
+              // Group events by vehicleId (normalize to number to avoid string/number mismatch)
               const byVehicle = new Map<number, any[]>();
               for (const e of allEvents) {
-                const vid = e.vehicleId;
+                const vid = Number(e.vehicleId);
+                if (isNaN(vid)) continue;
                 if (!byVehicle.has(vid)) byVehicle.set(vid, []);
                 byVehicle.get(vid)!.push(e);
               }
@@ -865,8 +866,15 @@ Deno.serve(async (req) => {
             const bulkDateBegin = new Date(earliestTs - 60 * 60 * 1000);
             const bulkMids = exactRechecks.map(l => l.vehicleMid);
 
+            // Diagnostic: log exact rechecks summary
+            console.log(`[CARD-RECHECK-BULK-START] ${exactRechecks.length} exact rechecks: ${exactRechecks.slice(0, 10).map(l => `${l.plate}(MID:${l.vehicleMid})`).join(', ')}${exactRechecks.length > 10 ? '...' : ''}`);
+
             // Single bulk API call for all exact rechecks
             const bulkResults = await fetchCardEventsBulk(bulkMids, bulkDateBegin);
+
+            // Diagnostic: count hits vs misses
+            const bulkHitCount = exactRechecks.filter(l => bulkResults.has(l.vehicleMid)).length;
+            console.log(`[CARD-RECHECK-BULK-RESULT] ${bulkHitCount}/${exactRechecks.length} vehicles returned events from bulk`);
 
             for (const lookup of exactRechecks) {
               const rec = vehicleRecords[lookup.idx];
@@ -923,9 +931,65 @@ Deno.serve(async (req) => {
                   (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
                 }
               } else {
-                // No events found — preserve existing timestamp, don't use tmx
-                console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: no event 45 found via bulk, preserving ${lookup.existingCardInsertedAt} (pending real event)`);
-                (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                // No events found via bulk — try individual fallback
+                console.log(`[CARD-RECHECK-BULK-MISS] ${rec.plate} (MID:${lookup.vehicleMid}): bulk returned nothing, trying individual fetchCardEvents...`);
+                const customBegin = lookup.existingCardInsertedAt
+                  ? new Date(new Date(lookup.existingCardInsertedAt).getTime() - 60 * 60 * 1000).toISOString()
+                  : null;
+                const individualResult = await fetchCardEvents(lookup.vehicleMid, lookup.existingCardInsertedAt, customBegin);
+                
+                if (individualResult.wasRemoved) {
+                  console.log(`[CARD-RECHECK-INDIVIDUAL-HIT] ${rec.plate}: individual detected removal at ${individualResult.removalTime}`);
+                  (rec as any).card_inserted_at = null;
+                  if (rec.tachograph_status) {
+                    try {
+                      const tacho = JSON.parse(rec.tachograph_status);
+                      tacho.card_present = false;
+                      tacho.card_slot_1 = null;
+                      rec.tachograph_status = JSON.stringify(tacho);
+                    } catch { /* ignore */ }
+                  }
+                  rec.current_driver_id = null;
+                } else if (individualResult.insertionTime) {
+                  const afterMs = lookup.existingCardInsertedAt ? new Date(lookup.existingCardInsertedAt).getTime() : 0;
+                  const eventMs = new Date(individualResult.insertionTime).getTime();
+                  if (eventMs > afterMs) {
+                    console.log(`[CARD-RECHECK-INDIVIDUAL-HIT] ${rec.plate}: exact re-insertion at ${individualResult.insertionTime} (was ${lookup.existingCardInsertedAt})`);
+                    (rec as any).card_inserted_at = individualResult.insertionTime;
+                    // Record removal + re-insertion events
+                    const existingV = existingMap.get(rec.trackit_id);
+                    const vehicleDbId = existingV?.id || null;
+                    const normalizedCard = lookup.newCardNumber?.replace(/[\s]/g, "").toUpperCase() || "";
+                    let driverName = cardToDriverName.get(normalizedCard) || null;
+                    if (!driverName) {
+                      const stripped = normalizedCard.replace(/^0+/, "").slice(0, -2);
+                      for (const [cn, name] of cardToDriverName.entries()) {
+                        if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { driverName = name as string; break; }
+                      }
+                    }
+                    let empNum: number | null = null;
+                    if (!driverName) {
+                      const emp = cardToEmployee.get(normalizedCard);
+                      if (emp) { driverName = emp.full_name; empNum = emp.employee_number; }
+                    }
+                    if (!empNum && driverName) {
+                      empNum = nameToEmployeeNumber.get(driverName.toLowerCase().trim()) || null;
+                    }
+                    const removalTime = lookup.existingCardInsertedAt || individualResult.insertionTime;
+                    await supabaseAdmin.from("card_events").insert([
+                      { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "removed", event_at: removalTime },
+                      { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "inserted", event_at: individualResult.insertionTime },
+                    ]);
+                    console.log(`[CARD-EVENT] ${rec.plate}: individual recheck re-insertion recorded (removed at ${removalTime}, inserted at ${individualResult.insertionTime})`);
+                  } else {
+                    console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: individual event at ${individualResult.insertionTime} not after ${lookup.existingCardInsertedAt}, preserving`);
+                    (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                  }
+                } else {
+                  // Neither bulk nor individual found events — preserve existing
+                  console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: no event 45 found via bulk or individual, preserving ${lookup.existingCardInsertedAt} (pending real event)`);
+                  (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                }
               }
             }
           }
