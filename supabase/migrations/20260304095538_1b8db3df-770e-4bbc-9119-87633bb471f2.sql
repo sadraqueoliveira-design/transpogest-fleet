@@ -1,0 +1,1 @@
+ALTER TABLE public.card_events ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'trackit_event';

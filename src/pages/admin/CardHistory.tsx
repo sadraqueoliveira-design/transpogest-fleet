@@ -19,6 +19,7 @@ interface CardEvent {
   event_type: string;
   event_at: string;
   created_at: string;
+  source: string;
 }
 
 interface CardSession {
@@ -28,6 +29,8 @@ interface CardSession {
   plate: string;
   inserted_at: string | null;
   removed_at: string | null;
+  source_inserted: string;
+  source_removed: string;
 }
 
 interface OverlapInfo {
@@ -83,6 +86,8 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
       plate: ins.plate,
       inserted_at: ins.event_at,
       removed_at: removal?.event_at ?? null,
+      source_inserted: ins.source || "trackit_event",
+      source_removed: removal?.source || "trackit_event",
     });
   }
 
@@ -95,6 +100,8 @@ const pairEvents = (events: CardEvent[]): CardSession[] => {
         plate: rem.plate,
         inserted_at: null,
         removed_at: rem.event_at,
+        source_inserted: "trackit_event",
+        source_removed: rem.source || "trackit_event",
       });
     }
   }
@@ -257,7 +264,9 @@ export default function CardHistory() {
       "N. Funcionário": s.employee_number ?? "—",
       Matrícula: s.plate,
       "Hora Inserção": s.inserted_at ? new Date(s.inserted_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
+      "Fonte Inserção": s.source_inserted === "tmx_fallback" ? "Estimado (TMX)" : "Exato",
       "Hora Retirada": s.removed_at ? new Date(s.removed_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon" }) : "—",
+      "Fonte Retirada": s.removed_at ? (s.source_removed === "tmx_fallback" ? "Estimado (TMX)" : "Exato") : "—",
       Duração: s.inserted_at && s.removed_at ? formatDuration(s.inserted_at, s.removed_at) : s.inserted_at ? "Em curso" : "—",
     }));
   }, [filtered]);
@@ -371,9 +380,15 @@ export default function CardHistory() {
                     <TableCell className="font-mono">{s.plate}</TableCell>
                     <TableCell className="font-mono text-sm">
                       {s.inserted_at ? formatLisbon(s.inserted_at) : "—"}
+                      {s.source_inserted === "tmx_fallback" && s.inserted_at && (
+                        <Badge className="ml-1.5 bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">Estimado</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="font-mono text-sm">
                       {s.removed_at ? formatLisbon(s.removed_at) : "—"}
+                      {s.source_removed === "tmx_fallback" && s.removed_at && (
+                        <Badge className="ml-1.5 bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px] px-1.5 py-0">Estimado</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {s.inserted_at && s.removed_at ? (
