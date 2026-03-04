@@ -1292,9 +1292,13 @@ Deno.serve(async (req) => {
                 }
               }
 
-              // Priority for insertions: event-45 timestamp > telemetry timestamp > current time
+              // Priority for insertions: event-45 timestamp > real DB insertion > telemetry timestamp > current time
               // Priority for removals: event-46 removalTime > telemetry timestamp > current time
+              const realIns = lastRealInsertionMap.get(rec.plate);
+              const realRem = lastRealRemovalMap.get(rec.plate);
+              const realInsIsValid = realIns && (!realRem || new Date(realIns.timestamp).getTime() > new Date(realRem).getTime());
               const insertionTime = result.eventTime
+                || (realInsIsValid ? realIns.timestamp : null)
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
               const removalEventAt = result.removalTime
