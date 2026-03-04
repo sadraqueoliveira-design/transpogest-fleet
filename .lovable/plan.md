@@ -1,26 +1,25 @@
 
 
-# Fix: "Cannot access 'resolveDriverInfo' before initialization"
+# Add card_events removal override for stale TMX telemetry
 
 ## Problem
 
-The edge function logs show a fatal error:
-```
-Erro ao processar Auchan: Cannot access 'resolveDriverInfo' before initialization
-```
-
-The function `resolveDriverInfo` is defined at **line 1268** (inside the card_events processing loop) but is called at **line 1226** (inside the TMX fallback block that runs earlier). This is a JavaScript temporal dead zone error -- the `const` declaration exists but hasn't been reached yet when the TMX fallback code tries to call it.
-
-This error crashes the entire sync for the Auchan client, meaning **no vehicles get updated** and the backfill/stale-clear fixes from the previous changes are never reached.
-
-## Root Cause
-
-The TMX fallback dedup code (added in a previous fix at lines 1224-1230) calls `resolveDriverInfo()` to get driver name/employee number for card_events insertion. But `resolveDriverInfo` is a `const` defined 40 lines later at line 1268.
+When a driver physically removes their card, the system correctly logs a `removed` event in `card_events`. However, the Trackit TMX telemetry can continue reporting `card_present=true` for an extended period (cached/stale data from the device). Since the sync logic trusts TMX over event history, the vehicle dashboard keeps showing the card as inserted even after removal was detected.
 
 ## Solution
 
-Move the `resolveDriverInfo` helper function **before** it is first used. Specifically, move the function definition (lines 1268-1290 approximately) to just before the loop that processes `batchResults` (around line 1180), so it's available to both the TMX fallback block (line 1226) and the normal card_events block (lines 1310+).
+Add two changes:
+
+### 1. Pre-fetch last removal events (alongside insertions)
+At lines 306-324, alongside the existing `lastRealInsertionMap`, also query the most recent `removed` event per plate from `card_events` into a new `lastRealRemovalMap`.
+
+### 2. Override TMX card_present when a recent removal exists
+At line 738 (after parsing `newHasCard`), add a check: if `newHasCard=true` but `lastRealRemovalMap` has a removal for this plate that is **more recent** than the last insertion in `lastRealInsertionMap`, then override `newHasCard` to `false`. This forces the existing removal logic at line 743-748 to fire, clearing `card_inserted_at`.
+
+This ensures that once a real removal event is captured (from Trackit event API, ID 46), the system respects it even if the TMX telemetry lags behind. On the next sync where TMX finally reports `card_present=false`, nothing changes (already cleared). If a new insertion happens after the removal, the insertion timestamp will be newer than the removal, so the override won't fire.
 
 ### File to change
-- `supabase/functions/sync-trackit-data/index.ts` -- move `resolveDriverInfo` definition before its first usage
+- `supabase/functions/sync-trackit-data/index.ts`
+  - Add `lastRealRemovalMap` query near line 310
+  - Add override logic after line 738
 
