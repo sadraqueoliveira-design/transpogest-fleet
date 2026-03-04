@@ -434,10 +434,11 @@ Deno.serve(async (req) => {
           // Helper: fetch the most recent card insertion event timestamp for a vehicle
           // Fetch card insertion/removal events from Trackit API
           // Returns { insertionTime, wasRemoved } — wasRemoved=true if event 46 is more recent than event 45
-          const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }> => {
+          const fetchCardEvents = async (vehicleMid: number, afterTimestamp?: string | null, customDateBegin?: string | null): Promise<{ insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }> => {
             try {
               const now = new Date();
-              const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              const defaultBegin = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+              const dateBegin = customDateBegin ? new Date(customDateBegin) : defaultBegin;
               const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
 
               // Query both event 45 (Card Inserted Slot 1) and event 46 (Card Removed Slot 1)
@@ -450,7 +451,7 @@ Deno.serve(async (req) => {
                 body: JSON.stringify({
                   vehicles: [vehicleMid],
                   events: [45, 46],
-                  dateBegin: fmt(yesterday),
+                  dateBegin: fmt(dateBegin),
                   dateEnd: fmt(now),
                 }),
               });
@@ -469,7 +470,7 @@ Deno.serve(async (req) => {
 
               const allEvents = eventsJson.data || [];
               if (allEvents.length === 0) {
-                console.log(`[CARD-EVENTS] No events 45/46 found for mid=${vehicleMid} in last 24h`);
+                console.log(`[CARD-EVENTS] No events 45/46 found for mid=${vehicleMid} since ${fmt(dateBegin)}`);
                 return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
@@ -477,7 +478,7 @@ Deno.serve(async (req) => {
               const insertions = allEvents.filter((e: any) => e.eventType === 45 || e.eventId === 45);
               const removals = allEvents.filter((e: any) => e.eventType === 46 || e.eventId === 46);
 
-              console.log(`[CARD-EVENTS] mid=${vehicleMid}: ${insertions.length} insertions, ${removals.length} removals in last 24h`);
+              console.log(`[CARD-EVENTS] mid=${vehicleMid}: ${insertions.length} insertions, ${removals.length} removals since ${fmt(dateBegin)}`);
 
               // Check if the most recent event overall is a removal
               const mostRecentInsertion = insertions
@@ -521,6 +522,92 @@ Deno.serve(async (req) => {
             } catch (err) {
               console.log(`[CARD-EVENTS] Error fetching events for mid=${vehicleMid}: ${err}`);
               return { insertionTime: null, wasRemoved: false, removalTime: null };
+            }
+          };
+
+          // Bulk fetch card events for multiple vehicles in a single API call
+          const fetchCardEventsBulk = async (vehicleMids: number[], dateBegin: Date): Promise<Map<number, { insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }>> => {
+            const resultMap = new Map<number, { insertionTime: string | null; wasRemoved: boolean; removalTime: string | null }>();
+            if (vehicleMids.length === 0) return resultMap;
+            try {
+              const now = new Date();
+              const fmt = (d: Date) => d.toISOString().replace("T", " ").substring(0, 19);
+              console.log(`[CARD-EVENTS-BULK] Fetching events 45/46 for ${vehicleMids.length} vehicles since ${fmt(dateBegin)}`);
+
+              const eventsRes = await fetch("https://i.trackit.pt/ws/events", {
+                method: "POST",
+                headers: {
+                  Authorization: `Basic ${credentials}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  vehicles: vehicleMids,
+                  events: [45, 46],
+                  dateBegin: fmt(dateBegin),
+                  dateEnd: fmt(now),
+                }),
+              });
+
+              if (!eventsRes.ok) {
+                console.log(`[CARD-EVENTS-BULK] Failed: HTTP ${eventsRes.status}`);
+                await eventsRes.text();
+                return resultMap;
+              }
+
+              const eventsJson = await eventsRes.json();
+              if (eventsJson.error) {
+                console.log(`[CARD-EVENTS-BULK] API error: ${eventsJson.message || JSON.stringify(eventsJson)}`);
+                return resultMap;
+              }
+
+              const allEvents = eventsJson.data || [];
+              console.log(`[CARD-EVENTS-BULK] Got ${allEvents.length} total events for ${vehicleMids.length} vehicles`);
+
+              // Group events by vehicleId
+              const byVehicle = new Map<number, any[]>();
+              for (const e of allEvents) {
+                const vid = e.vehicleId;
+                if (!byVehicle.has(vid)) byVehicle.set(vid, []);
+                byVehicle.get(vid)!.push(e);
+              }
+
+              // Process per vehicle
+              for (const mid of vehicleMids) {
+                const vEvents = byVehicle.get(mid) || [];
+                if (vEvents.length === 0) {
+                  // No events found for this vehicle
+                  continue;
+                }
+
+                const insertions = vEvents.filter((e: any) => e.eventType === 45 || e.eventId === 45);
+                const removals = vEvents.filter((e: any) => e.eventType === 46 || e.eventId === 46);
+
+                const mostRecentInsertion = insertions
+                  .filter((e: any) => e.eventStatus === 1)
+                  .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+                const mostRecentRemoval = removals
+                  .filter((e: any) => e.eventStatus === 1)
+                  .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
+                if (mostRecentRemoval && mostRecentInsertion) {
+                  if (new Date(mostRecentRemoval.timestamp).getTime() > new Date(mostRecentInsertion.timestamp).getTime()) {
+                    resultMap.set(mid, { insertionTime: null, wasRemoved: true, removalTime: new Date(mostRecentRemoval.timestamp).toISOString() });
+                    continue;
+                  }
+                } else if (mostRecentRemoval && !mostRecentInsertion) {
+                  resultMap.set(mid, { insertionTime: null, wasRemoved: true, removalTime: new Date(mostRecentRemoval.timestamp).toISOString() });
+                  continue;
+                }
+
+                if (mostRecentInsertion) {
+                  resultMap.set(mid, { insertionTime: new Date(mostRecentInsertion.timestamp).toISOString(), wasRemoved: false, removalTime: null });
+                }
+              }
+
+              return resultMap;
+            } catch (err) {
+              console.log(`[CARD-EVENTS-BULK] Error: ${err}`);
+              return resultMap;
             }
           };
 
@@ -665,8 +752,19 @@ Deno.serve(async (req) => {
 
                 } else if (sessionAge >= TWELVE_HOURS) {
                   // Session 12h-48h with ds1>0 → recheck events 45/46 for missed removal+reinsertion
-                  console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
-                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
+                  // Detect "exact recheck" cases: card_inserted_at from previous day but tmx from today
+                  const origVRecheck = filteredVehicles[idx];
+                  const tmxRecheck = origVRecheck?.data?.drs?.tmx || origVRecheck?.data?.pos?.tmx || null;
+                  const insertedDate = existing.card_inserted_at ? new Date(existing.card_inserted_at).toDateString() : null;
+                  const todayDate = new Date().toDateString();
+                  const tmxDate = tmxRecheck ? new Date(tmxRecheck).toDateString() : null;
+                  const isStaleExact = insertedDate !== todayDate && tmxDate === todayDate;
+                  if (isStaleExact) {
+                    console.log(`[CARD-RECHECK-QUEUED-EXACT] ${rec.plate}: card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago (${insertedDate}), tmx is today → priority exact recheck`);
+                  } else {
+                    console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
+                  }
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: isStaleExact ? "recheck_exact" : "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
                 } else {
                   // Recent session → preserve existing timestamp (no API cost)
                   (rec as any).card_inserted_at = existing.card_inserted_at;
@@ -687,40 +785,118 @@ Deno.serve(async (req) => {
           const MAX_TOTAL_LOOKUPS = 25;
           const totalBefore = cardEventLookups.length;
           
-          if (totalBefore > MAX_TOTAL_LOOKUPS) {
+          // Separate exact rechecks from other lookups — they use bulk API and don't count against cap
+          const exactRechecks = cardEventLookups.filter(l => l.eventType === "recheck_exact");
+          const otherLookups = cardEventLookups.filter(l => l.eventType !== "recheck_exact");
+          
+          if (otherLookups.length > MAX_TOTAL_LOOKUPS) {
             // Prioritize: inserted > swap > removed > backfill_only > recheck
             const priority: Record<string, number> = { inserted: 0, swap: 1, removed: 2, backfill_only: 3, recheck: 4 };
-            cardEventLookups.sort((a, b) => {
+            otherLookups.sort((a, b) => {
               const pa = priority[a.eventType] ?? 5;
               const pb = priority[b.eventType] ?? 5;
               if (pa !== pb) return pa - pb;
-              // Within same type, newest sessions first (most likely to have real events)
               const aTime = a.existingCardInsertedAt ? new Date(a.existingCardInsertedAt).getTime() : 0;
               const bTime = b.existingCardInsertedAt ? new Date(b.existingCardInsertedAt).getTime() : 0;
               return bTime - aTime;
             });
             // Restore existing timestamps for dropped lookups
-            const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
+            const dropped = otherLookups.splice(MAX_TOTAL_LOOKUPS);
             for (const lookup of dropped) {
               if (lookup.eventType === "recheck") {
                 const rec = vehicleRecords[lookup.idx];
-                const origV = filteredVehicles[lookup.idx];
-                const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
-                if (tmx) {
-                  const tmxTs = new Date(tmx).toISOString();
-                  console.log(`[CARD-RECHECK-FALLBACK] ${rec.plate}: cap dropped recheck, using tmx=${tmxTs} (was ${lookup.existingCardInsertedAt})`);
-                  (rec as any).card_inserted_at = tmxTs;
-                } else {
-                  (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
-                }
+                // Don't use tmx fallback — preserve existing and log pending
+                console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: cap dropped recheck, preserving ${lookup.existingCardInsertedAt} (pending real event)`);
+                (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
               } else if (lookup.eventType === "backfill_only") {
                 const rec = vehicleRecords[lookup.idx];
                 (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
               }
             }
-            console.log(`[LOOKUP-CAP] ${totalBefore} lookups queued, capped to ${MAX_TOTAL_LOOKUPS} (dropped ${dropped.length}: ${dropped.map(d => d.eventType).join(',')})`);
+            console.log(`[LOOKUP-CAP] ${totalBefore} lookups queued, capped to ${MAX_TOTAL_LOOKUPS} (dropped ${dropped.length}: ${dropped.map(d => d.eventType).join(',')}), ${exactRechecks.length} exact rechecks (bulk)`);
           } else {
-            console.log(`[LOOKUP-CAP] ${totalBefore} lookups queued (under cap)`);
+            console.log(`[LOOKUP-CAP] ${otherLookups.length} lookups queued (under cap), ${exactRechecks.length} exact rechecks (bulk)`);
+          }
+
+          // Replace cardEventLookups with otherLookups for individual processing
+          cardEventLookups.length = 0;
+          cardEventLookups.push(...otherLookups);
+
+          // === BULK PROCESS EXACT RECHECKS ===
+          if (exactRechecks.length > 0) {
+            // Find the earliest existingCardInsertedAt to use as search window start
+            const earliestTs = exactRechecks.reduce((min, l) => {
+              if (!l.existingCardInsertedAt) return min;
+              const t = new Date(l.existingCardInsertedAt).getTime();
+              return t < min ? t : min;
+            }, Date.now());
+            // Add 1h margin before earliest timestamp
+            const bulkDateBegin = new Date(earliestTs - 60 * 60 * 1000);
+            const bulkMids = exactRechecks.map(l => l.vehicleMid);
+
+            // Single bulk API call for all exact rechecks
+            const bulkResults = await fetchCardEventsBulk(bulkMids, bulkDateBegin);
+
+            for (const lookup of exactRechecks) {
+              const rec = vehicleRecords[lookup.idx];
+              const bulkResult = bulkResults.get(lookup.vehicleMid);
+
+              if (bulkResult?.wasRemoved) {
+                // Card was actually removed
+                console.log(`[CARD-RECHECK-HIT] ${rec.plate}: bulk detected removal at ${bulkResult.removalTime}`);
+                (rec as any).card_inserted_at = null;
+                if (rec.tachograph_status) {
+                  try {
+                    const tacho = JSON.parse(rec.tachograph_status);
+                    tacho.card_present = false;
+                    tacho.card_slot_1 = null;
+                    rec.tachograph_status = JSON.stringify(tacho);
+                  } catch { /* ignore */ }
+                }
+                rec.current_driver_id = null;
+              } else if (bulkResult?.insertionTime) {
+                // Found a re-insertion event with exact timestamp
+                const afterMs = lookup.existingCardInsertedAt ? new Date(lookup.existingCardInsertedAt).getTime() : 0;
+                const eventMs = new Date(bulkResult.insertionTime).getTime();
+                if (eventMs > afterMs) {
+                  console.log(`[CARD-RECHECK-HIT] ${rec.plate}: exact re-insertion at ${bulkResult.insertionTime} (was ${lookup.existingCardInsertedAt})`);
+                  (rec as any).card_inserted_at = bulkResult.insertionTime;
+                  // Record removal + re-insertion events
+                  const existing = existingMap.get(rec.trackit_id);
+                  const vehicleDbId = existing?.id || null;
+                  const normalizedCard = lookup.newCardNumber?.replace(/[\s]/g, "").toUpperCase() || "";
+                  let driverName = cardToDriverName.get(normalizedCard) || null;
+                  if (!driverName) {
+                    const stripped = normalizedCard.replace(/^0+/, "").slice(0, -2);
+                    for (const [cn, name] of cardToDriverName.entries()) {
+                      if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { driverName = name as string; break; }
+                    }
+                  }
+                  let empNum: number | null = null;
+                  if (!driverName) {
+                    const emp = cardToEmployee.get(normalizedCard);
+                    if (emp) { driverName = emp.full_name; empNum = emp.employee_number; }
+                  }
+                  if (!empNum && driverName) {
+                    empNum = nameToEmployeeNumber.get(driverName.toLowerCase().trim()) || null;
+                  }
+                  const removalTime = lookup.existingCardInsertedAt || bulkResult.insertionTime;
+                  await supabaseAdmin.from("card_events").insert([
+                    { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "removed", event_at: removalTime },
+                    { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "inserted", event_at: bulkResult.insertionTime },
+                  ]);
+                  console.log(`[CARD-EVENT] ${rec.plate}: exact recheck re-insertion recorded (removed at ${removalTime}, inserted at ${bulkResult.insertionTime})`);
+                } else {
+                  // Event found but not newer than existing — preserve
+                  console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: event found at ${bulkResult.insertionTime} but not after ${lookup.existingCardInsertedAt}, preserving`);
+                  (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                }
+              } else {
+                // No events found — preserve existing timestamp, don't use tmx
+                console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: no event 45 found via bulk, preserving ${lookup.existingCardInsertedAt} (pending real event)`);
+                (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+              }
+            }
           }
 
           // Batch fetch event timestamps for vehicles that need it (max 5 concurrent)
@@ -730,7 +906,11 @@ Deno.serve(async (req) => {
             const results = await Promise.all(
               batch.map(async (lookup) => {
                 const afterTs = (lookup.eventType === "swap" || lookup.eventType === "recheck") ? lookup.existingCardInsertedAt : null;
-                const cardEventsResult = await fetchCardEvents(lookup.vehicleMid, afterTs);
+                // For rechecks, use wider search window starting from existingCardInsertedAt - 1h margin
+                const customBegin = (lookup.eventType === "recheck" && lookup.existingCardInsertedAt)
+                  ? new Date(new Date(lookup.existingCardInsertedAt).getTime() - 60 * 60 * 1000).toISOString()
+                  : null;
+                const cardEventsResult = await fetchCardEvents(lookup.vehicleMid, afterTs, customBegin);
                 return { ...lookup, eventTime: cardEventsResult.insertionTime, wasRemoved: cardEventsResult.wasRemoved, removalTime: cardEventsResult.removalTime };
               })
             );
@@ -771,17 +951,9 @@ Deno.serve(async (req) => {
                   // Record removal + re-insertion events
                   result.eventType = "recheck_hit";
                 } else {
-                  // No newer event found → use tmx fallback instead of stale timestamp
-                  const origV = filteredVehicles[result.idx];
-                  const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
-                  if (tmx) {
-                    const tmxTs = new Date(tmx).toISOString();
-                    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, falling back to tmx=${tmxTs} (was ${result.existingCardInsertedAt})`);
-                    (rec as any).card_inserted_at = tmxTs;
-                  } else {
-                    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, preserving ${result.existingCardInsertedAt}`);
-                    (rec as any).card_inserted_at = result.existingCardInsertedAt;
-                  }
+                  // No newer event found → preserve existing timestamp (don't use tmx approximation)
+                  console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: no re-insertion found via individual lookup, preserving ${result.existingCardInsertedAt} (pending real event)`);
+                  (rec as any).card_inserted_at = result.existingCardInsertedAt;
                   continue;
                 }
               }
