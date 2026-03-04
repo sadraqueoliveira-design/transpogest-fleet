@@ -1,44 +1,44 @@
 
+Diagnóstico confirmado: o fluxo novo já está a funcionar parcialmente para o 23-IS-71, mas ainda não chega ao horário “~05:00”.
 
-# Fix: 23-IS-71 nunca entra em recheck porque sessionAge é calculado com o timestamp tmx
+O que já está correto:
+- O veículo entra em `recheck_exact` (log visto: `[CARD-RECHECK-QUEUED-EXACT] 23-IS-71 ...`).
+- `vehicles.card_inserted_at` já não volta para o fallback tmx das 09:00.
+- Estado atual em BD: `card_inserted_at = 2026-03-03 20:19:46.062+00` (último evento real conhecido).
 
-## Causa raiz
+Porque continua “igual” no dashboard:
+- Não apareceu `CARD-RECHECK-HIT` para 23-IS-71.
+- Ou seja: o bloco `bulk` não devolveu (ou não aproveitou) um Event 45 mais recente para esse MID.
+- Resultado: o sistema preserva o timestamp real antigo (03/03 20:19), que é o comportamento de segurança atual quando não há evento novo válido.
 
-O `sessionAge` (linha 701-703) é calculado a partir de `existing.card_inserted_at` que já foi sobrescrito pelo fallback tmx para `2026-03-04 09:00:09` (hoje). Resultado: sessionAge ≈ 15 minutos, que é **menor que 12h**, logo o veículo cai no ramo `else` (linha 797) que simplesmente preserva o timestamp existente. Nunca chega à condição `isStaleExact`.
+Plano de implementação (próximo fix):
+1) Robustecer processamento `recheck_exact` com fallback individual por veículo  
+   - No bloco bulk (`exactRechecks`), quando `bulkResult` vier vazio/sem evento novo, executar `fetchCardEvents(mid, afterTs, customBegin)` para aquele veículo (segunda tentativa).
+   - Só atualizar `card_inserted_at` se `eventMs > afterMs` (mantendo regra atual anti-regressão).
 
-Apesar de termos corrigido a condição `isStaleExact` para usar `lastRealInsertionMap`, o código **nunca chega lá** porque o `sessionAge` de guarda é calculado antes, com o valor errado.
+2) Normalizar chave de agrupamento no bulk  
+   - Em `fetchCardEventsBulk`, converter `vehicleId` para número (`const vid = Number(e.vehicleId)`), ignorar inválidos.
+   - Evita mismatch silencioso entre `Map<number,...>` e IDs vindos como string.
 
-## Solução
+3) Adicionar logs de diagnóstico (obrigatório para fechar o ciclo)  
+   - Antes do bulk: total de `exactRechecks` e lista reduzida de plates/MIDs.
+   - Após bulk: quantos veículos retornaram evento.
+   - Para cada miss: log explícito `bulk miss -> fallback individual`.
+   - Para 23-IS-71: log dedicado com `afterTs`, `eventTs` e decisão final.
 
-Alterar o cálculo de `sessionAge` (linha 701-703) para usar o timestamp real do `lastRealInsertionMap` quando disponível, em vez de `existing.card_inserted_at`:
+4) Manter política de dados correta  
+   - Sem fallback para tmx em `recheck_exact` quando não há Event 45 válido.
+   - Preservar timestamp real existente (comportamento já certo para compliance).
 
-```text
-// ANTES (linha 701-703):
-const sessionAge = existing.card_inserted_at
-  ? Date.now() - new Date(existing.card_inserted_at).getTime()
-  : 0;
+Validação após aplicar:
+- Logs esperados para 23-IS-71 no próximo ciclo:
+  - `CARD-RECHECK-QUEUED-EXACT`
+  - `CARD-EVENTS-BULK ...`
+  - ou `CARD-RECHECK-HIT ... exact re-insertion at ...`
+  - ou `bulk miss -> fallback individual ...`
+- Se a API devolver Event 45 de hoje (~05:00), dashboard atualiza para esse horário.
+- Se não devolver, mantém 03/03 20:19 (estado real mais confiável atualmente).
 
-// DEPOIS:
-const realInsertionForAge = lastRealInsertionMap.get(rec.plate);
-const sessionAgeBase = realInsertionForAge?.timestamp || existing.card_inserted_at;
-const sessionAge = sessionAgeBase
-  ? Date.now() - new Date(sessionAgeBase).getTime()
-  : 0;
-```
-
-Para o 23-IS-71:
-- `lastRealInsertionMap["23-IS-71"]` = `2026-03-03 20:19:46` (ontem, do card_events)
-- `sessionAge` = now - 20:19 ontem ≈ **13h** → entra no ramo `>= TWELVE_HOURS`
-- `isStaleExact` = true (lastRealDate=Mar03 != today=Mar04, tmx=today)
-- Veículo entra no bulk API lookup como `recheck_exact`
-
-## Ficheiro
-
-`supabase/functions/sync-trackit-data/index.ts`, linhas 701-703
-
-## Impacto
-
-- Única alteração: 3 linhas
-- Sem efeitos colaterais: para veículos sem entrada no `lastRealInsertionMap`, cai no `existing.card_inserted_at` (comportamento atual)
-- Corrige o 23-IS-71 e todos os outros veículos cujo `card_inserted_at` foi sobrescrito por tmx
-
+Escopo:
+- Apenas `supabase/functions/sync-trackit-data/index.ts`
+- Sem alterações de schema/migração.
