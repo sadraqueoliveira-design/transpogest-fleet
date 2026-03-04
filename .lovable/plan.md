@@ -1,18 +1,28 @@
 
-# Fix aplicado: isStaleExact usa card_events em vez de vehicles.card_inserted_at
 
-## O que mudou
+# Fix: `sync-trackit-data` boot failure — duplicate `allPlates` declaration
 
-1. **Pré-carregamento de últimas inserções reais** — Antes do loop de veículos, um único query obtém o último `event_at` de inserção por plate da tabela `card_events`. Guardado num Map (`lastRealInsertionMap`).
+## Problem
+The edge function crashes on boot with: `Identifier 'allPlates' has already been declared` at line 1255 (compiled).
 
-2. **Condição `isStaleExact` corrigida** — Em vez de comparar `vehicles.card_inserted_at` (que pode ter sido sobrescrito por tmx), compara a data do último evento real em `card_events` com hoje. Isto garante que o 23-IS-71 (cujo último evento real é de 03/03) é classificado como `recheck_exact`.
+There are two `const allPlates` declarations in the same scope:
+- **Line 308**: `const allPlates = vehicleRecords.map(...)` (pre-fetch card_events)
+- **Line 1223**: `const allPlates = vehicleRecords.map(...)` (orphan session cleanup)
 
-3. **`existingCardInsertedAt` real** — O timestamp passado ao bulk lookup é agora o do último `card_events` real, não o `card_inserted_at` (tmx) do veículo.
+## Fix
+Rename the second declaration at line 1223 to `const allPlatesForOrphans` (or simply reuse the existing `allPlates` since both compute the same value).
 
-## Validação esperada
+**Simplest approach**: Remove the duplicate at line 1223 and reuse the `allPlates` already declared at line 308 (both produce identical results — `vehicleRecords.map(r => r.plate)`).
 
-No próximo ciclo de sync (~5 min):
-- Log `[CARD-EVENTS-MAP] Pre-loaded last real insertions for N plates`
-- Log `[CARD-RECHECK-QUEUED-EXACT] 23-IS-71: ...last REAL event=...03/03...`
-- Se a API Trackit devolver Event 45: `[CARD-RECHECK-HIT] 23-IS-71: exact re-insertion at 2026-03-04T05:xx:xx`
-- Se não: `[CARD-RECHECK-PENDING-EXACT] 23-IS-71: no event 45 found via bulk`
+**File**: `supabase/functions/sync-trackit-data/index.ts`, line 1223
+
+```typescript
+// BEFORE:
+const allPlates = vehicleRecords.map((r: any) => r.plate);
+
+// AFTER (just remove the const — allPlates already exists):
+// reuse allPlates from line 308
+```
+
+Single line change, no logic impact.
+
