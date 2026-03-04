@@ -673,8 +673,12 @@ Deno.serve(async (req) => {
                 }
               }
             } else if (newHasCard && !existing.card_inserted_at) {
-              // Card present but no timestamp recorded yet (backfill) → update vehicle timestamp only, do NOT create card_event
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: true, eventType: "backfill_only", oldCardNumber: null, newCardNumber, existingCardInsertedAt: null });
+              // Backfill: use telemetry timestamp directly (no API call needed)
+              const origV = filteredVehicles[idx];
+              const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+              const backfillTs = tmx ? new Date(tmx).toISOString() : new Date().toISOString();
+              (rec as any).card_inserted_at = backfillTs;
+              console.log(`[CARD-BACKFILL] ${rec.plate}: card_inserted_at=${backfillTs} (source=tmx)`);
             }
             // If no card on both sides, card_inserted_at stays null
           }
