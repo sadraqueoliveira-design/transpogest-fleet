@@ -1,55 +1,43 @@
 
 
-# Fix: Capture correct early-morning card insertion time
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Problem
+## Problem analysis
 
-For **BN-86-PD**, the driver inserted the card around **05:00-06:00**, but the system only recorded an insertion at **10:28** (backfill) because:
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-1. The Trackit event API consistently fails for this vehicle's `mid` with `Unexpected token ,` errors -- it never returns the real event-45 timestamp
-2. The "backfill" mechanism only triggers when the sync first detects `card_present=true` without a prior insertion record. If the card was already present when the sync started processing this vehicle, the backfill timestamp is the TMX time at that moment -- not when the card was actually inserted
-3. There are also spurious `removed` events from 09:19-10:06 (TMX source), which means the system kept flip-flopping, finally detecting a "new insertion" at 10:28
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-**Core issue**: When the event API fails and the system falls back to TMX, it uses the **current** telemetry timestamp rather than trying to extract the actual tachograph insertion time from the telemetry data itself.
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
+
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
 ## Solution
 
-Two changes to `supabase/functions/sync-trackit-data/index.ts`:
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-### 1. Use tachograph `tmx` timestamp more intelligently for backfills
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
 
-When a backfill is detected (card present but no insertion record), and the event API fails, instead of using the current TMX timestamp directly, check if there's an older TMX timestamp from the tachograph data that better represents when the session started. The `tmx` field in `tachograph_status` is the device's last update time, not the card insertion time.
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
 
-However, there's no insertion-specific timestamp in the TMX data. The only reliable source is the event API (which fails) or the existing `card_inserted_at` from the DB.
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
 
-### 2. Prevent spurious removals from causing late backfill insertions
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
 
-The real fix is to stop the spurious removal events (09:19-10:06) that cause the system to "rediscover" the card and create a late backfill. These removals happen because the TMX data briefly reports card absence or the sync misreads the state.
-
-**Change**: When the system detects a removal (`oldHasCard && !newHasCard`), add a safety check -- if `card_present` is still `true` in the **new** raw telemetry AND the card number hasn't changed, skip the removal. This prevents false removals from TMX jitter.
-
-Additionally, for backfill insertions where the event API fails, if the vehicle already has a `card_inserted_at` in the database that is from today, preserve that timestamp instead of overwriting it with the current TMX time.
-
-### File: `supabase/functions/sync-trackit-data/index.ts`
-
-**Change A** (~line 769): When processing a removal, verify the new telemetry actually shows no card before proceeding. If the raw `card_present` is still true but `newHasCard` was forced to false by the override logic, skip the removal event recording (the override is for dashboard display, not for creating removal events).
-
-**Change B** (~line 1300): In the insertion time fallback, when `result.isBackfill` is true and the event API failed, check if the vehicle already has a valid `card_inserted_at` from today in the DB. If so, preserve it instead of overwriting with TMX.
-
-```typescript
-// Change B: For backfills where API failed, preserve existing DB timestamp
-const insertionTime = result.eventTime
-  || (realInsIsValid ? realIns.timestamp : null)
-  || (result.isBackfill && result.existingCardInsertedAt ? result.existingCardInsertedAt : null)
-  || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
-  || new Date().toISOString();
-```
-
-**Change C** (~line 757-764): In the CARD-OVERRIDE block, track that the override was applied so that downstream logic doesn't create spurious removal events when TMX still reports `card_present=true`.
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
 
 ### Expected outcome
-
-- Spurious removals will be suppressed when TMX still reports the card as present
-- Backfill insertions will preserve earlier timestamps from the DB instead of overwriting with later TMX times
-- The `card_inserted_at` will remain at the earliest detected time rather than drifting forward with each sync cycle
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 
