@@ -1220,7 +1220,7 @@ Deno.serve(async (req) => {
           );
 
           // Find all open activities for drivers linked to vehicles in this sync
-          const allPlates = vehicleRecords.map((r: any) => r.plate);
+          // reuse allPlates from line 308
           const { data: vehicleIds } = await supabaseAdmin
             .from("vehicles")
             .select("id, current_driver_id")
