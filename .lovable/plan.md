@@ -1,86 +1,52 @@
 
+Objetivo: mostrar no card o horário exato de inserção (evento real), não um aproximado por telemetria.
 
-# Fix: 23-IS-71 recheck nunca completa — rechecks descartados mantêm timestamp antigo
+Contexto confirmado:
+- O 23-IS-71 entra em `CARD-RECHECK`, mas não aparece `CARD-RECHECK-HIT` nem `CARD-RECHECK-MISS`.
+- Em BD, `vehicles.card_inserted_at` do 23-IS-71 ficou preso em `2026-03-03 20:19:46+00`.
+- A telemetria (`tmx`) está atualizada hoje, então o bloqueio está no processamento de recheck exato.
 
-## Diagnóstico
+Plano de implementação (sem mexer em UI, só backend function):
+1) Garantir “recheck exato” para casos suspeitos de horário stale
+- Ficheiro: `supabase/functions/sync-trackit-data/index.ts`
+- Na deteção de sessão antiga com mesmo cartão (`eventType: "recheck"`), criar uma subfila de prioridade para casos com:
+  - `card_present = true`
+  - `card_inserted_at` de dia anterior
+  - `tmx` de hoje
+- Estes casos (incluindo 23-IS-71) não podem ficar atrás de rechecks normais.
 
-Nos logs confirmei:
-- `[CARD-RECHECK] 23-IS-71: same card 0000001537844002 inserted 13h ago, rechecking events` — o recheck foi **enfileirado**
-- Não existe `CARD-RECHECK-HIT` nem `CARD-RECHECK-MISS` para o 23-IS-71
-- Não existe sequer log `LOOKUP-CAP` para o Auchan, o que sugere que a função **faz timeout** durante as chamadas API antes de chegar a processar os rechecks do Auchan
+2) Trocar chamadas por veículo para chamada bulk por lote (mais fiável)
+- Substituir a lógica de recheck que hoje faz 1 chamada `/ws/events` por veículo por uma chamada por lote de veículos (ex.: 20 mids por request).
+- Continuar a procurar eventos 45/46, mas agregando por `vehicleId` no resultado.
+- Aplicar `afterTimestamp` por veículo no pós-processamento (igual à regra atual de “só eventos após timestamp antigo”).
 
-A causa: Auchan tem 321 veículos. Muitos geram rechecks (sessão >12h). O cap é 25 por cliente, e os rechecks têm **prioridade 4** (a mais baixa). Se houver insertions/swaps/removals, os rechecks são os primeiros a ser descartados. E quando descartados (linha 704-708), o código **restaura o timestamp antigo** (`existingCardInsertedAt`), mantendo "03/03, 20:19" indefinidamente.
+3) Remover fallback para `tmx` no caminho “quero exato”
+- Nos ramos de recheck (`dropped` e `MISS`), não gravar `tmx` como definitivo para `card_inserted_at`.
+- Em vez disso:
+  - manter valor atual e marcar log de pendência exata (ex.: `CARD-RECHECK-PENDING-EXACT`) quando não houver evento 45 válido.
+- Assim evita-se “hora aproximada” quando o requisito é exatidão.
 
-Mesmo que passe o cap, as 25 chamadas API em batches de 5 podem exceder o timeout da edge function.
+4) Janela temporal de eventos mais robusta para recheck
+- Para recheck, usar janela de pesquisa baseada em `existingCardInsertedAt` (ex.: desde timestamp antigo - margem) em vez de janela fixa curta.
+- Objetivo: não perder reinserções que fiquem fora de uma janela rígida.
 
-## Solução
+5) Instrumentação de logs para provar resolução
+- Adicionar logs claros por matrícula:
+  - `CARD-RECHECK-QUEUED-EXACT`
+  - `CARD-RECHECK-HIT` (com timestamp encontrado)
+  - `CARD-RECHECK-PENDING-EXACT` (sem evento encontrado)
+- Isto permite validar rapidamente no próximo ciclo se o 23-IS-71 foi realmente resolvido com hora exata.
 
-### 1. Rechecks descartados → usar tmx em vez do timestamp antigo
+Validação após deploy:
+1. Verificar logs do `sync-trackit-data` no ciclo seguinte:
+- Esperado para 23-IS-71: `CARD-RECHECK-HIT ... inserted at 2026-03-04T05:xx:xx...`
 
-**Ficheiro**: `supabase/functions/sync-trackit-data/index.ts`, linhas 702-709
+2. Confirmar dados persistidos:
+- `vehicles.card_inserted_at` do 23-IS-71 atualizado para hoje ~05h
+- `card_events` com sequência correta (remoção antiga + nova inserção, quando aplicável)
 
-Quando um recheck é descartado pelo cap, em vez de restaurar `existingCardInsertedAt` (o timestamp stale), usar o `tmx` da telemetria. Isto não é perfeito (não é o Event 45 exato), mas é muito melhor que manter um horário de ontem.
+3. Confirmar no dashboard:
+- O card da viatura passa a mostrar hora exata de hoje (não 03/03 20:19, nem fallback por `tmx`).
 
-```typescript
-// ANTES (linhas 703-708):
-const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
-for (const lookup of dropped) {
-  if (lookup.eventType === "recheck" || lookup.eventType === "backfill_only") {
-    const rec = vehicleRecords[lookup.idx];
-    (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
-  }
-}
-
-// DEPOIS:
-const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
-for (const lookup of dropped) {
-  if (lookup.eventType === "recheck") {
-    const rec = vehicleRecords[lookup.idx];
-    const origV = filteredVehicles[lookup.idx];
-    const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
-    if (tmx) {
-      const tmxTs = new Date(tmx).toISOString();
-      console.log(`[CARD-RECHECK-FALLBACK] ${rec.plate}: cap dropped recheck, using tmx=${tmxTs} (was ${lookup.existingCardInsertedAt})`);
-      (rec as any).card_inserted_at = tmxTs;
-    } else {
-      (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
-    }
-  } else if (lookup.eventType === "backfill_only") {
-    const rec = vehicleRecords[lookup.idx];
-    (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
-  }
-}
-```
-
-### 2. Timeout handling — recheck com timeout também usa fallback tmx
-
-Se a função chegar a processar o recheck mas a API Trackit não devolver Event 45 depois do `afterTimestamp` (RECHECK-MISS), o código já preserva o timestamp antigo (linha 764-765). Alterar para também usar tmx como fallback quando o timestamp é claramente stale (>12h):
-
-```typescript
-// Linha 762-766 — DEPOIS:
-if (result.eventType === "recheck" && !result.eventTime) {
-  const origV = filteredVehicles[result.idx];
-  const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
-  if (tmx) {
-    const tmxTs = new Date(tmx).toISOString();
-    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, falling back to tmx=${tmxTs} (was ${result.existingCardInsertedAt})`);
-    (rec as any).card_inserted_at = tmxTs;
-  } else {
-    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, preserving ${result.existingCardInsertedAt}`);
-    (rec as any).card_inserted_at = result.existingCardInsertedAt;
-  }
-  continue;
-}
-```
-
-### Impacto
-
-- 23-IS-71 vai mostrar o horário de ~08:44 (tmx atual) em vez de "03/03, 20:19"
-- Não é o horário exato de ~05:00 que o motorista inseriu, mas é **hoje** e não **ontem**
-- Todos os outros rechecks descartados também passam a ter timestamps atualizados
-- Zero chamadas API adicionais
-
-### Sem alterações ao UI
-
-O dashboard já mostra `card_inserted_at` corretamente. A única alteração é na edge function.
-
+Detalhe técnico importante:
+- Se a API externa não devolver evento 45 para esse período, não existe forma de “inventar exatidão”. Neste caso o sistema deve deixar explícito que está pendente de evento real (sem substituir por hora aproximada).
