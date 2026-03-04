@@ -463,7 +463,7 @@ Deno.serve(async (req) => {
 
               const eventsJson = await eventsRes.json();
               if (eventsJson.error) {
-                console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message}`);
+                console.log(`[CARD-EVENTS] API error for mid=${vehicleMid}: ${eventsJson.message || eventsJson.error || JSON.stringify(eventsJson)}`);
                 return { insertionTime: null, wasRemoved: false, removalTime: null };
               }
 
@@ -663,8 +663,8 @@ Deno.serve(async (req) => {
                   });
                   console.log(`[CARD-EVENT] ${rec.plate}: STALE-CLEAR removal recorded (event_at=${staleClearEventAt})`);
 
-                } else if (sessionAge >= TWENTY_HOURS) {
-                  // Session 20h-48h → recheck events 45/46 for re-insertion
+                } else if (sessionAge >= TWELVE_HOURS) {
+                  // Session 12h-48h with ds1>0 → recheck events 45/46 for missed removal+reinsertion
                   console.log(`[CARD-RECHECK] ${rec.plate}: same card ${newCardNumber} inserted ${Math.round(sessionAge / 3600000)}h ago, rechecking events`);
                   cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "recheck", oldCardNumber: newCardNumber, newCardNumber, existingCardInsertedAt: existing.card_inserted_at });
                 } else {
