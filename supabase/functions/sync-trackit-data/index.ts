@@ -1049,35 +1049,59 @@ Deno.serve(async (req) => {
                   const tmxDateStrFallback = tmxFallback ? new Date(tmxFallback).toDateString() : null;
 
                   if (oldDateStrFallback && oldDateStrFallback !== todayStrFallback && tmxDateStrFallback === todayStrFallback) {
-                    // Old timestamp is from previous day, TMX is from today → use TMX as fallback
-                    const tmxIso = new Date(tmxFallback).toISOString();
-                    (rec as any).card_inserted_at = tmxIso;
-                    console.log(`[CARD-RECHECK-TMX-FALLBACK] ${rec.plate}: API failed, using tmx=${tmxIso} (was ${lookup.existingCardInsertedAt})`);
-
-                    // Record removal + re-insertion events with tmx_fallback source
+                    // Old timestamp is from previous day, TMX is from today
+                    // Check if we already have a tmx_fallback inserted event for today
                     const existing = existingMap.get(rec.trackit_id);
                     const vehicleDbId = existing?.id || null;
-                    const normalizedCard = lookup.newCardNumber?.replace(/[\s]/g, "").toUpperCase() || "";
-                    let driverName = cardToDriverName.get(normalizedCard) || null;
-                    if (!driverName) {
-                      const stripped = normalizedCard.replace(/^0+/, "").slice(0, -2);
-                      for (const [cn, name] of cardToDriverName.entries()) {
-                        if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { driverName = name as string; break; }
+                    
+                    const todayMidnight = new Date();
+                    todayMidnight.setHours(0, 0, 0, 0);
+                    const todayMidnightIso = todayMidnight.toISOString();
+                    
+                    const { data: existingFallback } = await supabaseAdmin
+                      .from("card_events")
+                      .select("id, event_at")
+                      .eq("plate", rec.plate)
+                      .eq("event_type", "inserted")
+                      .eq("source", "tmx_fallback")
+                      .gte("event_at", todayMidnightIso)
+                      .order("event_at", { ascending: true })
+                      .limit(1);
+                    
+                    if (existingFallback && existingFallback.length > 0) {
+                      // Already have a tmx_fallback for today — preserve the earlier one (closer to real insertion)
+                      const preservedTs = existingFallback[0].event_at;
+                      (rec as any).card_inserted_at = preservedTs;
+                      console.log(`[CARD-RECHECK-TMX-FALLBACK-PRESERVED] ${rec.plate}: keeping existing fallback at ${preservedTs} (current tmx=${new Date(tmxFallback).toISOString()} would be worse)`);
+                    } else {
+                      // First fallback of the day — use TMX as best available estimate
+                      const tmxIso = new Date(tmxFallback).toISOString();
+                      (rec as any).card_inserted_at = tmxIso;
+                      console.log(`[CARD-RECHECK-TMX-FALLBACK] ${rec.plate}: API failed, first fallback using tmx=${tmxIso} (was ${lookup.existingCardInsertedAt})`);
+
+                      // Record removal + re-insertion events with tmx_fallback source
+                      const normalizedCard = lookup.newCardNumber?.replace(/[\s]/g, "").toUpperCase() || "";
+                      let driverName = cardToDriverName.get(normalizedCard) || null;
+                      if (!driverName) {
+                        const stripped = normalizedCard.replace(/^0+/, "").slice(0, -2);
+                        for (const [cn, name] of cardToDriverName.entries()) {
+                          if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { driverName = name as string; break; }
+                        }
                       }
+                      let empNum: number | null = null;
+                      if (!driverName) {
+                        const emp = cardToEmployee.get(normalizedCard);
+                        if (emp) { driverName = emp.full_name; empNum = emp.employee_number; }
+                      }
+                      if (!empNum && driverName) {
+                        empNum = nameToEmployeeNumber.get(driverName.toLowerCase().trim()) || null;
+                      }
+                      await supabaseAdmin.from("card_events").insert([
+                        { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "removed", event_at: lookup.existingCardInsertedAt, source: "tmx_fallback" },
+                        { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "inserted", event_at: tmxIso, source: "tmx_fallback" },
+                      ]);
+                      console.log(`[CARD-EVENT] ${rec.plate}: TMX fallback re-insertion recorded (removed at ${lookup.existingCardInsertedAt}, inserted at ${tmxIso})`);
                     }
-                    let empNum: number | null = null;
-                    if (!driverName) {
-                      const emp = cardToEmployee.get(normalizedCard);
-                      if (emp) { driverName = emp.full_name; empNum = emp.employee_number; }
-                    }
-                    if (!empNum && driverName) {
-                      empNum = nameToEmployeeNumber.get(driverName.toLowerCase().trim()) || null;
-                    }
-                    await supabaseAdmin.from("card_events").insert([
-                      { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "removed", event_at: lookup.existingCardInsertedAt, source: "tmx_fallback" },
-                      { vehicle_id: vehicleDbId, plate: rec.plate, card_number: lookup.newCardNumber, driver_name: driverName, employee_number: empNum, event_type: "inserted", event_at: tmxIso, source: "tmx_fallback" },
-                    ]);
-                    console.log(`[CARD-EVENT] ${rec.plate}: TMX fallback re-insertion recorded (removed at ${lookup.existingCardInsertedAt}, inserted at ${tmxIso})`);
                   } else {
                     console.log(`[CARD-RECHECK-PENDING-EXACT] ${rec.plate}: no event 45 found, no tmx fallback available, preserving ${lookup.existingCardInsertedAt}`);
                     (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
