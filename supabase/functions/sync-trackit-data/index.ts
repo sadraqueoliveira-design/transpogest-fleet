@@ -338,6 +338,20 @@ Deno.serve(async (req) => {
           }
           console.log(`[CARD-EVENTS-MAP] Pre-loaded last real removals for ${lastRealRemovalMap.size} plates`);
 
+          // Pre-fetch recent removal counts per plate (last 90 min) for debounce/anti-flicker
+          const ninetyMinAgo = new Date(Date.now() - 90 * 60 * 1000).toISOString();
+          const { data: recentRemovalRows } = await supabaseAdmin
+            .from("card_events")
+            .select("plate")
+            .eq("event_type", "removed")
+            .in("plate", allPlates)
+            .gte("event_at", ninetyMinAgo);
+          const recentRemovalCountMap = new Map<string, number>();
+          for (const row of (recentRemovalRows || []) as Array<{ plate: string }>) {
+            recentRemovalCountMap.set(row.plate, (recentRemovalCountMap.get(row.plate) || 0) + 1);
+          }
+          console.log(`[CARD-DEBOUNCE] Pre-loaded recent removal counts for ${recentRemovalCountMap.size} plates (last 90min)`);
+
           // Batch reverse geocode — skip vehicles whose position hasn't changed
           const BATCH = 5;
           const POSITION_THRESHOLD = 0.005; // ~500m — accounts for GPS drift on parked vehicles
@@ -775,11 +789,19 @@ Deno.serve(async (req) => {
                 // Preserve existing card_inserted_at instead of clearing it
                 (rec as any).card_inserted_at = existing.card_inserted_at;
               } else {
-                // Card genuinely removed (raw TMX confirms no card)
-                (rec as any).card_inserted_at = null;
-                console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
-                // Record removal event
-                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null, existingCardInsertedAt: null });
+                // Debounce: if this plate already has ≥2 removals in the last 90 min,
+                // this is TMX jitter — suppress the removal and preserve card_inserted_at
+                const recentRemovals = recentRemovalCountMap.get(rec.plate) || 0;
+                if (recentRemovals >= 2 && existing.card_inserted_at) {
+                  console.log(`[CARD-REMOVE-DEBOUNCE] ${rec.plate}: suppressing removal — ${recentRemovals} removals in last 90min (TMX jitter). Preserving card_inserted_at=${existing.card_inserted_at}`);
+                  (rec as any).card_inserted_at = existing.card_inserted_at;
+                } else {
+                  // Card genuinely removed (raw TMX confirms no card, no jitter pattern)
+                  (rec as any).card_inserted_at = null;
+                  console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
+                  // Record removal event
+                  cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null, existingCardInsertedAt: null });
+                }
               }
             } else if (newHasCard && existing.card_inserted_at) {
               // Card still inserted — but check if card NUMBER changed (different driver)
@@ -1306,11 +1328,22 @@ Deno.serve(async (req) => {
               const realIns = lastRealInsertionMap.get(rec.plate);
               const realRem = lastRealRemovalMap.get(rec.plate);
               const realInsIsValid = realIns && (!realRem || new Date(realIns.timestamp).getTime() > new Date(realRem).getTime());
-              const insertionTime = result.eventTime
+              let insertionTime = result.eventTime
                 || (realInsIsValid ? realIns.timestamp : null)
                 || (result.isBackfill && result.existingCardInsertedAt ? result.existingCardInsertedAt : null)
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
+
+              // Change 2: For backfills, if the DB already has an earlier card_inserted_at from today, preserve it
+              if (result.isBackfill && result.existingCardInsertedAt) {
+                const existingTs = new Date(result.existingCardInsertedAt).getTime();
+                const computedTs = new Date(insertionTime).getTime();
+                const todayStart = new Date(new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Lisbon" }) + "T00:00:00+00:00").getTime();
+                if (existingTs >= todayStart && existingTs < computedTs) {
+                  console.log(`[CARD-BACKFILL-PRESERVE] ${rec.plate}: keeping earlier DB timestamp ${result.existingCardInsertedAt} instead of ${insertionTime}`);
+                  insertionTime = result.existingCardInsertedAt;
+                }
+              }
               const removalEventAt = result.removalTime
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
