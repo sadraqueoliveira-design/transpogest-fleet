@@ -1,51 +1,42 @@
 
 
-# Fix: TMX Fallback usa timestamp errado (hora do sync, não hora de inserção)
+# Fix: Infinite removal/backfill loop for 42-HX-80
 
-## Problema
+## Problem
 
-O fallback TMX usa `origVFallback?.data?.drs?.tmx` que é o **timestamp da última leitura de telemetria** — ou seja, ~quando o sync corre (~09:30), não quando o cartão foi fisicamente inserido (~02:30).
+The screenshot shows 8+ "removed" events for 42-HX-80, one every ~5-10 minutes (09:19, 09:25, 09:30, 09:40, 09:50, 10:00, 10:05). The correct insertion time is **02:30:37** (visible as the last row). The system is stuck in a destructive loop:
 
-Para o 42-HX-80: o cartão foi inserido às ~02:30. O primeiro ciclo de sync que detectou o timestamp antigo e disparou o fallback foi às ~09:30. O TMX nesse momento era ~09:30. Resultado: regista 09:30 como hora de inserção — **7 horas de erro**.
+```text
+Cycle N:   card_inserted_at=null + card_present=true → BACKFILL sets card_inserted_at=TMX(~09:30)
+           But BACKFILL does NOT create a card_event in card_events table
+Cycle N+1: lastRealInsertionMap still points to March 2 (56h ago) → sessionAge=56h > 48h
+           → CARD-STALE-CLEAR fires → card_inserted_at=null + new "removed" event
+Cycle N+2: → BACKFILL again → repeat forever
+```
 
-Este problema afeta **todos** os veículos com fallback TMX, não apenas o 42-HX-80. A diferença varia conforme a hora a que o fallback é ativado pela primeira vez.
+Two bugs combine:
+1. **BACKFILL (line 860-867)** sets `vehicles.card_inserted_at` but never creates a `card_event`, so `lastRealInsertionMap` never updates
+2. **CARD-STALE-CLEAR (line 800)** fires regardless of driver state (`ds1=2` means driver is actively working)
 
-## Causa raiz
+## Solution — 3 changes in `sync-trackit-data/index.ts`
 
-`tmx` = "timestamp da última mensagem de telemetria" ≠ "timestamp de inserção do cartão". Não existe nenhum campo na telemetria Trackit que indique quando o cartão foi inserido — essa informação só existe no Event 45 da API `/ws/events`, que está avariada.
+### 1. BACKFILL must create a card_event (with dedup)
+At line 860-867, after setting `card_inserted_at`, also insert an `inserted` event in `card_events` with `source: 'backfill'`. Before inserting, check if one already exists today to avoid duplicates. This breaks the loop because `lastRealInsertionMap` will have a recent timestamp next cycle.
 
-## Solução proposta
+### 2. CARD-STALE-CLEAR must respect active driver state
+At line 800, change condition from:
+```typescript
+} else if (sessionAge >= FORTY_EIGHT_HOURS) {
+```
+to:
+```typescript
+} else if (sessionAge >= FORTY_EIGHT_HOURS && (newDriverState1 === 0 || newDriverState1 === null)) {
+```
+If `ds1 > 0` (driver working/driving), push to recheck instead of forcing removal.
 
-Em vez de usar o TMX do ciclo atual, **procurar o TMX mais antigo de hoje** na tabela `card_events` para este veículo. Se já existir um `tmx_fallback` prévio, manter esse timestamp (que é mais próximo da hora real). Se não existir nenhum, usar uma abordagem mais conservadora:
+### 3. Clean up existing spurious events
+The 7+ "removed" events created today for 42-HX-80 are all spurious (from the loop). These will remain in the database but the loop will stop. The correct insertion at 02:30:37 already exists and will be preserved by the pairing logic in `CardHistory.tsx`.
 
-### Alternativa: Usar a primeira ignição/movimento de hoje
-
-O Trackit fornece `pos.tmx` (posição) que só atualiza quando o veículo se move. Se compararmos o `pos.tmx` com o momento em que o cartão apareceu pela primeira vez na telemetria, podemos estimar melhor.
-
-**Mas o problema fundamental persiste**: sem Event 45, não temos o timestamp exato.
-
-### Abordagem pragmática recomendada
-
-1. **Não sobrescrever com TMX do ciclo atual** — em vez disso, quando o fallback precisa de disparar, verificar primeiro se já existe um `card_events` de `inserted` com `source = 'tmx_fallback'` para hoje neste veículo. Se existir, manter esse e não criar duplicado.
-
-2. **Para o primeiro fallback do dia**: registar o timestamp como **meia-noite (00:00) do dia atual** em vez do TMX. Isto é menos errado: sabemos que o cartão foi inserido "em algum momento de hoje", e meia-noite é o limite inferior. O badge "Estimado" já avisa o utilizador.
-
-3. **Quando a API recuperar**: o Event 45 real substitui automaticamente o fallback (lógica existente de `eventMs > afterMs`).
-
-### Alterações em `sync-trackit-data/index.ts`
-
-**Bloco TMX fallback (linhas 1043-1084):**
-- Antes de criar novos `card_events`, verificar se já existe um evento `inserted` com `source = 'tmx_fallback'` para hoje neste veículo
-- Se existir: usar esse timestamp (preservar o mais antigo, que é mais próximo da hora real)
-- Se não existir: usar o **primeiro TMX disponível** — mas como não o temos, usar o TMX atual mas com uma nota clara no log
-
-**Opção alternativa** (mais precisa): Query `card_events` para encontrar o último `removed` event para este veículo. A inserção real será pouco depois dessa remoção. Se a remoção foi às 23:00 de ontem, a inserção terá sido entre as 23:00 e o início da viagem de hoje.
-
-### Impacto
-- Reduz o erro de horas para zero (se já houver fallback prévio) ou para um máximo definido
-- Não cria duplicados de eventos TMX fallback
-- Badge "Estimado" continua visível na UI
-
-### Ficheiros a alterar
-- `supabase/functions/sync-trackit-data/index.ts` — lógica de deduplicação e timestamp mais preciso no fallback
+### Files to change
+- `supabase/functions/sync-trackit-data/index.ts` — backfill block + STALE-CLEAR condition
 
