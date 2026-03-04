@@ -490,10 +490,20 @@ Deno.serve(async (req) => {
                 }
 
                 let eventsJson: any;
+                let rawText = '';
                 try {
-                  eventsJson = await eventsRes.json();
+                  rawText = await eventsRes.text();
+                  // Debug log for MID 3054 (23-IS-71)
+                  if (vehicleMid === 3054) {
+                    console.log(`[CARD-EVENTS-DEBUG] mid=3054 raw response (first 300 chars): ${rawText.substring(0, 300)}`);
+                  }
+                  // Sanitize malformed JSON (trailing commas) before parsing
+                  const cleaned = rawText
+                    .replace(/,\s*}/g, '}')
+                    .replace(/,\s*]/g, ']');
+                  eventsJson = JSON.parse(cleaned);
                 } catch (parseErr) {
-                  console.log(`[CARD-EVENTS] JSON parse error for mid=${vehicleMid}: ${parseErr}`);
+                  console.log(`[CARD-EVENTS] JSON parse error for mid=${vehicleMid}: ${parseErr} | raw (first 200): ${rawText.substring(0, 200)}`);
                   if (attempt < MAX_RETRIES) continue;
                   return { insertionTime: null, wasRemoved: false, removalTime: null };
                 }
@@ -605,10 +615,16 @@ Deno.serve(async (req) => {
                 }
 
                 let eventsJson: any;
+                let rawTextBulk = '';
                 try {
-                  eventsJson = await eventsRes.json();
+                  rawTextBulk = await eventsRes.text();
+                  // Sanitize malformed JSON (trailing commas) before parsing
+                  const cleanedBulk = rawTextBulk
+                    .replace(/,\s*}/g, '}')
+                    .replace(/,\s*]/g, ']');
+                  eventsJson = JSON.parse(cleanedBulk);
                 } catch (parseErr) {
-                  console.log(`[CARD-EVENTS-BULK] JSON parse error: ${parseErr}`);
+                  console.log(`[CARD-EVENTS-BULK] JSON parse error: ${parseErr} | raw (first 200): ${rawTextBulk.substring(0, 200)}`);
                   if (attempt < BULK_MAX_RETRIES) continue;
                   break;
                 }
