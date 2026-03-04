@@ -1,51 +1,51 @@
 
 
-# Fix: Fallback TMX para quando API de eventos Trackit falha
+# Fix: TMX Fallback usa timestamp errado (hora do sync, não hora de inserção)
 
-## Problema confirmado
+## Problema
 
-Os logs mostram claramente que a API Trackit `/ws/events` está a devolver `{"error":"Unexpected token ,","data":[]}` — HTTP 200 mas com erro interno do servidor Trackit. Isto afeta **todos** os veículos, não apenas o 23-IS-71. O JSON é válido (parse funciona), mas o campo `error` é truthy e `data` vem vazio. Retries não resolvem porque o erro é determinístico do lado do fornecedor.
+O fallback TMX usa `origVFallback?.data?.drs?.tmx` que é o **timestamp da última leitura de telemetria** — ou seja, ~quando o sync corre (~09:30), não quando o cartão foi fisicamente inserido (~02:30).
 
-Resultado: todos os veículos em `recheck_exact` ficam presos com timestamps do dia anterior.
+Para o 42-HX-80: o cartão foi inserido às ~02:30. O primeiro ciclo de sync que detectou o timestamp antigo e disparou o fallback foi às ~09:30. O TMX nesse momento era ~09:30. Resultado: regista 09:30 como hora de inserção — **7 horas de erro**.
 
-## Solução
+Este problema afeta **todos** os veículos com fallback TMX, não apenas o 42-HX-80. A diferença varia conforme a hora a que o fallback é ativado pela primeira vez.
 
-Quando a API de eventos falha para veículos em `recheck_exact` e o `existingCardInsertedAt` é de um dia anterior ao atual, usar o **timestamp TMX da telemetria** (que já temos do mesmo ciclo de sync) como fallback. Os eventos são registados em `card_events` com uma coluna `source` para distinguir:
-- `source = 'trackit_event'` — timestamp exacto da API (Event 45/46)
-- `source = 'tmx_fallback'` — timestamp estimado da telemetria (usado quando API falha)
+## Causa raiz
 
-### Alterações
+`tmx` = "timestamp da última mensagem de telemetria" ≠ "timestamp de inserção do cartão". Não existe nenhum campo na telemetria Trackit que indique quando o cartão foi inserido — essa informação só existe no Event 45 da API `/ws/events`, que está avariada.
 
-**1. Migração: adicionar coluna `source` à tabela `card_events`**
-```sql
-ALTER TABLE public.card_events 
-  ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'trackit_event';
-```
-Isto permite distinguir em auditoria quais timestamps são exactos vs estimados.
+## Solução proposta
 
-**2. Em `sync-trackit-data/index.ts` — bloco `CARD-RECHECK-PENDING-EXACT` (linhas 1043-1046)**
+Em vez de usar o TMX do ciclo atual, **procurar o TMX mais antigo de hoje** na tabela `card_events` para este veículo. Se já existir um `tmx_fallback` prévio, manter esse timestamp (que é mais próximo da hora real). Se não existir nenhum, usar uma abordagem mais conservadora:
 
-Substituir a preservação passiva por lógica TMX fallback:
-- Obter `tmx` do veículo (já disponível em `filteredVehicles[lookup.idx].data.drs.tmx`)
-- Se `existingCardInsertedAt` é de dia anterior E `tmx` é de hoje:
-  - Usar `tmx` como novo `card_inserted_at`
-  - Registar em `card_events`: remoção no antigo timestamp + inserção no tmx, ambos com `source = 'tmx_fallback'`
-  - Log: `[CARD-RECHECK-TMX-FALLBACK]`
-- Se mesma data ou sem tmx: manter comportamento actual (preservar)
+### Alternativa: Usar a primeira ignição/movimento de hoje
 
-**3. Aplicar mesma lógica no bloco de lookups individuais** (linhas 1068-1120) quando `fetchCardEvents` retorna null por erro de API.
+O Trackit fornece `pos.tmx` (posição) que só atualiza quando o veículo se move. Se compararmos o `pos.tmx` com o momento em que o cartão apareceu pela primeira vez na telemetria, podemos estimar melhor.
 
-**4. Na página CardHistory** — mostrar badge visual para eventos `tmx_fallback` (ex: badge amarelo "Estimado") para que gestores saibam quais horários são exactos vs estimados.
+**Mas o problema fundamental persiste**: sem Event 45, não temos o timestamp exato.
+
+### Abordagem pragmática recomendada
+
+1. **Não sobrescrever com TMX do ciclo atual** — em vez disso, quando o fallback precisa de disparar, verificar primeiro se já existe um `card_events` de `inserted` com `source = 'tmx_fallback'` para hoje neste veículo. Se existir, manter esse e não criar duplicado.
+
+2. **Para o primeiro fallback do dia**: registar o timestamp como **meia-noite (00:00) do dia atual** em vez do TMX. Isto é menos errado: sabemos que o cartão foi inserido "em algum momento de hoje", e meia-noite é o limite inferior. O badge "Estimado" já avisa o utilizador.
+
+3. **Quando a API recuperar**: o Event 45 real substitui automaticamente o fallback (lógica existente de `eventMs > afterMs`).
+
+### Alterações em `sync-trackit-data/index.ts`
+
+**Bloco TMX fallback (linhas 1043-1084):**
+- Antes de criar novos `card_events`, verificar se já existe um evento `inserted` com `source = 'tmx_fallback'` para hoje neste veículo
+- Se existir: usar esse timestamp (preservar o mais antigo, que é mais próximo da hora real)
+- Se não existir: usar o **primeiro TMX disponível** — mas como não o temos, usar o TMX atual mas com uma nota clara no log
+
+**Opção alternativa** (mais precisa): Query `card_events` para encontrar o último `removed` event para este veículo. A inserção real será pouco depois dessa remoção. Se a remoção foi às 23:00 de ontem, a inserção terá sido entre as 23:00 e o início da viagem de hoje.
 
 ### Impacto
-
-- Todos os ~20 veículos em `recheck_exact` passam a mostrar horário de hoje (via TMX)
-- Os `card_events` ficam marcados como `tmx_fallback` — auditoria sabe que não é Event 45 exacto
-- Quando a API Trackit voltar a funcionar, o próximo ciclo capta o Event 45 real e substitui automaticamente (porque `eventMs > afterMs`)
-- Declarações de atividade podem usar o TMX como referência operacional, com nota de fonte
+- Reduz o erro de horas para zero (se já houver fallback prévio) ou para um máximo definido
+- Não cria duplicados de eventos TMX fallback
+- Badge "Estimado" continua visível na UI
 
 ### Ficheiros a alterar
-- `supabase/functions/sync-trackit-data/index.ts` — lógica TMX fallback
-- `src/pages/admin/CardHistory.tsx` — badge "Estimado" para source=tmx_fallback
-- Migração SQL — coluna `source` em `card_events`
+- `supabase/functions/sync-trackit-data/index.ts` — lógica de deduplicação e timestamp mais preciso no fallback
 
