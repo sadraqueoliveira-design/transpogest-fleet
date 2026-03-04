@@ -1174,6 +1174,33 @@ Deno.serve(async (req) => {
               })
             );
 
+            // Helper to resolve driver name and employee number from card number
+            const resolveDriverInfo = (cardNum: string | null) => {
+              if (!cardNum) return { dName: null, empNum: null };
+              const normalized = cardNum.replace(/[\s]/g, "").toUpperCase();
+              let dName = cardToDriverName.get(normalized) || null;
+              if (!dName) {
+                // Try stripped matching on tachograph_cards
+                const stripped = normalized.replace(/^0+/, "").slice(0, -2);
+                for (const [cn, name] of cardToDriverName.entries()) {
+                  if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { dName = name as string; break; }
+                }
+              }
+              // Fallback: try employees table (handles country prefix like "5B.")
+              let empNum: number | null = null;
+              if (!dName) {
+                const emp = cardToEmployee.get(normalized);
+                if (emp) {
+                  dName = emp.full_name;
+                  empNum = emp.employee_number;
+                }
+              }
+              if (!empNum && dName) {
+                empNum = nameToEmployeeNumber.get(dName.toLowerCase().trim()) || null;
+              }
+              return { dName, empNum };
+            };
+
             for (const result of results) {
               const rec = vehicleRecords[result.idx];
               const origVehicle = filteredVehicles[result.idx];
@@ -1264,32 +1291,7 @@ Deno.serve(async (req) => {
               const existing = existingMap.get(rec.trackit_id);
               const vehicleDbId = existing?.id || null;
 
-              // Helper to resolve driver name and employee number from card number
-              const resolveDriverInfo = (cardNum: string | null) => {
-                if (!cardNum) return { dName: null, empNum: null };
-                const normalized = cardNum.replace(/[\s]/g, "").toUpperCase();
-                let dName = cardToDriverName.get(normalized) || null;
-                if (!dName) {
-                  // Try stripped matching on tachograph_cards
-                  const stripped = normalized.replace(/^0+/, "").slice(0, -2);
-                  for (const [cn, name] of cardToDriverName.entries()) {
-                    if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { dName = name as string; break; }
-                  }
-                }
-                // Fallback: try employees table (handles country prefix like "5B.")
-                let empNum: number | null = null;
-                if (!dName) {
-                  const emp = cardToEmployee.get(normalized);
-                  if (emp) {
-                    dName = emp.full_name;
-                    empNum = emp.employee_number;
-                  }
-                }
-                if (!empNum && dName) {
-                  empNum = nameToEmployeeNumber.get(dName.toLowerCase().trim()) || null;
-                }
-                return { dName, empNum };
-              };
+              // resolveDriverInfo is defined above the loop
 
               // Helper: check if a card_event already exists (prevent duplicates on backfills)
               const eventExists = async (cardNum: string | null, plate: string, eventType: string, eventAt: string): Promise<boolean> => {
