@@ -767,11 +767,20 @@ Deno.serve(async (req) => {
               // Card just inserted → need event timestamp
               cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "inserted", oldCardNumber: null, newCardNumber, existingCardInsertedAt: null });
             } else if (oldHasCard && !newHasCard) {
-              // Card removed → clear timestamp
-              (rec as any).card_inserted_at = null;
-              console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
-              // Record removal event
-              cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null, existingCardInsertedAt: null });
+              // Safety check: if the raw TMX telemetry still reports card_present=true,
+              // this removal was forced by the CARD-OVERRIDE logic (for dashboard display).
+              // Don't create a removal event — it's likely TMX jitter, not a real removal.
+              if (newCardPresent) {
+                console.log(`[CARD-REMOVE-SUPPRESSED] ${rec.plate}: override forced newHasCard=false but raw TMX still reports card_present=true. Skipping spurious removal event.`);
+                // Preserve existing card_inserted_at instead of clearing it
+                (rec as any).card_inserted_at = existing.card_inserted_at;
+              } else {
+                // Card genuinely removed (raw TMX confirms no card)
+                (rec as any).card_inserted_at = null;
+                console.log(`[CARD-REMOVE] ${rec.plate}: card removed, clearing card_inserted_at`);
+                // Record removal event
+                cardEventLookups.push({ idx, vehicleMid: parseInt(rec.trackit_id), plate: rec.plate, isBackfill: false, eventType: "removed", oldCardNumber, newCardNumber: null, existingCardInsertedAt: null });
+              }
             } else if (newHasCard && existing.card_inserted_at) {
               // Card still inserted — but check if card NUMBER changed (different driver)
               if (oldCardNumber && newCardNumber && oldCardNumber !== newCardNumber) {
@@ -1299,6 +1308,7 @@ Deno.serve(async (req) => {
               const realInsIsValid = realIns && (!realRem || new Date(realIns.timestamp).getTime() > new Date(realRem).getTime());
               const insertionTime = result.eventTime
                 || (realInsIsValid ? realIns.timestamp : null)
+                || (result.isBackfill && result.existingCardInsertedAt ? result.existingCardInsertedAt : null)
                 || (tachoTimestamp ? new Date(tachoTimestamp).toISOString() : null)
                 || new Date().toISOString();
               const removalEventAt = result.removalTime
