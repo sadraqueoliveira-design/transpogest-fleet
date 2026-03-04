@@ -797,9 +797,9 @@ Deno.serve(async (req) => {
                     vehicle_id: staleRestVehicleDbId, plate: rec.plate, card_number: staleRestCardNum, driver_name: staleRestDriverName, employee_number: staleRestEmpNum, event_type: "removed", event_at: staleRestEventAt,
                   });
                   console.log(`[CARD-EVENT] ${rec.plate}: STALE-REST removal recorded (event_at=${staleRestEventAt})`);
-                } else if (sessionAge >= FORTY_EIGHT_HOURS) {
-                  // Session >48h — no driver legitimately keeps a card inserted this long (EU 561)
-                  // Force removal directly — API has no data this old, saves a lookup slot
+                } else if (sessionAge >= FORTY_EIGHT_HOURS && (newDriverState1 === 0 || newDriverState1 === null)) {
+                  // Session >48h AND driver idle/unknown — no driver legitimately keeps a card inserted this long (EU 561)
+                  // If ds1 > 0 (driver active), skip removal — fall through to 12h recheck instead
                   (rec as any).card_inserted_at = null;
                   const staleClearEventAt = new Date().toISOString();
                   console.log(`[CARD-STALE-CLEAR] ${rec.plate}: session ${Math.round(sessionAge / 3600000)}h old (>48h), forcing removal (event_at=${staleClearEventAt})`);
@@ -864,6 +864,53 @@ Deno.serve(async (req) => {
               const backfillTs = tmx ? new Date(tmx).toISOString() : new Date().toISOString();
               (rec as any).card_inserted_at = backfillTs;
               console.log(`[CARD-BACKFILL] ${rec.plate}: card_inserted_at=${backfillTs} (source=tmx)`);
+              
+              // CRITICAL FIX: Also create a card_event so lastRealInsertionMap has a recent entry
+              // Without this, CARD-STALE-CLEAR calculates session age from old events and loops
+              const backfillExisting = existingMap.get(rec.trackit_id);
+              const backfillVehicleDbId = backfillExisting?.id || null;
+              const backfillCardNum = newCardNumber;
+              const backfillNormalized = backfillCardNum?.replace(/[\s]/g, "").toUpperCase() || "";
+              
+              // Dedup: check if a backfill event already exists today for this plate
+              const todayMidnight = new Date();
+              todayMidnight.setUTCHours(0, 0, 0, 0);
+              const { data: existingBackfill } = await supabaseAdmin
+                .from("card_events")
+                .select("id")
+                .eq("plate", rec.plate)
+                .eq("event_type", "inserted")
+                .eq("source", "backfill")
+                .gte("event_at", todayMidnight.toISOString())
+                .limit(1);
+              
+              if (!existingBackfill || existingBackfill.length === 0) {
+                // Resolve driver info
+                let backfillDriverName = cardToDriverName.get(backfillNormalized) || null;
+                if (!backfillDriverName) {
+                  const stripped = backfillNormalized.replace(/^0+/, "").slice(0, -2);
+                  for (const [cn, name] of cardToDriverName.entries()) {
+                    if (cn.replace(/^0+/, "").slice(0, -2) === stripped) { backfillDriverName = name as string; break; }
+                  }
+                }
+                let backfillEmpNum: number | null = null;
+                if (!backfillDriverName) {
+                  const emp = cardToEmployee.get(backfillNormalized);
+                  if (emp) { backfillDriverName = emp.full_name; backfillEmpNum = emp.employee_number; }
+                }
+                if (!backfillEmpNum && backfillDriverName) {
+                  backfillEmpNum = nameToEmployeeNumber.get(backfillDriverName.toLowerCase().trim()) || null;
+                }
+                
+                await supabaseAdmin.from("card_events").insert({
+                  vehicle_id: backfillVehicleDbId, plate: rec.plate, card_number: backfillCardNum,
+                  driver_name: backfillDriverName, employee_number: backfillEmpNum,
+                  event_type: "inserted", event_at: backfillTs, source: "backfill",
+                });
+                console.log(`[CARD-BACKFILL-EVENT] ${rec.plate}: card_event created (event_at=${backfillTs}, source=backfill)`);
+              } else {
+                console.log(`[CARD-BACKFILL-DEDUP] ${rec.plate}: backfill event already exists today, skipping`);
+              }
             }
             // If no card on both sides, card_inserted_at stays null
           }
