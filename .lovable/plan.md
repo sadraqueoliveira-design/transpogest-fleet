@@ -1,40 +1,54 @@
 
 
-# Diagnóstico: 23-IS-71 — API Trackit a retornar erros
+# Fix: Sanitizar JSON malformado da API Trackit `/ws/events`
 
-## Estado actual confirmado nos logs
+## Diagnóstico confirmado
 
-O 23-IS-71 **está a entrar** corretamente no fluxo `recheck_exact`. Os logs do ciclo Auchan (09:30:53) mostram:
+A API Trackit `/ws/events` está a devolver **JSON malformado** de forma consistente (não intermitente):
+- Bulk: HTTP 500/502
+- Individual: `"Unexpected token ,"` — indica vírgula final (trailing comma) ou outro defeito no JSON
 
-```text
-[CARD-RECHECK-BULK-START] 20 exact rechecks: 23-IS-71(MID:3054)...
-[CARD-EVENTS-BULK] Failed: HTTP 500                              ← bulk falhou
-[CARD-RECHECK-BULK-MISS] 23-IS-71 (MID:3054): bulk returned nothing, trying individual...
-[CARD-EVENTS] API error for mid=3054: Unexpected token ,          ← individual também falhou
-[CARD-RECHECK-PENDING-EXACT] 23-IS-71: no event 45 found, preserving 2026-03-03T20:19:46
+Os retries não ajudam porque o erro é determinístico — a API devolve sempre o mesmo JSON inválido. O `eventsRes.json()` falha no parse nativo.
+
+**Nota importante**: O `card_inserted_at = 2026-03-03 20:19:46` está **tecnicamente correto** — o cartão foi inserido ontem às 20:19 e nunca foi removido (não houve evento 46). O veículo iniciou viagem às 04:36 hoje com o mesmo cartão. Mas sem a API funcional, não sabemos se houve uma remoção/re-inserção overnight.
+
+## Solução: Sanitizar JSON antes de fazer parse
+
+Em vez de depender de `response.json()` (que falha com trailing commas), ler o body como texto e sanitizá-lo antes de fazer `JSON.parse()`:
+
+### Alterações em `supabase/functions/sync-trackit-data/index.ts`
+
+**1. Criar helper de sanitização JSON** (no topo da função, antes de `fetchCardEvents`):
+```typescript
+const sanitizeJson = (text: string): any => {
+  // Fix trailing commas before } or ] (common Trackit API issue)
+  const cleaned = text
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']');
+  return JSON.parse(cleaned);
+};
 ```
 
-A **API Trackit `/ws/events`** está a devolver:
-- **Bulk**: HTTP 500 (0 de 20 veículos com resultados)
-- **Individual**: JSON malformado ("Unexpected token ,") para **todos** os MIDs — não só o 3054
+**2. Em `fetchCardEvents` (linhas 492-499)**: Substituir `eventsRes.json()` por:
+```typescript
+const rawText = await eventsRes.text();
+eventsJson = sanitizeJson(rawText);
+```
+E no catch do parse, logar os primeiros 200 chars do rawText para diagnóstico.
 
-Isto é um problema **externo** (API do fornecedor instável), não do nosso código.
+**3. Em `fetchCardEventsBulk` (linhas 607-614)**: Mesma substituição — ler como texto e sanitizar.
 
-## Proposta de mitigação
+**4. Logar o raw response uma vez** para diagnóstico (apenas para MID 3054 / 23-IS-71):
+```typescript
+if (vehicleMid === 3054) {
+  console.log(`[CARD-EVENTS-DEBUG] raw response (first 300 chars): ${rawText.substring(0, 300)}`);
+}
+```
 
-Adicionar **retry com backoff** nas chamadas individuais `fetchCardEvents`. Quando a primeira tentativa falha com erro de JSON ou HTTP 5xx, aguardar 1-2 segundos e tentar novamente (máx. 2 retries). Isto aumenta a probabilidade de captar o evento 45 quando a API tem falhas intermitentes.
+## Impacto
 
-### Alterações
-
-**Ficheiro**: `supabase/functions/sync-trackit-data/index.ts`
-
-1. Envolver o `fetch` dentro de `fetchCardEvents` (linhas 465-477) num loop de retry (max 2 tentativas, delay 1.5s entre cada).
-2. Se `eventsRes.json()` lançar erro de parsing, fazer retry em vez de retornar null imediatamente.
-3. Para o bulk (`fetchCardEventsBulk`), fazer 1 retry com delay de 2s se HTTP 5xx.
-
-### Impacto esperado
-
-- Se a API for intermitente (falha 1 em cada 2-3 pedidos), o retry resolve.
-- Se a API estiver completamente em baixo, o comportamento mantém-se igual (preserva timestamp real existente).
-- Custo: ~2-3 segundos extra por ciclo quando há erros (aceitável dentro do timeout de 55s).
+- Se o problema for trailing commas no JSON, o fix resolve imediatamente e todos os veículos recebem os eventos corretos
+- Se o JSON estiver corrompido de outra forma, o log de diagnóstico mostra-nos exatamente o que a API devolve para podermos adaptar
+- Zero risco: se o JSON for válido, `sanitizeJson` comporta-se igual a `JSON.parse`
+- O retry continua ativo como segunda camada de proteção
 
