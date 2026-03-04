@@ -1,54 +1,51 @@
 
 
-# Fix: Sanitizar JSON malformado da API Trackit `/ws/events`
+# Fix: Fallback TMX para quando API de eventos Trackit falha
 
-## Diagnóstico confirmado
+## Problema confirmado
 
-A API Trackit `/ws/events` está a devolver **JSON malformado** de forma consistente (não intermitente):
-- Bulk: HTTP 500/502
-- Individual: `"Unexpected token ,"` — indica vírgula final (trailing comma) ou outro defeito no JSON
+Os logs mostram claramente que a API Trackit `/ws/events` está a devolver `{"error":"Unexpected token ,","data":[]}` — HTTP 200 mas com erro interno do servidor Trackit. Isto afeta **todos** os veículos, não apenas o 23-IS-71. O JSON é válido (parse funciona), mas o campo `error` é truthy e `data` vem vazio. Retries não resolvem porque o erro é determinístico do lado do fornecedor.
 
-Os retries não ajudam porque o erro é determinístico — a API devolve sempre o mesmo JSON inválido. O `eventsRes.json()` falha no parse nativo.
+Resultado: todos os veículos em `recheck_exact` ficam presos com timestamps do dia anterior.
 
-**Nota importante**: O `card_inserted_at = 2026-03-03 20:19:46` está **tecnicamente correto** — o cartão foi inserido ontem às 20:19 e nunca foi removido (não houve evento 46). O veículo iniciou viagem às 04:36 hoje com o mesmo cartão. Mas sem a API funcional, não sabemos se houve uma remoção/re-inserção overnight.
+## Solução
 
-## Solução: Sanitizar JSON antes de fazer parse
+Quando a API de eventos falha para veículos em `recheck_exact` e o `existingCardInsertedAt` é de um dia anterior ao atual, usar o **timestamp TMX da telemetria** (que já temos do mesmo ciclo de sync) como fallback. Os eventos são registados em `card_events` com uma coluna `source` para distinguir:
+- `source = 'trackit_event'` — timestamp exacto da API (Event 45/46)
+- `source = 'tmx_fallback'` — timestamp estimado da telemetria (usado quando API falha)
 
-Em vez de depender de `response.json()` (que falha com trailing commas), ler o body como texto e sanitizá-lo antes de fazer `JSON.parse()`:
+### Alterações
 
-### Alterações em `supabase/functions/sync-trackit-data/index.ts`
-
-**1. Criar helper de sanitização JSON** (no topo da função, antes de `fetchCardEvents`):
-```typescript
-const sanitizeJson = (text: string): any => {
-  // Fix trailing commas before } or ] (common Trackit API issue)
-  const cleaned = text
-    .replace(/,\s*}/g, '}')
-    .replace(/,\s*]/g, ']');
-  return JSON.parse(cleaned);
-};
+**1. Migração: adicionar coluna `source` à tabela `card_events`**
+```sql
+ALTER TABLE public.card_events 
+  ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'trackit_event';
 ```
+Isto permite distinguir em auditoria quais timestamps são exactos vs estimados.
 
-**2. Em `fetchCardEvents` (linhas 492-499)**: Substituir `eventsRes.json()` por:
-```typescript
-const rawText = await eventsRes.text();
-eventsJson = sanitizeJson(rawText);
-```
-E no catch do parse, logar os primeiros 200 chars do rawText para diagnóstico.
+**2. Em `sync-trackit-data/index.ts` — bloco `CARD-RECHECK-PENDING-EXACT` (linhas 1043-1046)**
 
-**3. Em `fetchCardEventsBulk` (linhas 607-614)**: Mesma substituição — ler como texto e sanitizar.
+Substituir a preservação passiva por lógica TMX fallback:
+- Obter `tmx` do veículo (já disponível em `filteredVehicles[lookup.idx].data.drs.tmx`)
+- Se `existingCardInsertedAt` é de dia anterior E `tmx` é de hoje:
+  - Usar `tmx` como novo `card_inserted_at`
+  - Registar em `card_events`: remoção no antigo timestamp + inserção no tmx, ambos com `source = 'tmx_fallback'`
+  - Log: `[CARD-RECHECK-TMX-FALLBACK]`
+- Se mesma data ou sem tmx: manter comportamento actual (preservar)
 
-**4. Logar o raw response uma vez** para diagnóstico (apenas para MID 3054 / 23-IS-71):
-```typescript
-if (vehicleMid === 3054) {
-  console.log(`[CARD-EVENTS-DEBUG] raw response (first 300 chars): ${rawText.substring(0, 300)}`);
-}
-```
+**3. Aplicar mesma lógica no bloco de lookups individuais** (linhas 1068-1120) quando `fetchCardEvents` retorna null por erro de API.
 
-## Impacto
+**4. Na página CardHistory** — mostrar badge visual para eventos `tmx_fallback` (ex: badge amarelo "Estimado") para que gestores saibam quais horários são exactos vs estimados.
 
-- Se o problema for trailing commas no JSON, o fix resolve imediatamente e todos os veículos recebem os eventos corretos
-- Se o JSON estiver corrompido de outra forma, o log de diagnóstico mostra-nos exatamente o que a API devolve para podermos adaptar
-- Zero risco: se o JSON for válido, `sanitizeJson` comporta-se igual a `JSON.parse`
-- O retry continua ativo como segunda camada de proteção
+### Impacto
+
+- Todos os ~20 veículos em `recheck_exact` passam a mostrar horário de hoje (via TMX)
+- Os `card_events` ficam marcados como `tmx_fallback` — auditoria sabe que não é Event 45 exacto
+- Quando a API Trackit voltar a funcionar, o próximo ciclo capta o Event 45 real e substitui automaticamente (porque `eventMs > afterMs`)
+- Declarações de atividade podem usar o TMX como referência operacional, com nota de fonte
+
+### Ficheiros a alterar
+- `supabase/functions/sync-trackit-data/index.ts` — lógica TMX fallback
+- `src/pages/admin/CardHistory.tsx` — badge "Estimado" para source=tmx_fallback
+- Migração SQL — coluna `source` em `card_events`
 
