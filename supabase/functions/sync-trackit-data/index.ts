@@ -702,7 +702,18 @@ Deno.serve(async (req) => {
             // Restore existing timestamps for dropped lookups
             const dropped = cardEventLookups.splice(MAX_TOTAL_LOOKUPS);
             for (const lookup of dropped) {
-              if (lookup.eventType === "recheck" || lookup.eventType === "backfill_only") {
+              if (lookup.eventType === "recheck") {
+                const rec = vehicleRecords[lookup.idx];
+                const origV = filteredVehicles[lookup.idx];
+                const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+                if (tmx) {
+                  const tmxTs = new Date(tmx).toISOString();
+                  console.log(`[CARD-RECHECK-FALLBACK] ${rec.plate}: cap dropped recheck, using tmx=${tmxTs} (was ${lookup.existingCardInsertedAt})`);
+                  (rec as any).card_inserted_at = tmxTs;
+                } else {
+                  (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
+                }
+              } else if (lookup.eventType === "backfill_only") {
                 const rec = vehicleRecords[lookup.idx];
                 (rec as any).card_inserted_at = lookup.existingCardInsertedAt;
               }
@@ -760,9 +771,17 @@ Deno.serve(async (req) => {
                   // Record removal + re-insertion events
                   result.eventType = "recheck_hit";
                 } else {
-                  // No newer event found → preserve existing timestamp, skip event creation
-                  console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, preserving ${result.existingCardInsertedAt}`);
-                  (rec as any).card_inserted_at = result.existingCardInsertedAt;
+                  // No newer event found → use tmx fallback instead of stale timestamp
+                  const origV = filteredVehicles[result.idx];
+                  const tmx = origV?.data?.drs?.tmx || origV?.data?.pos?.tmx || null;
+                  if (tmx) {
+                    const tmxTs = new Date(tmx).toISOString();
+                    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, falling back to tmx=${tmxTs} (was ${result.existingCardInsertedAt})`);
+                    (rec as any).card_inserted_at = tmxTs;
+                  } else {
+                    console.log(`[CARD-RECHECK-MISS] ${rec.plate}: no re-insertion found, preserving ${result.existingCardInsertedAt}`);
+                    (rec as any).card_inserted_at = result.existingCardInsertedAt;
+                  }
                   continue;
                 }
               }
