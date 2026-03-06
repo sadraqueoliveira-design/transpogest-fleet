@@ -435,6 +435,20 @@ export default function Maintenance() {
               </Button>
             )}
             <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex items-center gap-1.5">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                <Select value={alertDays} onValueChange={handleAlertDaysChange}>
+                  <SelectTrigger className="h-8 w-[100px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="15">15 dias</SelectItem>
+                    <SelectItem value="30">30 dias</SelectItem>
+                    <SelectItem value="60">60 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
                 <Upload className="h-4 w-4" /> Importar
               </Button>
