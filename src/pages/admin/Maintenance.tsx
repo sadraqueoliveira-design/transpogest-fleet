@@ -290,7 +290,7 @@ export default function Maintenance() {
 
     if (editDialog.current) {
       const updates: Record<string, any> = {};
-      if (isLavagem) { updates.last_service_date = editDate || null; }
+      if (isLavagem) { updates.last_service_date = editDate || null; updates.performed_by_employee = editEmployee || null; }
       else { updates.next_due_date = editDate || null; }
       updates.next_due_km = editKm ? parseInt(editKm) : null;
       updates.next_due_hours = editHours ? parseInt(editHours) : null;
