@@ -230,20 +230,15 @@ export default function Maintenance() {
   // Summary stats
   const stats = useMemo(() => {
     let expired = 0, urgent = 0, upcoming = 0, ok = 0;
-    const today = new Date();
-    schedules.forEach(s => {
-      let daysRemaining: number | null = null;
-      if (s.category === "lavagem" && s.last_service_date) {
-        daysRemaining = 30 - differenceInDays(today, parseISO(s.last_service_date));
-      } else if (s.next_due_date) {
-        daysRemaining = differenceInDays(parseISO(s.next_due_date), today);
-      }
-      if (daysRemaining === null) return;
-      if (daysRemaining < 0) expired++;
-      else if (daysRemaining <= 30) urgent++;
-      else if (daysRemaining <= 90) upcoming++;
-      else ok++;
+
+    schedules.forEach((schedule) => {
+      const status = getScheduleStatus(getScheduleDaysRemaining(schedule));
+      if (status === "expired") expired++;
+      else if (status === "urgent") urgent++;
+      else if (status === "upcoming") upcoming++;
+      else if (status === "ok") ok++;
     });
+
     return { expired, urgent, upcoming, ok };
   }, [schedules]);
 
