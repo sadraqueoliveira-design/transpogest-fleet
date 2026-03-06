@@ -417,7 +417,40 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       } else {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array", cellDates: false });
-        rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true }) as any[][];
+        
+        // Try all sheets to find the one with maintenance data
+        let bestRows: any[][] = [];
+        let bestMatchCount = 0;
+        
+        for (const sheetName of wb.SheetNames) {
+          const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true }) as any[][];
+          if (sheetRows.length < 2) continue;
+          
+          // Count how many known labels this sheet has
+          let matchCount = 0;
+          for (let r = 0; r < Math.min(sheetRows.length, 30); r++) {
+            for (let c = 0; c <= 5; c++) {
+              const val = String(sheetRows[r]?.[c] ?? "").trim();
+              if (val && matchesKnownLabel(val)) matchCount++;
+            }
+          }
+          
+          console.log(`Sheet "${sheetName}": ${sheetRows.length} rows, ${matchCount} label matches`);
+          
+          if (matchCount > bestMatchCount) {
+            bestMatchCount = matchCount;
+            bestRows = sheetRows;
+          }
+        }
+        
+        // If no sheet had matches, fall back to first sheet
+        if (bestRows.length === 0) {
+          bestRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true }) as any[][];
+        }
+        rawRows = bestRows;
+        
+        // Debug: log first 5 rows so we can see what the file looks like
+        console.log("First 5 rows of selected sheet:", rawRows.slice(0, 5).map(r => (r || []).slice(0, 6)));
       }
 
       if (rawRows.length < 2) { toast.error("Ficheiro vazio ou sem dados"); return; }
