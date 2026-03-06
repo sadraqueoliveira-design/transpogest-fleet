@@ -156,7 +156,12 @@ function ScheduleCell({
         )}
         {category.key === "Revisão KM" && schedule.next_due_km && (
           <span className="text-[10px] opacity-60">
-            {(schedule.next_due_km / 1000).toFixed(0)}k km
+            {schedule.next_due_km.toLocaleString("pt-PT")} km
+          </span>
+        )}
+        {category.key === "Lavagem" && (schedule as any).performed_by_employee && (
+          <span className="text-[10px] opacity-60">
+            Func. {(schedule as any).performed_by_employee}
           </span>
         )}
       </div>
@@ -180,6 +185,7 @@ export default function Maintenance() {
   const [editDate, setEditDate] = useState("");
   const [editKm, setEditKm] = useState("");
   const [editHours, setEditHours] = useState("");
+  const [editEmployee, setEditEmployee] = useState("");
   const [saving, setSaving] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -270,6 +276,7 @@ export default function Maintenance() {
     setEditDate(current?.next_due_date || current?.last_service_date || "");
     setEditKm(current?.next_due_km?.toString() || "");
     setEditHours(current?.next_due_hours?.toString() || "");
+    setEditEmployee((current as any)?.performed_by_employee || "");
   };
 
   const handleCardFilter = (filter: ScheduleStatus) => {
@@ -283,7 +290,7 @@ export default function Maintenance() {
 
     if (editDialog.current) {
       const updates: Record<string, any> = {};
-      if (isLavagem) { updates.last_service_date = editDate || null; }
+      if (isLavagem) { updates.last_service_date = editDate || null; updates.performed_by_employee = editEmployee || null; }
       else { updates.next_due_date = editDate || null; }
       updates.next_due_km = editKm ? parseInt(editKm) : null;
       updates.next_due_hours = editHours ? parseInt(editHours) : null;
@@ -302,7 +309,8 @@ export default function Maintenance() {
           last_service_date: isLavagem ? (editDate || null) : null,
           next_due_km: editKm ? parseInt(editKm) : null,
           next_due_hours: editHours ? parseInt(editHours) : null,
-        });
+          performed_by_employee: isLavagem ? (editEmployee || null) : null,
+        } as any);
       if (error) { toast.error("Erro ao criar"); setSaving(false); return; }
     }
 
@@ -584,6 +592,12 @@ export default function Maintenance() {
               <div className="space-y-2">
                 <Label>Próximas Horas</Label>
                 <Input type="number" value={editHours} onChange={e => setEditHours(e.target.value)} placeholder="Ex: 18000" />
+              </div>
+            )}
+            {editDialog?.category === "Lavagem" && (
+              <div className="space-y-2">
+                <Label>Nº Funcionário</Label>
+                <Input value={editEmployee} onChange={e => setEditEmployee(e.target.value)} placeholder="Ex: 123" />
               </div>
             )}
           </div>

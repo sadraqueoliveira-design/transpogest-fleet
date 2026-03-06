@@ -1323,6 +1323,7 @@ export type Database = {
           next_due_hours: number | null
           next_due_km: number | null
           notes: string | null
+          performed_by_employee: string | null
           updated_at: string
           vehicle_id: string
         }
@@ -1336,6 +1337,7 @@ export type Database = {
           next_due_hours?: number | null
           next_due_km?: number | null
           notes?: string | null
+          performed_by_employee?: string | null
           updated_at?: string
           vehicle_id: string
         }
@@ -1349,6 +1351,7 @@ export type Database = {
           next_due_hours?: number | null
           next_due_km?: number | null
           notes?: string | null
+          performed_by_employee?: string | null
           updated_at?: string
           vehicle_id?: string
         }
