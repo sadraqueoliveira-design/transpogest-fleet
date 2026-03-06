@@ -1,43 +1,59 @@
 
 
-# Fix: Debounce removals to prevent TMX jitter from creating spurious events
+# Alertas para motoristas + limiar configurável + importação nativa do Mapa de Manutenções
 
-## Problem analysis
+## 1. Alertas push para motoristas
 
-Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
-- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
-- Then a `backfill` insertion at ~10:28/10:55
-- The driver actually inserted the card around 05:00-06:00
+A edge function `check-maintenance-alerts` atualmente notifica apenas admins/managers. Será atualizada para:
+- Consultar `vehicles.current_driver_id` para cada veículo com manutenção a expirar
+- Enviar push individual ao motorista com mensagem personalizada (ex: "🔧 O seu veículo 73-DH-27 tem IPO a expirar em 5 dias")
+- Manter a notificação consolidada para admins/managers
+- Rota de redirecionamento: `/driver` para motoristas
 
-The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
+**Ficheiro**: `supabase/functions/check-maintenance-alerts/index.ts`
 
-The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
+## 2. Limiar configurável na página de manutenção
 
-**Root causes**:
-1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
-2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
+- Guardar o limiar na tabela `app_config` com a key `maintenance_alert_days` (valor por defeito: 15)
+- Adicionar um pequeno controlo na UI do Planeamento (dropdown ou input numérico) para o admin escolher 7, 15, 30 ou 60 dias
+- A edge function lê este valor da `app_config` em vez de usar 15 fixo
+- Atualizar o cron job para passar este valor (ou a function lê diretamente da BD)
 
-## Solution
+**Ficheiros**:
+- `src/pages/admin/Maintenance.tsx` (adicionar UI de configuração do limiar)
+- `supabase/functions/check-maintenance-alerts/index.ts` (ler limiar da BD)
+- SQL: inserir valor default em `app_config`
 
-### Change 1: Debounce removals (anti-flicker)
-In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
+## 3. Reconhecimento automático do formato "Mapa de Manutenções" (.xlsm)
 
-Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
+O ficheiro original tem um formato **transposto** (viaturas nas colunas, categorias nas linhas). Os cabeçalhos de linha são:
+- `MATRICULAS` → linha de matrículas
+- `DATA PROXIMA REVISÃO (X)` → Revisão KM data
+- `PROXIMA REVISÃO ( X )` → Revisão KM km
+- `REVISÃO ANUAL ( Y )` → Revisão Anual
+- `I.P.O DATA` → IPO
+- `REVISÃO DE FRIO` → Revisão Frio
+- `HORAS PROXIMA REVISÃO` → Revisão Horas
+- `TACOGRAFO` → Tacógrafo
+- `A.T.P.` → ATP
+- `LAVAGENS` → Lavagem
 
-### Change 2: Preserve earliest backfill timestamp
-When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
+A lógica de importação será atualizada para:
+1. Detetar automaticamente se o ficheiro está no formato "Mapa de Manutenções" (transposto) verificando se a primeira coluna contém estes cabeçalhos de linha
+2. Se sim, transpor os dados internamente: extrair matrículas da linha `MATRICULAS` e mapear cada linha de categoria aos valores por coluna
+3. Filtrar viaturas L-* (reboques) automaticamente
+4. Ignorar linhas auxiliares como `DIAS FALTA`, `HORAS ATUAIS`, `ATUALIZAÇÃO KM,S`, etc.
+5. Tratar `*******` como valor vazio
+6. Continuar para o fluxo normal de preview + seleção de categorias
 
-In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+**Ficheiro**: `src/components/admin/MaintenanceImportExport.tsx`
 
-### File to change
-`supabase/functions/sync-trackit-data/index.ts`:
+## Resumo de alterações
 
-1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
-2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
-3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
-
-### Expected outcome
-- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
-- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
-- Real removals (single, clean transition) will still be recorded normally
+| Ficheiro | Ação |
+|---|---|
+| `supabase/functions/check-maintenance-alerts/index.ts` | Editar: adicionar notificações a motoristas + ler limiar da BD |
+| `src/pages/admin/Maintenance.tsx` | Editar: adicionar selector de limiar de dias |
+| `src/components/admin/MaintenanceImportExport.tsx` | Editar: deteção automática do formato transposto |
+| SQL (app_config) | Inserir `maintenance_alert_days = 15` |
 
