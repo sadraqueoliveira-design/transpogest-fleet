@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
@@ -182,6 +183,25 @@ export default function Maintenance() {
   const [saving, setSaving] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [alertDays, setAlertDays] = useState("15");
+  const [savingAlertDays, setSavingAlertDays] = useState(false);
+
+  // Load alert threshold from app_config
+  useEffect(() => {
+    supabase.from("app_config").select("value").eq("key", "maintenance_alert_days").single()
+      .then(({ data }) => { if (data?.value) setAlertDays(data.value); });
+  }, []);
+
+  const handleAlertDaysChange = async (value: string) => {
+    setAlertDays(value);
+    setSavingAlertDays(true);
+    const { error } = await supabase
+      .from("app_config")
+      .upsert({ key: "maintenance_alert_days", value }, { onConflict: "key" });
+    setSavingAlertDays(false);
+    if (error) toast.error("Erro ao guardar limiar");
+    else toast.success(`Limiar de alerta: ${value} dias`);
+  };
 
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
@@ -415,6 +435,20 @@ export default function Maintenance() {
               </Button>
             )}
             <div className="flex items-center gap-1.5 ml-auto">
+              <div className="flex items-center gap-1.5">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                <Select value={alertDays} onValueChange={handleAlertDaysChange}>
+                  <SelectTrigger className="h-8 w-[100px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="15">15 dias</SelectItem>
+                    <SelectItem value="30">30 dias</SelectItem>
+                    <SelectItem value="60">60 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
                 <Upload className="h-4 w-4" /> Importar
               </Button>

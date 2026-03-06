@@ -248,6 +248,130 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     setImportMode("update");
   };
 
+  // Row labels in the transposed "Mapa de Manutenções" format (first column values)
+  const TRANSPOSED_ROW_MAP: Record<string, { dbKey: string; type: "date" | "km" | "hours" }> = {
+    "MATRICULAS": { dbKey: "_plates_", type: "date" },
+    "DATA PROXIMA REVISÃO (X)": { dbKey: "Revisão KM", type: "date" },
+    "DATA PROXIMA REVISAO (X)": { dbKey: "Revisão KM", type: "date" },
+    "PROXIMA REVISÃO ( X )": { dbKey: "Revisão KM", type: "km" },
+    "PROXIMA REVISAO ( X )": { dbKey: "Revisão KM", type: "km" },
+    "REVISÃO ANUAL ( Y )": { dbKey: "Revisão Anual", type: "date" },
+    "REVISAO ANUAL ( Y )": { dbKey: "Revisão Anual", type: "date" },
+    "I.P.O DATA": { dbKey: "IPO", type: "date" },
+    "IPO DATA": { dbKey: "IPO", type: "date" },
+    "REVISÃO DE FRIO": { dbKey: "Revisão Frio", type: "date" },
+    "REVISAO DE FRIO": { dbKey: "Revisão Frio", type: "date" },
+    "HORAS PROXIMA REVISÃO": { dbKey: "Revisão Horas", type: "hours" },
+    "HORAS PROXIMA REVISAO": { dbKey: "Revisão Horas", type: "hours" },
+    "TACOGRAFO": { dbKey: "Tacógrafo", type: "date" },
+    "TACÓGRAFO": { dbKey: "Tacógrafo", type: "date" },
+    "A.T.P.": { dbKey: "ATP", type: "date" },
+    "ATP": { dbKey: "ATP", type: "date" },
+    "LAVAGENS": { dbKey: "Lavagem", type: "date" },
+  };
+
+  // Auxiliary rows to skip in transposed format
+  const SKIP_ROWS = new Set([
+    "DIAS FALTA", "DIAS EM FALTA", "HORAS ATUAIS", "HORAS EM FALTA",
+    "KM,S FALTA", "ATUALIZAÇÃO KM,S", "ATUALIZACAO KM,S",
+    "MOVEL", "MOTORISTA", "MANUTENÇÕES REBOQUES", "MANUTENCOES REBOQUES",
+    "MÉDIA IDADE", "MEDIA IDADE",
+  ]);
+
+  function isTransposedFormat(rawRows: any[][]): boolean {
+    // Check if several known row labels appear in col 2 (index ~2) or col 1
+    const labelCols = [0, 1, 2, 3];
+    let matchCount = 0;
+    const allLabels = new Set([...Object.keys(TRANSPOSED_ROW_MAP), ...SKIP_ROWS]);
+
+    for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+      for (const c of labelCols) {
+        const val = String(rawRows[r]?.[c] ?? "").trim().toUpperCase();
+        if (val && allLabels.has(val)) matchCount++;
+      }
+    }
+    return matchCount >= 3;
+  }
+
+  function parseTransposedFile(rawRows: any[][]): { parsed: ImportPreviewRow[]; detected: string[] } {
+    // Find which column contains the row labels
+    let labelCol = 2; // default based on the real file
+    for (let c = 0; c <= 3; c++) {
+      let hits = 0;
+      for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+        const val = String(rawRows[r]?.[c] ?? "").trim().toUpperCase();
+        if (Object.keys(TRANSPOSED_ROW_MAP).includes(val) || SKIP_ROWS.has(val)) hits++;
+      }
+      if (hits >= 3) { labelCol = c; break; }
+    }
+
+    // Find the MATRICULAS row to get plates
+    let platesRow = -1;
+    const rowMappings: { rowIdx: number; dbKey: string; type: "date" | "km" | "hours" }[] = [];
+    const detected: string[] = [];
+
+    for (let r = 0; r < rawRows.length; r++) {
+      const label = String(rawRows[r]?.[labelCol] ?? "").trim().toUpperCase();
+      if (!label) continue;
+
+      if (label === "MATRICULAS") {
+        platesRow = r;
+        continue;
+      }
+
+      const mapping = TRANSPOSED_ROW_MAP[label];
+      if (mapping && mapping.dbKey !== "_plates_") {
+        rowMappings.push({ rowIdx: r, ...mapping });
+        if (!detected.includes(mapping.dbKey)) detected.push(mapping.dbKey);
+      }
+    }
+
+    if (platesRow === -1) return { parsed: [], detected: [] };
+
+    // Extract plates from the plates row (start from labelCol+1)
+    const platesRowData = rawRows[platesRow];
+    const startCol = labelCol + 1;
+    const plates: { colIdx: number; plate: string }[] = [];
+
+    for (let c = startCol; c < platesRowData.length; c++) {
+      const cellVal = String(platesRowData[c] ?? "").trim();
+      if (!cellVal || cellVal.includes("***") || cellVal.toUpperCase() === "VIATURAS DE SERVIÇO") continue;
+      plates.push({ colIdx: c, plate: cellVal });
+    }
+
+    // Build preview rows per vehicle (column)
+    const parsed: ImportPreviewRow[] = [];
+    for (const { colIdx, plate } of plates) {
+      const normalPlate = plate.replace(/[\s\-]/g, "").toUpperCase();
+      const vehicleId = vehicleMap[normalPlate] || null;
+
+      const categories: ImportPreviewRow["categories"] = {};
+      for (const { rowIdx, dbKey, type } of rowMappings) {
+        const cellVal = rawRows[rowIdx]?.[colIdx];
+        const strVal = String(cellVal ?? "").trim();
+        if (!strVal || strVal.includes("*******") || strVal.toLowerCase() === "anual") continue;
+
+        if (!categories[dbKey]) categories[dbKey] = {};
+
+        if (type === "km") {
+          const km = typeof cellVal === "number" ? cellVal : parseInt(strVal.replace(/[,.\s]/g, ""));
+          if (!isNaN(km) && km > 0) categories[dbKey].km = km;
+        } else if (type === "hours") {
+          const hours = typeof cellVal === "number" ? cellVal : parseInt(strVal.replace(/[,.\s]/g, ""));
+          if (!isNaN(hours) && hours > 0) categories[dbKey].hours = hours;
+        } else {
+          categories[dbKey].date = parseFlexibleDate(cellVal);
+        }
+      }
+
+      if (Object.keys(categories).length > 0) {
+        parsed.push({ plate, vehicleId, categories, hasMatch: !!vehicleId });
+      }
+    }
+
+    return { parsed, detected };
+  }
+
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -268,6 +392,22 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
       if (rawRows.length < 2) { toast.error("Ficheiro vazio ou sem dados"); return; }
 
+      // Auto-detect transposed "Mapa de Manutenções" format
+      if (isTransposedFormat(rawRows)) {
+        console.log("Detected transposed Mapa de Manutenções format");
+        const { parsed, detected } = parseTransposedFile(rawRows);
+        if (parsed.length === 0) { toast.error("Nenhum dado válido encontrado no formato transposto"); return; }
+        if (detected.length === 0) { toast.error("Nenhuma categoria reconhecida"); return; }
+
+        setPreviewRows(parsed);
+        setDetectedCategories(detected);
+        setSelectedCategories(new Set(detected));
+        setStep("configure");
+        toast.success(`Formato "Mapa de Manutenções" detetado — ${parsed.length} veículos, ${detected.length} categorias`);
+        return;
+      }
+
+      // Standard columnar format
       const headers = rawRows[0].map((h: any) => String(h ?? "").trim().toLowerCase());
       
       // Find the plate column
