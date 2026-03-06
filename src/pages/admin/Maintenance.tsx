@@ -10,19 +10,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge } from "lucide-react";
+import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
 const CATEGORIES = [
-  { key: "revisao_km", label: "Revisão KM", icon: Gauge, short: "Rev. KM" },
-  { key: "revisao_anual", label: "Revisão Anual", icon: CalendarDays, short: "Rev. Anual" },
-  { key: "ipo", label: "IPO", icon: Shield, short: "IPO" },
-  { key: "revisao_frio", label: "Revisão Frio", icon: Thermometer, short: "Frio" },
-  { key: "tacografo", label: "Tacógrafo", icon: Clock, short: "Tacóg." },
-  { key: "atp", label: "ATP", icon: Shield, short: "ATP" },
-  { key: "lavagem", label: "Lavagem", icon: Droplets, short: "Lavagem" },
-  { key: "revisao_horas", label: "Revisão Horas", icon: Clock, short: "Rev. Horas" },
+  { key: "Revisão KM", label: "Revisão KM", icon: Gauge, short: "Rev. KM" },
+  { key: "Revisão Anual", label: "Revisão Anual", icon: CalendarDays, short: "Rev. Anual" },
+  { key: "IPO", label: "IPO", icon: Shield, short: "IPO" },
+  { key: "Revisão Frio", label: "Revisão Frio", icon: Thermometer, short: "Frio" },
+  { key: "Tacógrafo", label: "Tacógrafo", icon: Clock, short: "Tacóg." },
+  { key: "ATP", label: "ATP", icon: Shield, short: "ATP" },
+  { key: "Lavagem", label: "Lavagem", icon: Droplets, short: "Lavagem" },
+  { key: "Revisão Horas", label: "Revisão Horas", icon: Clock, short: "Rev. Horas" },
 ] as const;
 
 type ScheduleRow = {
@@ -117,8 +118,8 @@ function ScheduleCell({
     );
   }
 
-  const isLavagem = category.key === "lavagem";
-  const isHours = category.key === "revisao_horas";
+  const isLavagem = category.key === "Lavagem";
+  const isHours = category.key === "Revisão Horas";
   
   let daysRemaining: number | null = null;
   let displayValue = "—";
@@ -152,7 +153,7 @@ function ScheduleCell({
             {daysRemaining < 0 ? `${Math.abs(daysRemaining)}d atrás` : `${daysRemaining}d`}
           </span>
         )}
-        {category.key === "revisao_km" && schedule.next_due_km && (
+        {category.key === "Revisão KM" && schedule.next_due_km && (
           <span className="text-[10px] opacity-60">
             {(schedule.next_due_km / 1000).toFixed(0)}k km
           </span>
@@ -179,6 +180,8 @@ export default function Maintenance() {
   const [editKm, setEditKm] = useState("");
   const [editHours, setEditHours] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
@@ -256,7 +259,7 @@ export default function Maintenance() {
   const handleSave = async () => {
     if (!editDialog) return;
     setSaving(true);
-    const isLavagem = editDialog.category === "lavagem";
+    const isLavagem = editDialog.category === "Lavagem";
 
     if (editDialog.current) {
       const updates: Record<string, any> = {};
@@ -411,12 +414,20 @@ export default function Maintenance() {
                 Limpar filtro
               </Button>
             )}
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
-              <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
-              <span className="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-200 ml-2" /> &lt;90d
-              <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
+                <Upload className="h-4 w-4" /> Importar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowExport(true)}>
+                <Download className="h-4 w-4" /> Exportar
+              </Button>
             </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
+            <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
+            <span className="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-200 ml-2" /> &lt;90d
+            <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
           </div>
 
           <Card>
@@ -526,16 +537,16 @@ export default function Maintenance() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>{editDialog?.category === "lavagem" ? "Última lavagem" : "Próxima data"}</Label>
+              <Label>{editDialog?.category === "Lavagem" ? "Última lavagem" : "Próxima data"}</Label>
               <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
             </div>
-            {editDialog?.category === "revisao_km" && (
+            {editDialog?.category === "Revisão KM" && (
               <div className="space-y-2">
                 <Label>Próximo KM</Label>
                 <Input type="number" value={editKm} onChange={e => setEditKm(e.target.value)} placeholder="Ex: 1500000" />
               </div>
             )}
-            {editDialog?.category === "revisao_horas" && (
+            {editDialog?.category === "Revisão Horas" && (
               <div className="space-y-2">
                 <Label>Próximas Horas</Label>
                 <Input type="number" value={editHours} onChange={e => setEditHours(e.target.value)} placeholder="Ex: 18000" />
@@ -550,6 +561,20 @@ export default function Maintenance() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ScheduleExportDialog
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        vehicles={vehicles}
+        scheduleLookup={scheduleLookup}
+      />
+      <ScheduleImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        vehicles={vehicles}
+        scheduleLookup={scheduleLookup}
+        onImported={fetchData}
+      />
     </div>
   );
 }
