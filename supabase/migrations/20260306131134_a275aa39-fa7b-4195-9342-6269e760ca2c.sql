@@ -1,0 +1,1 @@
+ALTER TABLE public.vehicle_maintenance_schedule ADD COLUMN performed_by_employee text;

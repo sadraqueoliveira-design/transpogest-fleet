@@ -156,7 +156,12 @@ function ScheduleCell({
         )}
         {category.key === "Revisão KM" && schedule.next_due_km && (
           <span className="text-[10px] opacity-60">
-            {(schedule.next_due_km / 1000).toFixed(0)}k km
+            {schedule.next_due_km.toLocaleString("pt-PT")} km
+          </span>
+        )}
+        {category.key === "Lavagem" && (schedule as any).performed_by_employee && (
+          <span className="text-[10px] opacity-60">
+            Func. {(schedule as any).performed_by_employee}
           </span>
         )}
       </div>
