@@ -183,6 +183,25 @@ export default function Maintenance() {
   const [saving, setSaving] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [alertDays, setAlertDays] = useState("15");
+  const [savingAlertDays, setSavingAlertDays] = useState(false);
+
+  // Load alert threshold from app_config
+  useEffect(() => {
+    supabase.from("app_config").select("value").eq("key", "maintenance_alert_days").single()
+      .then(({ data }) => { if (data?.value) setAlertDays(data.value); });
+  }, []);
+
+  const handleAlertDaysChange = async (value: string) => {
+    setAlertDays(value);
+    setSavingAlertDays(true);
+    const { error } = await supabase
+      .from("app_config")
+      .upsert({ key: "maintenance_alert_days", value }, { onConflict: "key" });
+    setSavingAlertDays(false);
+    if (error) toast.error("Erro ao guardar limiar");
+    else toast.success(`Limiar de alerta: ${value} dias`);
+  };
 
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
