@@ -169,6 +169,7 @@ export default function Maintenance() {
   const [vehicleMap, setVehicleMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | ScheduleStatus>("all");
   const [editDialog, setEditDialog] = useState<{
     vehicleId: string;
     category: string;
