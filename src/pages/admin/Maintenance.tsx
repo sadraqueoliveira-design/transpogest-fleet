@@ -561,6 +561,20 @@ export default function Maintenance() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ScheduleExportDialog
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        vehicles={vehicles}
+        scheduleLookup={scheduleLookup}
+      />
+      <ScheduleImportDialog
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        vehicles={vehicles}
+        scheduleLookup={scheduleLookup}
+        onImported={fetchData}
+      />
     </div>
   );
 }
