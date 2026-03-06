@@ -309,7 +309,8 @@ export default function Maintenance() {
           last_service_date: isLavagem ? (editDate || null) : null,
           next_due_km: editKm ? parseInt(editKm) : null,
           next_due_hours: editHours ? parseInt(editHours) : null,
-        });
+          performed_by_employee: isLavagem ? (editEmployee || null) : null,
+        } as any);
       if (error) { toast.error("Erro ao criar"); setSaving(false); return; }
     }
 
