@@ -307,15 +307,19 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
   }
 
   function isTransposedFormat(rawRows: any[][]): boolean {
-    const labelCols = [0, 1, 2, 3];
+    const labelCols = [0, 1, 2, 3, 4, 5];
     let matchCount = 0;
 
-    for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+    for (let r = 0; r < Math.min(rawRows.length, 40); r++) {
       for (const c of labelCols) {
         const val = String(rawRows[r]?.[c] ?? "").trim();
-        if (val && matchesKnownLabel(val)) matchCount++;
+        if (val && matchesKnownLabel(val)) {
+          matchCount++;
+          console.log(`Transposed match: row ${r}, col ${c}, value "${val}"`);
+        }
       }
     }
+    console.log(`Total transposed matches: ${matchCount}`);
     return matchCount >= 3;
   }
 
