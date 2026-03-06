@@ -64,6 +64,28 @@ const ALIASES: Record<string, string[]> = {
   date_scheduled: ["date_scheduled", "data", "data agendada"],
 };
 
+type ScheduleStatus = "expired" | "urgent" | "upcoming" | "ok";
+
+function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
+  if (schedule.category === "lavagem" && schedule.last_service_date) {
+    return 30 - differenceInDays(new Date(), parseISO(schedule.last_service_date));
+  }
+
+  if (schedule.next_due_date) {
+    return differenceInDays(parseISO(schedule.next_due_date), new Date());
+  }
+
+  return null;
+}
+
+function getScheduleStatus(daysRemaining: number | null): ScheduleStatus | null {
+  if (daysRemaining === null) return null;
+  if (daysRemaining < 0) return "expired";
+  if (daysRemaining <= 30) return "urgent";
+  if (daysRemaining <= 90) return "upcoming";
+  return "ok";
+}
+
 function getDaysStatus(daysRemaining: number | null): { color: string; label: string } {
   if (daysRemaining === null) return { color: "bg-muted text-muted-foreground", label: "—" };
   if (daysRemaining < 0) return { color: "bg-destructive/20 text-destructive border-destructive/30", label: "Expirado" };
@@ -147,6 +169,7 @@ export default function Maintenance() {
   const [vehicleMap, setVehicleMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | ScheduleStatus>("all");
   const [editDialog, setEditDialog] = useState<{
     vehicleId: string;
     category: string;
@@ -186,31 +209,36 @@ export default function Maintenance() {
     return lookup;
   }, [schedules]);
 
-  // Filter vehicles that have schedule data and match search
+  // Filter vehicles that have schedule data, match search and optional status filter
   const filteredVehicles = useMemo(() => {
     const vehiclesWithSchedule = vehicles.filter(v => scheduleLookup[v.id]);
-    if (!search) return vehiclesWithSchedule;
-    const q = search.toLowerCase();
-    return vehiclesWithSchedule.filter(v => v.plate.toLowerCase().includes(q));
-  }, [vehicles, scheduleLookup, search]);
+    const q = search.trim().toLowerCase();
+
+    return vehiclesWithSchedule.filter((vehicle) => {
+      const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q);
+      if (!matchesSearch) return false;
+      if (activeStatusFilter === "all") return true;
+
+      const vehicleSchedules = Object.values(scheduleLookup[vehicle.id] || {});
+      return vehicleSchedules.some((schedule) => {
+        const daysRemaining = getScheduleDaysRemaining(schedule);
+        return getScheduleStatus(daysRemaining) === activeStatusFilter;
+      });
+    });
+  }, [vehicles, scheduleLookup, search, activeStatusFilter]);
 
   // Summary stats
   const stats = useMemo(() => {
     let expired = 0, urgent = 0, upcoming = 0, ok = 0;
-    const today = new Date();
-    schedules.forEach(s => {
-      let daysRemaining: number | null = null;
-      if (s.category === "lavagem" && s.last_service_date) {
-        daysRemaining = 30 - differenceInDays(today, parseISO(s.last_service_date));
-      } else if (s.next_due_date) {
-        daysRemaining = differenceInDays(parseISO(s.next_due_date), today);
-      }
-      if (daysRemaining === null) return;
-      if (daysRemaining < 0) expired++;
-      else if (daysRemaining <= 30) urgent++;
-      else if (daysRemaining <= 90) upcoming++;
-      else ok++;
+
+    schedules.forEach((schedule) => {
+      const status = getScheduleStatus(getScheduleDaysRemaining(schedule));
+      if (status === "expired") expired++;
+      else if (status === "urgent") urgent++;
+      else if (status === "upcoming") upcoming++;
+      else if (status === "ok") ok++;
     });
+
     return { expired, urgent, upcoming, ok };
   }, [schedules]);
 
@@ -219,6 +247,10 @@ export default function Maintenance() {
     setEditDate(current?.next_due_date || current?.last_service_date || "");
     setEditKm(current?.next_due_km?.toString() || "");
     setEditHours(current?.next_due_hours?.toString() || "");
+  };
+
+  const handleCardFilter = (filter: ScheduleStatus) => {
+    setActiveStatusFilter((prev) => (prev === filter ? "all" : filter));
   };
 
   const handleSave = async () => {
@@ -307,7 +339,10 @@ export default function Maintenance() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-destructive/30 bg-destructive/5">
+        <Card
+          className={`border-destructive/30 bg-destructive/5 cursor-pointer transition-all ${activeStatusFilter === "expired" ? "ring-2 ring-destructive" : ""}`}
+          onClick={() => handleCardFilter("expired")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-8 w-8 text-destructive" />
             <div>
@@ -316,7 +351,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-orange-300/50 bg-orange-50 dark:bg-orange-900/10">
+        <Card
+          className={`border-orange-300/50 bg-orange-50 dark:bg-orange-900/10 cursor-pointer transition-all ${activeStatusFilter === "urgent" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("urgent")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <Clock className="h-8 w-8 text-orange-600" />
             <div>
@@ -325,7 +363,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-yellow-300/50 bg-yellow-50 dark:bg-yellow-900/10">
+        <Card
+          className={`border-yellow-300/50 bg-yellow-50 dark:bg-yellow-900/10 cursor-pointer transition-all ${activeStatusFilter === "upcoming" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("upcoming")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <CalendarDays className="h-8 w-8 text-yellow-600" />
             <div>
@@ -334,7 +375,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-emerald-300/50 bg-emerald-50 dark:bg-emerald-900/10">
+        <Card
+          className={`border-emerald-300/50 bg-emerald-50 dark:bg-emerald-900/10 cursor-pointer transition-all ${activeStatusFilter === "ok" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("ok")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <CheckCircle className="h-8 w-8 text-emerald-600" />
             <div>
@@ -352,7 +396,7 @@ export default function Maintenance() {
         </TabsList>
 
         <TabsContent value="schedule" className="space-y-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
@@ -362,6 +406,11 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
+            {activeStatusFilter !== "all" && (
+              <Button variant="outline" size="sm" onClick={() => setActiveStatusFilter("all")}>
+                Limpar filtro
+              </Button>
+            )}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
               <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
