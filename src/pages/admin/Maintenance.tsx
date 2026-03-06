@@ -339,7 +339,10 @@ export default function Maintenance() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-destructive/30 bg-destructive/5">
+        <Card
+          className={`border-destructive/30 bg-destructive/5 cursor-pointer transition-all ${activeStatusFilter === "expired" ? "ring-2 ring-destructive" : ""}`}
+          onClick={() => handleCardFilter("expired")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-8 w-8 text-destructive" />
             <div>
@@ -348,7 +351,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-orange-300/50 bg-orange-50 dark:bg-orange-900/10">
+        <Card
+          className={`border-orange-300/50 bg-orange-50 dark:bg-orange-900/10 cursor-pointer transition-all ${activeStatusFilter === "urgent" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("urgent")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <Clock className="h-8 w-8 text-orange-600" />
             <div>
@@ -357,7 +363,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-yellow-300/50 bg-yellow-50 dark:bg-yellow-900/10">
+        <Card
+          className={`border-yellow-300/50 bg-yellow-50 dark:bg-yellow-900/10 cursor-pointer transition-all ${activeStatusFilter === "upcoming" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("upcoming")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <CalendarDays className="h-8 w-8 text-yellow-600" />
             <div>
@@ -366,7 +375,10 @@ export default function Maintenance() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-emerald-300/50 bg-emerald-50 dark:bg-emerald-900/10">
+        <Card
+          className={`border-emerald-300/50 bg-emerald-50 dark:bg-emerald-900/10 cursor-pointer transition-all ${activeStatusFilter === "ok" ? "ring-2 ring-primary" : ""}`}
+          onClick={() => handleCardFilter("ok")}
+        >
           <CardContent className="p-4 flex items-center gap-3">
             <CheckCircle className="h-8 w-8 text-emerald-600" />
             <div>
