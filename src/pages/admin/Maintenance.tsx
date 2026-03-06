@@ -180,6 +180,8 @@ export default function Maintenance() {
   const [editKm, setEditKm] = useState("");
   const [editHours, setEditHours] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
