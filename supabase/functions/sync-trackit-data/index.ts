@@ -768,12 +768,19 @@ Deno.serve(async (req) => {
 
             // Override: if TMX says card_present but we have a real removal event
             // that is more recent than the last real insertion, trust the removal
+            // ANTI-JITTER: Skip override if ≥2 recent removals detected (TMX jitter pattern)
             if (newHasCard) {
-              const lastRemoval = lastRealRemovalMap.get(rec.plate);
-              const lastInsertion = lastRealInsertionMap.get(rec.plate);
-              if (lastRemoval && (!lastInsertion || new Date(lastRemoval).getTime() > new Date(lastInsertion.timestamp).getTime())) {
-                console.log(`[CARD-OVERRIDE] ${rec.plate}: TMX reports card_present=true but last removal (${lastRemoval}) is newer than last insertion (${lastInsertion?.timestamp || 'none'}). Forcing newHasCard=false`);
-                newHasCard = false;
+              const recentRemovals = recentRemovalCountMap.get(rec.plate) || 0;
+              if (recentRemovals >= 2) {
+                // Jitter pattern detected — TMX is reliable, trust card_present=true
+                console.log(`[CARD-OVERRIDE-SKIP] ${rec.plate}: TMX reports card_present=true and ${recentRemovals} recent removals detected (jitter pattern). Trusting TMX.`);
+              } else {
+                const lastRemoval = lastRealRemovalMap.get(rec.plate);
+                const lastInsertion = lastRealInsertionMap.get(rec.plate);
+                if (lastRemoval && (!lastInsertion || new Date(lastRemoval).getTime() > new Date(lastInsertion.timestamp).getTime())) {
+                  console.log(`[CARD-OVERRIDE] ${rec.plate}: TMX reports card_present=true but last removal (${lastRemoval}) is newer than last insertion (${lastInsertion?.timestamp || 'none'}). Forcing newHasCard=false`);
+                  newHasCard = false;
+                }
               }
             }
 
@@ -1356,6 +1363,15 @@ Deno.serve(async (req) => {
                 : (result.eventTime ? "event-45" : (tachoTimestamp ? "tmx" : "now"));
               const label = result.isBackfill ? "CARD-BACKFILL" : (result.eventType === "removed" ? "CARD-REMOVE" : "CARD-INSERT");
               console.log(`[${label}] ${rec.plate}: ${result.eventType === "removed" ? `removal_at=${removalEventAt}` : `card_inserted_at=${insertionTime}`} (source=${source})`);
+
+              // Store card_insertion_source in tachograph_status for UI transparency
+              if (result.eventType !== "removed" && rec.tachograph_status) {
+                try {
+                  const tacho = JSON.parse(rec.tachograph_status);
+                  tacho.card_insertion_source = source;
+                  rec.tachograph_status = JSON.stringify(tacho);
+                } catch { /* ignore */ }
+              }
 
               // Skip card_events for backfill_only (no real state change detected)
               if (result.eventType === "backfill_only") continue;

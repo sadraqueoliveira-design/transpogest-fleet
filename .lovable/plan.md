@@ -1,91 +1,43 @@
 
 
-# Fix: Eliminar Loop CARD-OVERRIDE + Limpar Dados + Badge Estimado
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Diagnóstico
+## Problem analysis
 
-O problema é **muito maior** do que o BN-86-PD. Hoje existem **3.900 eventos de remoção espúrios** em **~140 viaturas**. A causa raiz é um **loop de feedback** no CARD-OVERRIDE:
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-1. A lógica CARD-OVERRIDE na linha 769 verifica `lastRealRemovalMap` → encontra uma remoção mais recente que a última inserção → força `newHasCard=false`
-2. Isto dispara o caminho `oldHasCard && !newHasCard` (linha 783)
-3. O CARD-REMOVE-SUPPRESSED (linha 787) impede novos eventos quando raw TMX diz `card_present=true`, **MAS** os eventos já gravados antes do fix envenenam o `lastRealRemovalMap`
-4. No próximo ciclo (5 min), repete-se desde o passo 1
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-O `lastRealRemovalMap` contém remoções espúrias do passado que nunca serão "vencidas" por uma inserção (porque o sistema não consegue gravar inserções quando o CARD-OVERRIDE força `newHasCard=false`).
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-## Plano (3 partes)
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-### Parte 1: Limpar dados históricos de jitter (SQL direto)
+## Solution
 
-Apagar **todas** as remoções espúrias de hoje para viaturas com ≥3 remoções sem inserção intercalada. Isto limpa o `lastRealRemovalMap` e quebra o loop.
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-```sql
--- Apagar remoções em rajada (hoje, viaturas com ≥3 remoções)
-DELETE FROM card_events
-WHERE event_type = 'removed'
-  AND event_at >= '2026-03-04T00:00:00Z'
-  AND event_at < '2026-03-05T00:00:00Z'
-  AND plate IN (
-    SELECT plate FROM card_events
-    WHERE event_type = 'removed'
-      AND event_at >= '2026-03-04T00:00:00Z'
-      AND event_at < '2026-03-05T00:00:00Z'
-    GROUP BY plate HAVING count(*) >= 3
-  );
-```
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
 
-Também apagar backfills tardios que derivaram do jitter e recalcular `card_inserted_at` nas viaturas afetadas usando o primeiro TMX do dia.
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
 
-### Parte 2: Corrigir CARD-OVERRIDE (sync-trackit-data)
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
 
-O CARD-OVERRIDE na linha 769-778 precisa de uma condição extra: **não disparar quando as remoções no mapa são claramente jitter**. Critério: se há ≥2 remoções recentes (90min) para esta viatura E raw TMX diz `card_present=true`, ignorar o override.
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
 
-```text
-Antes (linha 771-777):
-  if (newHasCard) {
-    if (lastRemoval && removal > insertion) → force false
-  }
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
 
-Depois:
-  if (newHasCard) {
-    const recentRemovals = recentRemovalCountMap.get(plate) || 0;
-    if (recentRemovals >= 2) {
-      // Jitter pattern — TMX is reliable, trust card_present=true
-      skip override
-    } else if (lastRemoval && removal > insertion) {
-      force newHasCard=false  // genuine single removal
-    }
-  }
-```
-
-Isto resolve o problema de raiz: viaturas com jitter não entram no loop de override.
-
-### Parte 3: Badge "Estimado" no dashboard ao vivo
-
-No `Dashboard.tsx` (linha 918-924), adicionar badge "Estimado" quando a source do `card_inserted_at` não é `event-45`. Para isto, enriquecer o `vehicles` com um campo `card_insertion_source` no `tachograph_status` durante o sync.
-
-**Ficheiro `sync-trackit-data/index.ts`**: Ao gravar `card_inserted_at`, guardar também `card_insertion_source` no objeto `tachograph_status` enriquecido (valores: `event-45`, `tmx`, `backfill`, `preserved`).
-
-**Ficheiro `Dashboard.tsx`**: Ler `card_insertion_source` do `tachograph_status` e mostrar badge amber "Estimado" quando não é `event-45`.
-
-### Ficheiros a alterar
-
-1. **`supabase/functions/sync-trackit-data/index.ts`**:
-   - Linha 771-778: Adicionar condição anti-jitter ao CARD-OVERRIDE
-   - Linha 1331-1358: Guardar `card_insertion_source` no tachograph_status
-
-2. **`src/pages/admin/Dashboard.tsx`**:
-   - Linha 918-924: Adicionar badge "Estimado" baseado em `card_insertion_source`
-
-3. **Limpeza SQL** (via ferramenta de dados):
-   - Apagar remoções espúrias de hoje
-   - Apagar backfills derivados do jitter
-   - Recalcular `card_inserted_at` para viaturas afetadas
-
-### Resultado esperado
-
-- Loop de feedback CARD-OVERRIDE eliminado
-- ~3.900 eventos espúrios de hoje limpos
-- Dashboard mostra badge "Estimado" quando a hora não vem da API de eventos
-- Viaturas com cartão presente (TMX `card_present=true`) deixam de ser forçadas a `newHasCard=false` quando há padrão de jitter
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 
