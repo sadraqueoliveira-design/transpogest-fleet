@@ -225,30 +225,29 @@ export default function Maintenance() {
     if (!editDialog) return;
     setSaving(true);
     const isLavagem = editDialog.category === "lavagem";
-    
-    const payload: Record<string, any> = {
-      vehicle_id: editDialog.vehicleId,
-      category: editDialog.category,
-    };
-
-    if (isLavagem) {
-      payload.last_service_date = editDate || null;
-    } else {
-      payload.next_due_date = editDate || null;
-    }
-    payload.next_due_km = editKm ? parseInt(editKm) : null;
-    payload.next_due_hours = editHours ? parseInt(editHours) : null;
 
     if (editDialog.current) {
+      const updates: Record<string, any> = {};
+      if (isLavagem) { updates.last_service_date = editDate || null; }
+      else { updates.next_due_date = editDate || null; }
+      updates.next_due_km = editKm ? parseInt(editKm) : null;
+      updates.next_due_hours = editHours ? parseInt(editHours) : null;
       const { error } = await supabase
         .from("vehicle_maintenance_schedule")
-        .update(payload)
+        .update(updates)
         .eq("id", editDialog.current.id);
       if (error) { toast.error("Erro ao atualizar"); setSaving(false); return; }
     } else {
-    const { error } = await supabase
+      const { error } = await supabase
         .from("vehicle_maintenance_schedule")
-        .insert([payload]);
+        .insert({
+          vehicle_id: editDialog.vehicleId,
+          category: editDialog.category,
+          next_due_date: isLavagem ? null : (editDate || null),
+          last_service_date: isLavagem ? (editDate || null) : null,
+          next_due_km: editKm ? parseInt(editKm) : null,
+          next_due_hours: editHours ? parseInt(editHours) : null,
+        });
       if (error) { toast.error("Erro ao criar"); setSaving(false); return; }
     }
 
