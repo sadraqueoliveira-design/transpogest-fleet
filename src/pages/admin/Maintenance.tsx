@@ -246,9 +246,9 @@ export default function Maintenance() {
         .eq("id", editDialog.current.id);
       if (error) { toast.error("Erro ao atualizar"); setSaving(false); return; }
     } else {
-      const { error } = await supabase
+    const { error } = await supabase
         .from("vehicle_maintenance_schedule")
-        .insert(payload);
+        .insert([payload]);
       if (error) { toast.error("Erro ao criar"); setSaving(false); return; }
     }
 
