@@ -594,6 +594,12 @@ export default function Maintenance() {
                 <Input type="number" value={editHours} onChange={e => setEditHours(e.target.value)} placeholder="Ex: 18000" />
               </div>
             )}
+            {editDialog?.category === "Lavagem" && (
+              <div className="space-y-2">
+                <Label>Nº Funcionário</Label>
+                <Input value={editEmployee} onChange={e => setEditEmployee(e.target.value)} placeholder="Ex: 123" />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditDialog(null)}>Cancelar</Button>
