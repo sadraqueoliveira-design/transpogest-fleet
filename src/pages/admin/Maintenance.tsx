@@ -117,8 +117,8 @@ function ScheduleCell({
     );
   }
 
-  const isLavagem = category.key === "lavagem";
-  const isHours = category.key === "revisao_horas";
+  const isLavagem = category.key === "Lavagem";
+  const isHours = category.key === "Revisão Horas";
   
   let daysRemaining: number | null = null;
   let displayValue = "—";
