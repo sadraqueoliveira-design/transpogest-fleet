@@ -1312,6 +1312,56 @@ export type Database = {
           },
         ]
       }
+      vehicle_maintenance_schedule: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          last_service_date: string | null
+          last_service_km: number | null
+          next_due_date: string | null
+          next_due_hours: number | null
+          next_due_km: number | null
+          notes: string | null
+          updated_at: string
+          vehicle_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          last_service_date?: string | null
+          last_service_km?: number | null
+          next_due_date?: string | null
+          next_due_hours?: number | null
+          next_due_km?: number | null
+          notes?: string | null
+          updated_at?: string
+          vehicle_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          last_service_date?: string | null
+          last_service_km?: number | null
+          next_due_date?: string | null
+          next_due_hours?: number | null
+          next_due_km?: number | null
+          notes?: string | null
+          updated_at?: string
+          vehicle_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_maintenance_schedule_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       vehicles: {
         Row: {
           adblue_level_percent: number | null
