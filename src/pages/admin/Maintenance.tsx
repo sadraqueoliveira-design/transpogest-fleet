@@ -429,7 +429,6 @@ export default function Maintenance() {
             <span className="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-200 ml-2" /> &lt;90d
             <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
           </div>
-          </div>
 
           <Card>
             <CardContent className="p-0">
