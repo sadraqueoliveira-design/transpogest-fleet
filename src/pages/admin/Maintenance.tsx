@@ -152,7 +152,7 @@ function ScheduleCell({
             {daysRemaining < 0 ? `${Math.abs(daysRemaining)}d atrás` : `${daysRemaining}d`}
           </span>
         )}
-        {category.key === "revisao_km" && schedule.next_due_km && (
+        {category.key === "Revisão KM" && schedule.next_due_km && (
           <span className="text-[10px] opacity-60">
             {(schedule.next_due_km / 1000).toFixed(0)}k km
           </span>
