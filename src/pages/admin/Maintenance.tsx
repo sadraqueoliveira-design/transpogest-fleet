@@ -15,14 +15,14 @@ import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
 const CATEGORIES = [
-  { key: "revisao_km", label: "Revisão KM", icon: Gauge, short: "Rev. KM" },
-  { key: "revisao_anual", label: "Revisão Anual", icon: CalendarDays, short: "Rev. Anual" },
-  { key: "ipo", label: "IPO", icon: Shield, short: "IPO" },
-  { key: "revisao_frio", label: "Revisão Frio", icon: Thermometer, short: "Frio" },
-  { key: "tacografo", label: "Tacógrafo", icon: Clock, short: "Tacóg." },
-  { key: "atp", label: "ATP", icon: Shield, short: "ATP" },
-  { key: "lavagem", label: "Lavagem", icon: Droplets, short: "Lavagem" },
-  { key: "revisao_horas", label: "Revisão Horas", icon: Clock, short: "Rev. Horas" },
+  { key: "Revisão KM", label: "Revisão KM", icon: Gauge, short: "Rev. KM" },
+  { key: "Revisão Anual", label: "Revisão Anual", icon: CalendarDays, short: "Rev. Anual" },
+  { key: "IPO", label: "IPO", icon: Shield, short: "IPO" },
+  { key: "Revisão Frio", label: "Revisão Frio", icon: Thermometer, short: "Frio" },
+  { key: "Tacógrafo", label: "Tacógrafo", icon: Clock, short: "Tacóg." },
+  { key: "ATP", label: "ATP", icon: Shield, short: "ATP" },
+  { key: "Lavagem", label: "Lavagem", icon: Droplets, short: "Lavagem" },
+  { key: "Revisão Horas", label: "Revisão Horas", icon: Clock, short: "Rev. Horas" },
 ] as const;
 
 type ScheduleRow = {

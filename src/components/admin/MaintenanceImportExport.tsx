@@ -13,7 +13,16 @@ import * as XLSX from "xlsx";
 import { format, parse, isValid } from "date-fns";
 
 // Category mapping: DB value → Excel column header
-const CATEGORY_COLUMNS = [
+interface CategoryColumn {
+  dbKey: string;
+  header: string;
+  headerKm?: string;
+  hasKm?: boolean;
+  hasHours?: boolean;
+  isLavagem?: boolean;
+}
+
+const CATEGORY_COLUMNS: CategoryColumn[] = [
   { dbKey: "Revisão KM", header: "Rev. KM Data", headerKm: "Rev. KM (km)", hasKm: true },
   { dbKey: "Revisão Anual", header: "Rev. Anual" },
   { dbKey: "IPO", header: "IPO" },
@@ -22,7 +31,7 @@ const CATEGORY_COLUMNS = [
   { dbKey: "Tacógrafo", header: "Tacógrafo" },
   { dbKey: "ATP", header: "ATP" },
   { dbKey: "Lavagem", header: "Última Lavagem", isLavagem: true },
-] as const;
+];
 
 type ScheduleRow = {
   id: string;
