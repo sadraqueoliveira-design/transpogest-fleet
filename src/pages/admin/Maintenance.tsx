@@ -414,12 +414,21 @@ export default function Maintenance() {
                 Limpar filtro
               </Button>
             )}
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
-              <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
-              <span className="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-200 ml-2" /> &lt;90d
-              <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
+            <div className="flex items-center gap-1.5 ml-auto">
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowImport(true)}>
+                <Upload className="h-4 w-4" /> Importar
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowExport(true)}>
+                <Download className="h-4 w-4" /> Exportar
+              </Button>
             </div>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
+            <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
+            <span className="inline-block w-3 h-3 rounded bg-yellow-100 border border-yellow-200 ml-2" /> &lt;90d
+            <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
+          </div>
           </div>
 
           <Card>
