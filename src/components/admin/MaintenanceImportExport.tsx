@@ -278,16 +278,42 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     "MÉDIA IDADE", "MEDIA IDADE",
   ]);
 
+  function normalizeLabel(val: string): string {
+    return val.trim().toUpperCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+      .replace(/\s+/g, " "); // collapse whitespace
+  }
+
+  function matchesKnownLabel(val: string): boolean {
+    const norm = normalizeLabel(val);
+    if (!norm) return false;
+    const allLabels = [...Object.keys(TRANSPOSED_ROW_MAP), ...SKIP_ROWS];
+    return allLabels.some(label => {
+      const normLabel = normalizeLabel(label);
+      return norm === normLabel || norm.includes(normLabel) || normLabel.includes(norm);
+    });
+  }
+
+  function findTransposedRowMapping(val: string): { dbKey: string; type: "date" | "km" | "hours" } | null {
+    const norm = normalizeLabel(val);
+    if (!norm) return null;
+    for (const [key, mapping] of Object.entries(TRANSPOSED_ROW_MAP)) {
+      const normKey = normalizeLabel(key);
+      if (norm === normKey || norm.includes(normKey) || normKey.includes(norm)) {
+        return mapping;
+      }
+    }
+    return null;
+  }
+
   function isTransposedFormat(rawRows: any[][]): boolean {
-    // Check if several known row labels appear in col 2 (index ~2) or col 1
     const labelCols = [0, 1, 2, 3];
     let matchCount = 0;
-    const allLabels = new Set([...Object.keys(TRANSPOSED_ROW_MAP), ...SKIP_ROWS]);
 
     for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
       for (const c of labelCols) {
-        const val = String(rawRows[r]?.[c] ?? "").trim().toUpperCase();
-        if (val && allLabels.has(val)) matchCount++;
+        const val = String(rawRows[r]?.[c] ?? "").trim();
+        if (val && matchesKnownLabel(val)) matchCount++;
       }
     }
     return matchCount >= 3;
