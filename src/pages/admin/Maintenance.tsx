@@ -396,7 +396,7 @@ export default function Maintenance() {
         </TabsList>
 
         <TabsContent value="schedule" className="space-y-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
@@ -406,6 +406,11 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
+            {activeStatusFilter !== "all" && (
+              <Button variant="outline" size="sm" onClick={() => setActiveStatusFilter("all")}>
+                Limpar filtro
+              </Button>
+            )}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="inline-block w-3 h-3 rounded bg-destructive/20 border border-destructive/30" /> Expirado
               <span className="inline-block w-3 h-3 rounded bg-orange-100 border border-orange-200 ml-2" /> &lt;30d
