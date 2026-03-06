@@ -526,16 +526,16 @@ export default function Maintenance() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label>{editDialog?.category === "lavagem" ? "Última lavagem" : "Próxima data"}</Label>
+              <Label>{editDialog?.category === "Lavagem" ? "Última lavagem" : "Próxima data"}</Label>
               <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
             </div>
-            {editDialog?.category === "revisao_km" && (
+            {editDialog?.category === "Revisão KM" && (
               <div className="space-y-2">
                 <Label>Próximo KM</Label>
                 <Input type="number" value={editKm} onChange={e => setEditKm(e.target.value)} placeholder="Ex: 1500000" />
               </div>
             )}
-            {editDialog?.category === "revisao_horas" && (
+            {editDialog?.category === "Revisão Horas" && (
               <div className="space-y-2">
                 <Label>Próximas Horas</Label>
                 <Input type="number" value={editHours} onChange={e => setEditHours(e.target.value)} placeholder="Ex: 18000" />
