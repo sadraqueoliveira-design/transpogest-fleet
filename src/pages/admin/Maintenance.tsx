@@ -64,6 +64,28 @@ const ALIASES: Record<string, string[]> = {
   date_scheduled: ["date_scheduled", "data", "data agendada"],
 };
 
+type ScheduleStatus = "expired" | "urgent" | "upcoming" | "ok";
+
+function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
+  if (schedule.category === "lavagem" && schedule.last_service_date) {
+    return 30 - differenceInDays(new Date(), parseISO(schedule.last_service_date));
+  }
+
+  if (schedule.next_due_date) {
+    return differenceInDays(parseISO(schedule.next_due_date), new Date());
+  }
+
+  return null;
+}
+
+function getScheduleStatus(daysRemaining: number | null): ScheduleStatus | null {
+  if (daysRemaining === null) return null;
+  if (daysRemaining < 0) return "expired";
+  if (daysRemaining <= 30) return "urgent";
+  if (daysRemaining <= 90) return "upcoming";
+  return "ok";
+}
+
 function getDaysStatus(daysRemaining: number | null): { color: string; label: string } {
   if (daysRemaining === null) return { color: "bg-muted text-muted-foreground", label: "—" };
   if (daysRemaining < 0) return { color: "bg-destructive/20 text-destructive border-destructive/30", label: "Expirado" };
