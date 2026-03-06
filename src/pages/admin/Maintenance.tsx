@@ -256,7 +256,7 @@ export default function Maintenance() {
   const handleSave = async () => {
     if (!editDialog) return;
     setSaving(true);
-    const isLavagem = editDialog.category === "lavagem";
+    const isLavagem = editDialog.category === "Lavagem";
 
     if (editDialog.current) {
       const updates: Record<string, any> = {};
