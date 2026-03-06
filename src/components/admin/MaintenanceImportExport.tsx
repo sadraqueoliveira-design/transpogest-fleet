@@ -429,7 +429,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
             await supabase
               .from("vehicle_maintenance_schedule")
-              .insert([insert]);
+              .insert([insert as any]);
           }
         }
 
