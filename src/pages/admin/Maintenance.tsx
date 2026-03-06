@@ -249,6 +249,10 @@ export default function Maintenance() {
     setEditHours(current?.next_due_hours?.toString() || "");
   };
 
+  const handleCardFilter = (filter: ScheduleStatus) => {
+    setActiveStatusFilter((prev) => (prev === filter ? "all" : filter));
+  };
+
   const handleSave = async () => {
     if (!editDialog) return;
     setSaving(true);
