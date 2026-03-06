@@ -1364,6 +1364,15 @@ Deno.serve(async (req) => {
               const label = result.isBackfill ? "CARD-BACKFILL" : (result.eventType === "removed" ? "CARD-REMOVE" : "CARD-INSERT");
               console.log(`[${label}] ${rec.plate}: ${result.eventType === "removed" ? `removal_at=${removalEventAt}` : `card_inserted_at=${insertionTime}`} (source=${source})`);
 
+              // Store card_insertion_source in tachograph_status for UI transparency
+              if (result.eventType !== "removed" && rec.tachograph_status) {
+                try {
+                  const tacho = JSON.parse(rec.tachograph_status);
+                  tacho.card_insertion_source = source;
+                  rec.tachograph_status = JSON.stringify(tacho);
+                } catch { /* ignore */ }
+              }
+
               // Skip card_events for backfill_only (no real state change detected)
               if (result.eventType === "backfill_only") continue;
 

@@ -915,14 +915,25 @@ export default function Dashboard() {
                       <span className="text-muted-foreground">⚙️ RPM</span>
                       <span className="font-semibold tabular-nums">{rpm ?? "—"}</span>
                     </div>
-                    {cardPresent && (v as any).card_inserted_at && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">🪪 Cartão</span>
-                        <span className="font-semibold tabular-nums">
-                          {new Date((v as any).card_inserted_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-                    )}
+                    {cardPresent && (v as any).card_inserted_at && (() => {
+                      let cardInsertionSource: string | null = null;
+                      try {
+                        const tachoObj = JSON.parse(v.tachograph_status || "{}");
+                        cardInsertionSource = tachoObj.card_insertion_source || null;
+                      } catch { /* ignore */ }
+                      const isEstimated = cardInsertionSource && cardInsertionSource !== "event-45";
+                      return (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">🪪 Cartão</span>
+                          <span className="font-semibold tabular-nums flex items-center gap-1">
+                            {new Date((v as any).card_inserted_at).toLocaleString("pt-PT", { timeZone: "Europe/Lisbon", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            {isEstimated && (
+                              <span className="text-[8px] font-medium px-1 py-0.5 rounded bg-warning/20 text-warning">Est.</span>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {(typeof t1 === "number" || typeof t2 === "number") && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">🌡️ Temp</span>
