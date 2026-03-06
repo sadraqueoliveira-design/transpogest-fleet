@@ -48,3 +48,6 @@ verify_jwt = false
 [functions.create-driver]
 verify_jwt = false
 
+[functions.check-maintenance-alerts]
+verify_jwt = false
+
