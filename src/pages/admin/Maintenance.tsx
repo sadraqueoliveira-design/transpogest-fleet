@@ -467,9 +467,20 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
-            {activeStatusFilter !== "all" && (
-              <Button variant="outline" size="sm" onClick={() => setActiveStatusFilter("all")}>
-                Limpar filtro
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="h-9 w-[170px] text-xs">
+                <SelectValue placeholder="Categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as categorias</SelectItem>
+                {CATEGORIES.map(c => (
+                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(activeStatusFilter !== "all" || categoryFilter !== "all") && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter("all"); }}>
+                Limpar filtros
               </Button>
             )}
             <div className="flex items-center gap-1.5 ml-auto">
