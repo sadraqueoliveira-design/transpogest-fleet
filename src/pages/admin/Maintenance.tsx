@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
@@ -180,7 +181,7 @@ export default function Maintenance() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | ScheduleStatus>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [editDialog, setEditDialog] = useState<{
     vehicleId: string;
     category: string;
@@ -270,9 +271,9 @@ export default function Maintenance() {
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
 
-      // Category filter: only show vehicles that have a record in the selected category
-      if (categoryFilter !== "all") {
-        if (!vehicleSchedules[categoryFilter]) return false;
+      // Category filter: only show vehicles that have a record in any selected category
+      if (categoryFilter.length > 0) {
+        if (!categoryFilter.some(cat => vehicleSchedules[cat])) return false;
       }
 
       if (activeStatusFilter === "all") return true;
@@ -467,19 +468,27 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="h-9 w-[170px] text-xs">
-                <SelectValue placeholder="Categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as categorias</SelectItem>
-                {CATEGORIES.map(c => (
-                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(activeStatusFilter !== "all" || categoryFilter !== "all") && (
-              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter("all"); }}>
+            <ToggleGroup
+              type="multiple"
+              value={categoryFilter}
+              onValueChange={(val) => setCategoryFilter(val)}
+              className="flex flex-wrap gap-1"
+            >
+              {CATEGORIES.map(c => (
+                <ToggleGroupItem
+                  key={c.key}
+                  value={c.key}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                >
+                  <c.icon className="h-3 w-3 mr-1" />
+                  {c.short}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            {(activeStatusFilter !== "all" || categoryFilter.length > 0) && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); }}>
                 Limpar filtros
               </Button>
             )}
@@ -522,7 +531,7 @@ export default function Maintenance() {
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Tipo</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
-                      {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
+                      {(categoryFilter.length === 0 ? CATEGORIES : CATEGORIES.filter(c => categoryFilter.includes(c.key))).map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
                           <div className="flex flex-col items-center gap-0.5">
                             <c.icon className="h-3.5 w-3.5" />
@@ -535,7 +544,7 @@ export default function Maintenance() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={(categoryFilter === "all" ? CATEGORIES.length : 1) + 3} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={(categoryFilter.length === 0 ? CATEGORIES.length : categoryFilter.length) + 3} className="text-center py-8 text-muted-foreground">
                           Sem dados de planeamento
                         </TableCell>
                       </TableRow>
@@ -553,7 +562,7 @@ export default function Maintenance() {
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
                           </TableCell>
-                          {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
+                          {(categoryFilter.length === 0 ? CATEGORIES : CATEGORIES.filter(c => categoryFilter.includes(c.key))).map(c => (
                             <ScheduleCell
                               key={c.key}
                               schedule={scheduleLookup[v.id]?.[c.key]}
