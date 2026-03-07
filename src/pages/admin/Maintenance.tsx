@@ -513,7 +513,7 @@ export default function Maintenance() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={CATEGORIES.length + 1} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={CATEGORIES.length + 2} className="text-center py-8 text-muted-foreground">
                           Sem dados de planeamento
                         </TableCell>
                       </TableRow>
