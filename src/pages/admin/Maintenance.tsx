@@ -263,7 +263,7 @@ export default function Maintenance() {
     const q = search.trim().toLowerCase();
 
     return vehicles.filter((vehicle) => {
-      const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q);
+      const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
       if (activeStatusFilter === "all") return true;
 
