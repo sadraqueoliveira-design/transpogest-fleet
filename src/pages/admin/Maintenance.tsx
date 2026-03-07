@@ -43,6 +43,8 @@ type Vehicle = {
   plate: string;
   odometer_km: number | null;
   engine_hours: number | null;
+  mobile_number: string | null;
+  is_trailer?: boolean;
 };
 
 type MaintenanceRecord = {
