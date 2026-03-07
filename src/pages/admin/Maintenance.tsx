@@ -522,7 +522,7 @@ export default function Maintenance() {
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Tipo</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
-                      {CATEGORIES.map(c => (
+                      {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
                           <div className="flex flex-col items-center gap-0.5">
                             <c.icon className="h-3.5 w-3.5" />
@@ -535,7 +535,7 @@ export default function Maintenance() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={CATEGORIES.length + 3} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={(categoryFilter === "all" ? CATEGORIES.length : 1) + 3} className="text-center py-8 text-muted-foreground">
                           Sem dados de planeamento
                         </TableCell>
                       </TableRow>
@@ -553,7 +553,7 @@ export default function Maintenance() {
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
                           </TableCell>
-                          {CATEGORIES.map(c => (
+                          {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
                             <ScheduleCell
                               key={c.key}
                               schedule={scheduleLookup[v.id]?.[c.key]}
