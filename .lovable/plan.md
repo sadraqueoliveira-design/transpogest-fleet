@@ -1,43 +1,55 @@
 
 
-# Fix: Debounce removals to prevent TMX jitter from creating spurious events
+# Suporte para Reboques (L-*) na Importação e Grelha de Manutenção
 
-## Problem analysis
+## Problema
 
-Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
-- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
-- Then a `backfill` insertion at ~10:28/10:55
-- The driver actually inserted the card around 05:00-06:00
+A importação do Excel não reconhece as matrículas de reboques (ex: L-184230, L-182821) porque:
+1. A função `looksLikePlate` só aceita padrões de matrícula portugueses (00-AA-00 ou AA-00-AA), rejeitando o formato L-NNNNNN
+2. Mesmo que sejam detetadas, não existem registos na tabela `trailers` — o import só grava dados para matrículas que já existem na BD
+3. A linha "MANUTENÇÕES REBOQUES" no Excel é ignorada (está no SKIP_ROWS) mas contém datas de manutenção específicas dos reboques
 
-The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
+## Solução
 
-The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
+**Ficheiro**: `src/components/admin/MaintenanceImportExport.tsx`
 
-**Root causes**:
-1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
-2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
+### 1. Reconhecer matrículas de reboques
+Atualizar `looksLikePlate` para aceitar o padrão `L-NNNNNN` (e variações como `L-NNNNN`):
+```typescript
+function looksLikePlate(val: string): boolean {
+  const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+  // Trailer plates: L-NNNNNN
+  if (/^L-?\d{4,6}$/.test(clean)) return true;
+  // Standard Portuguese plates
+  return PLATE_REGEX.test(clean) || ...;
+}
+```
 
-## Solution
+### 2. Mapear "MANUTENÇÕES REBOQUES" como categoria
+Remover "MANUTENÇÕES REBOQUES" do `SKIP_ROWS` e adicioná-la ao `TRANSPOSED_ROW_MAP` como uma nova categoria ou mapeamento para manutenção geral de reboques. Adicionar à constante `CATEGORIES` na grelha.
 
-### Change 1: Debounce removals (anti-flicker)
-In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
+### 3. Auto-criar reboques durante a importação
+No `handleImport`, para matrículas não encontradas que correspondam ao padrão L-*, criar automaticamente um registo na tabela `trailers` e usar o novo ID para gravar os dados de manutenção:
+```typescript
+// Para cada unmatched row com placa L-*
+if (!row.vehicleId && plate.match(/^L-?\d+$/i)) {
+  const { data } = await supabase.from("trailers")
+    .insert({ plate }).select("id").single();
+  row.vehicleId = data.id;
+  row.hasMatch = true;
+}
+```
 
-Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
+### 4. Adicionar categoria "Manutenção Reboques" à grelha
 
-### Change 2: Preserve earliest backfill timestamp
-When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
+**Ficheiro**: `src/pages/admin/Maintenance.tsx`
 
-In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+Adicionar entrada no array `CATEGORIES`:
+```typescript
+{ key: "Manutenção Reboques", label: "Manut. Reboques", icon: Wrench, short: "Reboques" }
+```
 
-### File to change
-`supabase/functions/sync-trackit-data/index.ts`:
-
-1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
-2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
-3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
-
-### Expected outcome
-- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
-- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
-- Real removals (single, clean transition) will still be recorded normally
+## Ficheiros a editar
+- `src/components/admin/MaintenanceImportExport.tsx` — reconhecimento de placas L-*, mapeamento da categoria, auto-criação de reboques
+- `src/pages/admin/Maintenance.tsx` — nova categoria na grelha
 
