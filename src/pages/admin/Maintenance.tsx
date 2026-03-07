@@ -240,15 +240,15 @@ export default function Maintenance() {
 
   // Filter vehicles that have schedule data, match search and optional status filter
   const filteredVehicles = useMemo(() => {
-    const vehiclesWithSchedule = vehicles.filter(v => scheduleLookup[v.id]);
     const q = search.trim().toLowerCase();
 
-    return vehiclesWithSchedule.filter((vehicle) => {
+    return vehicles.filter((vehicle) => {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q);
       if (!matchesSearch) return false;
       if (activeStatusFilter === "all") return true;
 
       const vehicleSchedules = Object.values(scheduleLookup[vehicle.id] || {});
+      if (vehicleSchedules.length === 0) return false;
       return vehicleSchedules.some((schedule) => {
         const daysRemaining = getScheduleDaysRemaining(schedule);
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
