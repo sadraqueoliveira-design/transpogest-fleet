@@ -36,6 +36,7 @@ type ScheduleRow = {
   next_due_hours: number | null;
   last_service_date: string | null;
   last_service_km: number | null;
+  performed_by_employee: string | null;
 };
 
 type Vehicle = {
