@@ -522,7 +522,7 @@ export default function Maintenance() {
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Tipo</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
-                      {CATEGORIES.map(c => (
+                      {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
                           <div className="flex flex-col items-center gap-0.5">
                             <c.icon className="h-3.5 w-3.5" />
