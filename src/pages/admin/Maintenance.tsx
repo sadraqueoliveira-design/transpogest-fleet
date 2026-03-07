@@ -298,7 +298,7 @@ export default function Maintenance() {
     setEditDate(current?.next_due_date || current?.last_service_date || "");
     setEditKm(current?.next_due_km?.toString() || "");
     setEditHours(current?.next_due_hours?.toString() || "");
-    setEditEmployee((current as any)?.performed_by_employee || "");
+    setEditEmployee(current?.performed_by_employee || "");
   };
 
   const handleCardFilter = (filter: ScheduleStatus) => {
