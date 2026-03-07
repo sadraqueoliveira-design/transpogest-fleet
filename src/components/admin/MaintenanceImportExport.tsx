@@ -315,8 +315,15 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
   function looksLikePlate(val: string): boolean {
     const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+    // Trailer plates: L-NNNNNN
+    if (/^L-?\d{4,6}$/.test(clean)) return true;
     // Match patterns like 00-AA-00 or AA-00-AA with or without dashes
     return PLATE_REGEX.test(clean) || /^[0-9]{2}[A-Z]{2}[0-9]{2}$/.test(clean) || /^[A-Z]{2}[0-9]{2}[A-Z]{2}$/.test(clean);
+  }
+
+  function isTrailerPlate(val: string): boolean {
+    const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+    return /^L-?\d{4,6}$/.test(clean);
   }
 
   function isTransposedFormat(rawRows: any[][]): boolean {
