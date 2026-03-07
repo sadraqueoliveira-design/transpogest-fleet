@@ -700,6 +700,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
             };
             if (colDef.isLavagem) {
               insert.last_service_date = catData.date || null;
+              if ((catData as any).employee) insert.performed_by_employee = (catData as any).employee;
             } else if (colDef.hasHours) {
               insert.next_due_hours = catData.hours || null;
             } else {
