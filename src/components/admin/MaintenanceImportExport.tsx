@@ -31,6 +31,7 @@ const CATEGORY_COLUMNS: CategoryColumn[] = [
   { dbKey: "Tacógrafo", header: "Tacógrafo" },
   { dbKey: "ATP", header: "ATP" },
   { dbKey: "Lavagem", header: "Última Lavagem", isLavagem: true },
+  { dbKey: "Manutenção Reboques", header: "Manut. Reboques" },
 ];
 
 type ScheduleRow = {
@@ -268,13 +269,16 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     "A.T.P.": { dbKey: "ATP", type: "date" },
     "ATP": { dbKey: "ATP", type: "date" },
     "LAVAGENS": { dbKey: "Lavagem", type: "date" },
+    "MANUTENÇÕES REBOQUES": { dbKey: "Manutenção Reboques", type: "date" },
+    "MANUTENCOES REBOQUES": { dbKey: "Manutenção Reboques", type: "date" },
+    "MANUTENÇÕES REBOQUE": { dbKey: "Manutenção Reboques", type: "date" },
   };
 
   // Auxiliary rows to skip in transposed format (but MOTORISTA is parsed separately)
   const SKIP_ROWS = new Set([
     "DIAS FALTA", "DIAS EM FALTA", "HORAS ATUAIS", "HORAS EM FALTA",
     "KM,S FALTA", "ATUALIZAÇÃO KM,S", "ATUALIZACAO KM,S",
-    "MOVEL", "MOTORISTA", "MANUTENÇÕES REBOQUES", "MANUTENCOES REBOQUES",
+    "MOVEL", "MOTORISTA",
     "MÉDIA IDADE", "MEDIA IDADE",
   ]);
 
@@ -311,8 +315,15 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
   function looksLikePlate(val: string): boolean {
     const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+    // Trailer plates: L-NNNNNN
+    if (/^L-?\d{4,6}$/.test(clean)) return true;
     // Match patterns like 00-AA-00 or AA-00-AA with or without dashes
     return PLATE_REGEX.test(clean) || /^[0-9]{2}[A-Z]{2}[0-9]{2}$/.test(clean) || /^[A-Z]{2}[0-9]{2}[A-Z]{2}$/.test(clean);
+  }
+
+  function isTrailerPlate(val: string): boolean {
+    const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+    return /^L-?\d{4,6}$/.test(clean);
   }
 
   function isTransposedFormat(rawRows: any[][]): boolean {
@@ -656,6 +667,26 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     setImporting(true);
 
     try {
+      // Auto-create trailers for unmatched L-* plates
+      for (const row of previewRows) {
+        if (!row.hasMatch && isTrailerPlate(row.plate)) {
+          const normalPlate = row.plate.replace(/\s+/g, "").toUpperCase();
+          // Ensure it has a dash: L-NNNNNN
+          const formattedPlate = normalPlate.startsWith("L-") ? normalPlate : `L-${normalPlate.slice(1)}`;
+          const { data, error } = await supabase.from("trailers")
+            .insert({ plate: formattedPlate })
+            .select("id")
+            .single();
+          if (data && !error) {
+            row.vehicleId = data.id;
+            row.hasMatch = true;
+            console.log(`[import] Auto-created trailer ${formattedPlate} → ${data.id}`);
+          } else {
+            console.warn(`[import] Failed to create trailer ${formattedPlate}:`, error?.message);
+          }
+        }
+      }
+
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
       
       for (const cat of selectedCategories) {
