@@ -468,19 +468,27 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="h-9 w-[170px] text-xs">
-                <SelectValue placeholder="Categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as categorias</SelectItem>
-                {CATEGORIES.map(c => (
-                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(activeStatusFilter !== "all" || categoryFilter !== "all") && (
-              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter("all"); }}>
+            <ToggleGroup
+              type="multiple"
+              value={categoryFilter}
+              onValueChange={(val) => setCategoryFilter(val)}
+              className="flex flex-wrap gap-1"
+            >
+              {CATEGORIES.map(c => (
+                <ToggleGroupItem
+                  key={c.key}
+                  value={c.key}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-8 px-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                >
+                  <c.icon className="h-3 w-3 mr-1" />
+                  {c.short}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            {(activeStatusFilter !== "all" || categoryFilter.length > 0) && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); }}>
                 Limpar filtros
               </Button>
             )}
