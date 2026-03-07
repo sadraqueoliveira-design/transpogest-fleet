@@ -162,9 +162,9 @@ function ScheduleCell({
             {schedule.next_due_km.toLocaleString("pt-PT")} km
           </span>
         )}
-        {category.key === "Lavagem" && (schedule as any).performed_by_employee && (
-          <span className="text-[10px] opacity-60">
-            Func. {(schedule as any).performed_by_employee}
+        {category.key === "Lavagem" && schedule.performed_by_employee && (
+          <span className="text-[10px] font-semibold text-primary">
+            Func. {schedule.performed_by_employee}
           </span>
         )}
       </div>
