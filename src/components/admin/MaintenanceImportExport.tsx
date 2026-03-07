@@ -31,6 +31,7 @@ const CATEGORY_COLUMNS: CategoryColumn[] = [
   { dbKey: "Tacógrafo", header: "Tacógrafo" },
   { dbKey: "ATP", header: "ATP" },
   { dbKey: "Lavagem", header: "Última Lavagem", isLavagem: true },
+  { dbKey: "Manutenção Reboques", header: "Manut. Reboques" },
 ];
 
 type ScheduleRow = {
