@@ -270,7 +270,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     "LAVAGENS": { dbKey: "Lavagem", type: "date" },
   };
 
-  // Auxiliary rows to skip in transposed format
+  // Auxiliary rows to skip in transposed format (but MOTORISTA is parsed separately)
   const SKIP_ROWS = new Set([
     "DIAS FALTA", "DIAS EM FALTA", "HORAS ATUAIS", "HORAS EM FALTA",
     "KM,S FALTA", "ATUALIZAÇÃO KM,S", "ATUALIZACAO KM,S",
