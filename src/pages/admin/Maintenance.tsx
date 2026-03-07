@@ -36,6 +36,7 @@ type ScheduleRow = {
   next_due_hours: number | null;
   last_service_date: string | null;
   last_service_km: number | null;
+  performed_by_employee: string | null;
 };
 
 type Vehicle = {
@@ -161,9 +162,9 @@ function ScheduleCell({
             {schedule.next_due_km.toLocaleString("pt-PT")} km
           </span>
         )}
-        {category.key === "Lavagem" && (schedule as any).performed_by_employee && (
-          <span className="text-[10px] opacity-60">
-            Func. {(schedule as any).performed_by_employee}
+        {category.key === "Lavagem" && schedule.performed_by_employee && (
+          <span className="text-[10px] font-semibold text-primary">
+            Func. {schedule.performed_by_employee}
           </span>
         )}
       </div>
@@ -179,6 +180,7 @@ export default function Maintenance() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | ScheduleStatus>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [editDialog, setEditDialog] = useState<{
     vehicleId: string;
     category: string;
@@ -265,16 +267,24 @@ export default function Maintenance() {
     return vehicles.filter((vehicle) => {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
+
+      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+
+      // Category filter: only show vehicles that have a record in the selected category
+      if (categoryFilter !== "all") {
+        if (!vehicleSchedules[categoryFilter]) return false;
+      }
+
       if (activeStatusFilter === "all") return true;
 
-      const vehicleSchedules = Object.values(scheduleLookup[vehicle.id] || {});
-      if (vehicleSchedules.length === 0) return false;
-      return vehicleSchedules.some((schedule) => {
+      const scheduleValues = Object.values(vehicleSchedules);
+      if (scheduleValues.length === 0) return false;
+      return scheduleValues.some((schedule) => {
         const daysRemaining = getScheduleDaysRemaining(schedule);
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -296,7 +306,7 @@ export default function Maintenance() {
     setEditDate(current?.next_due_date || current?.last_service_date || "");
     setEditKm(current?.next_due_km?.toString() || "");
     setEditHours(current?.next_due_hours?.toString() || "");
-    setEditEmployee((current as any)?.performed_by_employee || "");
+    setEditEmployee(current?.performed_by_employee || "");
   };
 
   const handleCardFilter = (filter: ScheduleStatus) => {
@@ -457,9 +467,20 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
-            {activeStatusFilter !== "all" && (
-              <Button variant="outline" size="sm" onClick={() => setActiveStatusFilter("all")}>
-                Limpar filtro
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="h-9 w-[170px] text-xs">
+                <SelectValue placeholder="Categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as categorias</SelectItem>
+                {CATEGORIES.map(c => (
+                  <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(activeStatusFilter !== "all" || categoryFilter !== "all") && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter("all"); }}>
+                Limpar filtros
               </Button>
             )}
             <div className="flex items-center gap-1.5 ml-auto">
@@ -499,6 +520,7 @@ export default function Maintenance() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
+                      <TableHead className="text-center min-w-[60px] text-xs">Tipo</TableHead>
                       <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
                       {CATEGORIES.map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
@@ -513,7 +535,7 @@ export default function Maintenance() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={CATEGORIES.length + 2} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={CATEGORIES.length + 3} className="text-center py-8 text-muted-foreground">
                           Sem dados de planeamento
                         </TableCell>
                       </TableRow>
@@ -522,6 +544,11 @@ export default function Maintenance() {
                         <TableRow key={v.id}>
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
                             {v.plate}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={v.is_trailer ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
+                              {v.is_trailer ? "Reboque" : "Veículo"}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
