@@ -181,7 +181,7 @@ export default function Maintenance() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeStatusFilter, setActiveStatusFilter] = useState<"all" | ScheduleStatus>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [editDialog, setEditDialog] = useState<{
     vehicleId: string;
     category: string;
