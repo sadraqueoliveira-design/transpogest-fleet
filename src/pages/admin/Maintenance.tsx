@@ -212,18 +212,36 @@ export default function Maintenance() {
   };
 
   const fetchData = async () => {
-    const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
+    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
+      supabase.from("trailers").select("id, plate, internal_id, status"),
     ]);
     if (sData) setSchedules(sData as any);
+    const allVehicles: Vehicle[] = [];
+    const map: Record<string, string> = {};
     if (vData) {
-      setVehicles(vData);
-      const map: Record<string, string> = {};
-      vData.forEach(v => { map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id; });
-      setVehicleMap(map);
+      vData.forEach(v => {
+        allVehicles.push({ ...v, is_trailer: false });
+        map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
+      });
     }
+    if (tData) {
+      tData.forEach(t => {
+        allVehicles.push({
+          id: t.id,
+          plate: t.plate,
+          odometer_km: null,
+          engine_hours: null,
+          mobile_number: t.internal_id || null,
+          is_trailer: true,
+        });
+        map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
+      });
+    }
+    setVehicles(allVehicles);
+    setVehicleMap(map);
     if (mData) setRecords(mData as any);
     setLoading(false);
   };
