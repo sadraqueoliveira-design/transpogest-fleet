@@ -499,6 +499,7 @@ export default function Maintenance() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
+                      <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
                       {CATEGORIES.map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
                           <div className="flex flex-col items-center gap-0.5">
