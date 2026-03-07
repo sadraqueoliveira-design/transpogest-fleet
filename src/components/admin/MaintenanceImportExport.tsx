@@ -306,36 +306,57 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     return null;
   }
 
-  function isTransposedFormat(rawRows: any[][]): boolean {
-    const labelCols = [0, 1, 2, 3, 4, 5];
-    let matchCount = 0;
+  // Portuguese license plate patterns
+  const PLATE_REGEX = /^[0-9]{2}-[A-Z]{2}-[0-9]{2}$|^[A-Z]{2}-[0-9]{2}-[A-Z]{2}$/;
 
-    for (let r = 0; r < Math.min(rawRows.length, 40); r++) {
-      for (const c of labelCols) {
+  function looksLikePlate(val: string): boolean {
+    const clean = val.trim().toUpperCase().replace(/\s+/g, "");
+    // Match patterns like 00-AA-00 or AA-00-AA with or without dashes
+    return PLATE_REGEX.test(clean) || /^[0-9]{2}[A-Z]{2}[0-9]{2}$/.test(clean) || /^[A-Z]{2}[0-9]{2}[A-Z]{2}$/.test(clean);
+  }
+
+  function isTransposedFormat(rawRows: any[][]): boolean {
+    let matchCount = 0;
+    const maxRows = Math.min(rawRows.length, 50);
+
+    for (let r = 0; r < maxRows; r++) {
+      const rowLen = rawRows[r]?.length ?? 0;
+      for (let c = 0; c < rowLen; c++) {
         const val = String(rawRows[r]?.[c] ?? "").trim();
         if (val && matchesKnownLabel(val)) {
           matchCount++;
-          console.log(`Transposed match: row ${r}, col ${c}, value "${val}"`);
+          console.log(`[transposed-detect] row=${r} col=${c} val="${val}"`);
         }
       }
     }
-    console.log(`Total transposed matches: ${matchCount}`);
+    console.log(`[transposed-detect] total matches: ${matchCount}`);
     return matchCount >= 3;
   }
 
   function parseTransposedFile(rawRows: any[][]): { parsed: ImportPreviewRow[]; detected: string[] } {
-    // Find which column contains the row labels
-    let labelCol = 2;
-    for (let c = 0; c <= 3; c++) {
+    const maxRows = Math.min(rawRows.length, 50);
+
+    // Step 1: Find the label column dynamically — scan ALL columns
+    let labelCol = -1;
+    let bestHits = 0;
+    const maxCols = Math.max(...rawRows.slice(0, maxRows).map(r => r?.length ?? 0), 0);
+
+    for (let c = 0; c < maxCols; c++) {
       let hits = 0;
-      for (let r = 0; r < Math.min(rawRows.length, 30); r++) {
+      for (let r = 0; r < maxRows; r++) {
         const val = String(rawRows[r]?.[c] ?? "").trim();
-        if (matchesKnownLabel(val)) hits++;
+        if (val && matchesKnownLabel(val)) hits++;
       }
-      if (hits >= 3) { labelCol = c; break; }
+      if (hits > bestHits) { bestHits = hits; labelCol = c; }
     }
 
-    // Find the MATRICULAS row to get plates
+    if (labelCol === -1 || bestHits < 2) {
+      console.warn("[transposed-parse] Could not find label column. bestHits=", bestHits);
+      return { parsed: [], detected: [] };
+    }
+    console.log(`[transposed-parse] Label column: ${labelCol} (${bestHits} hits)`);
+
+    // Step 2: Find MATRICULAS row and category rows
     let platesRow = -1;
     const rowMappings: { rowIdx: number; dbKey: string; type: "date" | "km" | "hours" }[] = [];
     const detected: string[] = [];
@@ -345,8 +366,9 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       const normLabel = normalizeLabel(label);
       if (!normLabel) continue;
 
-      if (normLabel === "MATRICULAS") {
+      if (normLabel === "MATRICULAS" || normLabel.includes("MATRICULA")) {
         platesRow = r;
+        console.log(`[transposed-parse] MATRICULAS row found at ${r} via label`);
         continue;
       }
 
@@ -360,20 +382,48 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       }
     }
 
-    if (platesRow === -1) return { parsed: [], detected: [] };
+    // Step 3: Fallback — if MATRICULAS row not found, search by license plate content
+    if (platesRow === -1) {
+      console.log("[transposed-parse] MATRICULAS label not found, searching by plate patterns...");
+      const startCol = labelCol + 1;
+      for (let r = 0; r < maxRows; r++) {
+        let plateCount = 0;
+        const rowLen = rawRows[r]?.length ?? 0;
+        for (let c = startCol; c < rowLen; c++) {
+          const val = String(rawRows[r]?.[c] ?? "").trim();
+          if (val && looksLikePlate(val)) plateCount++;
+        }
+        if (plateCount >= 2) {
+          platesRow = r;
+          console.log(`[transposed-parse] MATRICULAS row detected at ${r} via plate patterns (${plateCount} plates)`);
+          break;
+        }
+      }
+    }
 
-    // Extract plates from the plates row (start from labelCol+1)
+    if (platesRow === -1) {
+      console.warn("[transposed-parse] Could not find plates row");
+      // Debug: log first 10 rows
+      for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+        console.log(`  Row ${r}:`, (rawRows[r] || []).slice(0, 8).map(v => String(v ?? "").trim()));
+      }
+      return { parsed: [], detected: [] };
+    }
+
+    // Step 4: Extract plates from the plates row
     const platesRowData = rawRows[platesRow];
     const startCol = labelCol + 1;
     const plates: { colIdx: number; plate: string }[] = [];
 
     for (let c = startCol; c < platesRowData.length; c++) {
       const cellVal = String(platesRowData[c] ?? "").trim();
-      if (!cellVal || cellVal.includes("***") || cellVal.toUpperCase() === "VIATURAS DE SERVIÇO") continue;
+      if (!cellVal || cellVal.includes("***") || normalizeLabel(cellVal).includes("VIATURA")) continue;
       plates.push({ colIdx: c, plate: cellVal });
     }
 
-    // Build preview rows per vehicle (column)
+    console.log(`[transposed-parse] Found ${plates.length} plates, ${rowMappings.length} category rows, ${detected.length} categories`);
+
+    // Step 5: Build preview rows per vehicle (column)
     const parsed: ImportPreviewRow[] = [];
     for (const { colIdx, plate } of plates) {
       const normalPlate = plate.replace(/[\s\-]/g, "").toUpperCase();
