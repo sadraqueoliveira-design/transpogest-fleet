@@ -26,6 +26,7 @@ const CATEGORIES = [
   { key: "ATP", label: "ATP", icon: Shield, short: "ATP" },
   { key: "Lavagem", label: "Lavagem", icon: Droplets, short: "Lavagem" },
   { key: "Revisão Horas", label: "Revisão Horas", icon: Clock, short: "Rev. Horas" },
+  { key: "Manutenção Reboques", label: "Manut. Reboques", icon: Wrench, short: "Reboques" },
 ] as const;
 
 type ScheduleRow = {

@@ -667,6 +667,26 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     setImporting(true);
 
     try {
+      // Auto-create trailers for unmatched L-* plates
+      for (const row of previewRows) {
+        if (!row.hasMatch && isTrailerPlate(row.plate)) {
+          const normalPlate = row.plate.replace(/\s+/g, "").toUpperCase();
+          // Ensure it has a dash: L-NNNNNN
+          const formattedPlate = normalPlate.startsWith("L-") ? normalPlate : `L-${normalPlate.slice(1)}`;
+          const { data, error } = await supabase.from("trailers")
+            .insert({ plate: formattedPlate })
+            .select("id")
+            .single();
+          if (data && !error) {
+            row.vehicleId = data.id;
+            row.hasMatch = true;
+            console.log(`[import] Auto-created trailer ${formattedPlate} → ${data.id}`);
+          } else {
+            console.warn(`[import] Failed to create trailer ${formattedPlate}:`, error?.message);
+          }
+        }
+      }
+
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
       
       for (const cat of selectedCategories) {
