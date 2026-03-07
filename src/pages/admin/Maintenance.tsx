@@ -553,7 +553,7 @@ export default function Maintenance() {
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
                           </TableCell>
-                          {CATEGORIES.map(c => (
+                          {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
                             <ScheduleCell
                               key={c.key}
                               schedule={scheduleLookup[v.id]?.[c.key]}
