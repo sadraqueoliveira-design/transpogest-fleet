@@ -43,6 +43,8 @@ type Vehicle = {
   plate: string;
   odometer_km: number | null;
   engine_hours: number | null;
+  mobile_number: string | null;
+  is_trailer?: boolean;
 };
 
 type MaintenanceRecord = {
@@ -210,18 +212,36 @@ export default function Maintenance() {
   };
 
   const fetchData = async () => {
-    const [{ data: sData }, { data: vData }, { data: mData }] = await Promise.all([
+    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
+      supabase.from("trailers").select("id, plate, internal_id, status"),
     ]);
     if (sData) setSchedules(sData as any);
+    const allVehicles: Vehicle[] = [];
+    const map: Record<string, string> = {};
     if (vData) {
-      setVehicles(vData);
-      const map: Record<string, string> = {};
-      vData.forEach(v => { map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id; });
-      setVehicleMap(map);
+      vData.forEach(v => {
+        allVehicles.push({ ...v, is_trailer: false });
+        map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
+      });
     }
+    if (tData) {
+      tData.forEach(t => {
+        allVehicles.push({
+          id: t.id,
+          plate: t.plate,
+          odometer_km: null,
+          engine_hours: null,
+          mobile_number: t.internal_id || null,
+          is_trailer: true,
+        });
+        map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
+      });
+    }
+    setVehicles(allVehicles);
+    setVehicleMap(map);
     if (mData) setRecords(mData as any);
     setLoading(false);
   };
@@ -243,7 +263,7 @@ export default function Maintenance() {
     const q = search.trim().toLowerCase();
 
     return vehicles.filter((vehicle) => {
-      const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q);
+      const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
       if (activeStatusFilter === "all") return true;
 
@@ -431,7 +451,7 @@ export default function Maintenance() {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Pesquisar matrícula..." 
+                placeholder="Pesquisar matrícula ou móvel..." 
                 value={search} 
                 onChange={e => setSearch(e.target.value)}
                 className="pl-9"
@@ -479,6 +499,7 @@ export default function Maintenance() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="sticky left-0 bg-background z-10 min-w-[100px]">Matrícula</TableHead>
+                      <TableHead className="text-center min-w-[60px] text-xs">Móvel</TableHead>
                       {CATEGORIES.map(c => (
                         <TableHead key={c.key} className="text-center min-w-[90px] text-xs">
                           <div className="flex flex-col items-center gap-0.5">
@@ -492,7 +513,7 @@ export default function Maintenance() {
                   <TableBody>
                     {filteredVehicles.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={CATEGORIES.length + 1} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={CATEGORIES.length + 2} className="text-center py-8 text-muted-foreground">
                           Sem dados de planeamento
                         </TableCell>
                       </TableRow>
@@ -501,6 +522,9 @@ export default function Maintenance() {
                         <TableRow key={v.id}>
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
                             {v.plate}
+                          </TableCell>
+                          <TableCell className="text-center text-xs text-muted-foreground">
+                            {v.mobile_number || "—"}
                           </TableCell>
                           {CATEGORIES.map(c => (
                             <ScheduleCell
