@@ -267,16 +267,24 @@ export default function Maintenance() {
     return vehicles.filter((vehicle) => {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
+
+      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+
+      // Category filter: only show vehicles that have a record in the selected category
+      if (categoryFilter !== "all") {
+        if (!vehicleSchedules[categoryFilter]) return false;
+      }
+
       if (activeStatusFilter === "all") return true;
 
-      const vehicleSchedules = Object.values(scheduleLookup[vehicle.id] || {});
-      if (vehicleSchedules.length === 0) return false;
-      return vehicleSchedules.some((schedule) => {
+      const scheduleValues = Object.values(vehicleSchedules);
+      if (scheduleValues.length === 0) return false;
+      return scheduleValues.some((schedule) => {
         const daysRemaining = getScheduleDaysRemaining(schedule);
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter]);
 
   // Summary stats
   const stats = useMemo(() => {
