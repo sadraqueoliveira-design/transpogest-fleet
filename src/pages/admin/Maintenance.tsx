@@ -545,6 +545,11 @@ export default function Maintenance() {
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
                             {v.plate}
                           </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant={v.is_trailer ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
+                              {v.is_trailer ? "Reboque" : "Veículo"}
+                            </Badge>
+                          </TableCell>
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
                           </TableCell>
