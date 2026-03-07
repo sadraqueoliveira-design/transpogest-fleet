@@ -523,6 +523,9 @@ export default function Maintenance() {
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
                             {v.plate}
                           </TableCell>
+                          <TableCell className="text-center text-xs text-muted-foreground">
+                            {v.mobile_number || "—"}
+                          </TableCell>
                           {CATEGORIES.map(c => (
                             <ScheduleCell
                               key={c.key}

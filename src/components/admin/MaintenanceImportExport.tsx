@@ -410,7 +410,18 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       return { parsed: [], detected: [] };
     }
 
-    // Step 4: Extract plates from the plates row
+    // Step 4: Find MOTORISTA row for employee numbers
+    let motoristaRow = -1;
+    for (let r = 0; r < rawRows.length; r++) {
+      const label = normalizeLabel(String(rawRows[r]?.[labelCol] ?? ""));
+      if (label === "MOTORISTA" || label.includes("MOTORISTA")) {
+        motoristaRow = r;
+        console.log(`[transposed-parse] MOTORISTA row found at ${r}`);
+        break;
+      }
+    }
+
+    // Step 5: Extract plates from the plates row
     const platesRowData = rawRows[platesRow];
     const startCol = labelCol + 1;
     const plates: { colIdx: number; plate: string }[] = [];
@@ -423,7 +434,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
     console.log(`[transposed-parse] Found ${plates.length} plates, ${rowMappings.length} category rows, ${detected.length} categories`);
 
-    // Step 5: Build preview rows per vehicle (column)
+    // Step 6: Build preview rows per vehicle (column)
     const parsed: ImportPreviewRow[] = [];
     for (const { colIdx, plate } of plates) {
       const normalPlate = plate.replace(/[\s\-]/g, "").toUpperCase();
@@ -445,6 +456,16 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
           if (!isNaN(hours) && hours > 0) categories[dbKey].hours = hours;
         } else {
           categories[dbKey].date = parseFlexibleDate(cellVal);
+        }
+      }
+
+      // Extract employee number from MOTORISTA row for Lavagem
+      if (motoristaRow >= 0) {
+        const empVal = String(rawRows[motoristaRow]?.[colIdx] ?? "").trim();
+        if (empVal && empVal !== "0") {
+          if (!categories["Lavagem"]) categories["Lavagem"] = {};
+          (categories["Lavagem"] as any).employee = empVal;
+          console.log(`[transposed-parse] Motorista for ${plate}: ${empVal}`);
         }
       }
 
