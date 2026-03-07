@@ -681,6 +681,10 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
             if (colDef.hasKm && catData.km) {
               updates.next_due_km = catData.km;
             }
+            // Save employee for Lavagem
+            if (colDef.isLavagem && (catData as any).employee) {
+              updates.performed_by_employee = (catData as any).employee;
+            }
 
             if (Object.keys(updates).length > 0) {
               await supabase
