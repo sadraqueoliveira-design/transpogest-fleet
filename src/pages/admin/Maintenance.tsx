@@ -562,7 +562,7 @@ export default function Maintenance() {
                           <TableCell className="text-center text-xs text-muted-foreground">
                             {v.mobile_number || "—"}
                           </TableCell>
-                          {(categoryFilter === "all" ? CATEGORIES : CATEGORIES.filter(c => c.key === categoryFilter)).map(c => (
+                          {(categoryFilter.length === 0 ? CATEGORIES : CATEGORIES.filter(c => categoryFilter.includes(c.key))).map(c => (
                             <ScheduleCell
                               key={c.key}
                               schedule={scheduleLookup[v.id]?.[c.key]}
