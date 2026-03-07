@@ -271,9 +271,9 @@ export default function Maintenance() {
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
 
-      // Category filter: only show vehicles that have a record in the selected category
-      if (categoryFilter !== "all") {
-        if (!vehicleSchedules[categoryFilter]) return false;
+      // Category filter: only show vehicles that have a record in any selected category
+      if (categoryFilter.length > 0) {
+        if (!categoryFilter.some(cat => vehicleSchedules[cat])) return false;
       }
 
       if (activeStatusFilter === "all") return true;
