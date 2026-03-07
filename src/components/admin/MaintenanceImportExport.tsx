@@ -269,6 +269,9 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     "A.T.P.": { dbKey: "ATP", type: "date" },
     "ATP": { dbKey: "ATP", type: "date" },
     "LAVAGENS": { dbKey: "Lavagem", type: "date" },
+    "MANUTENÇÕES REBOQUES": { dbKey: "Manutenção Reboques", type: "date" },
+    "MANUTENCOES REBOQUES": { dbKey: "Manutenção Reboques", type: "date" },
+    "MANUTENÇÕES REBOQUE": { dbKey: "Manutenção Reboques", type: "date" },
   };
 
   // Auxiliary rows to skip in transposed format (but MOTORISTA is parsed separately)
