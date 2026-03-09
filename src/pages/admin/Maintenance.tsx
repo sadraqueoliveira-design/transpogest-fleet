@@ -50,6 +50,7 @@ type Vehicle = {
   mobile_number: string | null;
   is_trailer?: boolean;
   client_id?: string | null;
+  hub_id?: string | null;
   status?: string;
 };
 
@@ -213,6 +214,7 @@ export default function Maintenance() {
   const [trailerPlate, setTrailerPlate] = useState("");
   const [trailerInternalId, setTrailerInternalId] = useState("");
   const [trailerClientId, setTrailerClientId] = useState<string>("");
+  const [trailerHubId, setTrailerHubId] = useState<string>("");
   const [trailerStatus, setTrailerStatus] = useState("uncoupled");
   const [savingTrailer, setSavingTrailer] = useState(false);
   const [deleteTrailerId, setDeleteTrailerId] = useState<string | null>(null);
@@ -222,6 +224,7 @@ export default function Maintenance() {
   const [vehiclePlate, setVehiclePlate] = useState("");
   const [vehicleMobile, setVehicleMobile] = useState("");
   const [vehicleClientId, setVehicleClientId] = useState<string>("");
+  const [vehicleHubId, setVehicleHubId] = useState<string>("");
   const [vehicleStatus, setVehicleStatus] = useState("active");
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
@@ -246,9 +249,9 @@ export default function Maintenance() {
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }, { data: cData }, { data: hData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id, status").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id, hub_id, status").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
-      supabase.from("trailers").select("id, plate, internal_id, status, client_id"),
+      supabase.from("trailers").select("id, plate, internal_id, status, client_id, hub_id"),
       supabase.from("clients").select("id, name, code").order("name"),
       supabase.from("hubs").select("id, name, code, client_id").in("type", ["hub", "armazém"]).order("name"),
     ]);
@@ -259,7 +262,7 @@ export default function Maintenance() {
     const map: Record<string, string> = {};
     if (vData) {
       vData.forEach(v => {
-        allVehicles.push({ ...v, is_trailer: false, status: (v as any).status || 'active' });
+        allVehicles.push({ ...v, is_trailer: false, hub_id: (v as any).hub_id || null, status: (v as any).status || 'active' });
         map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
       });
     }
@@ -273,6 +276,7 @@ export default function Maintenance() {
           mobile_number: t.internal_id || null,
           is_trailer: true,
           client_id: (t as any).client_id || null,
+          hub_id: (t as any).hub_id || null,
         });
         map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
       });
@@ -303,9 +307,14 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
-      // Client filter (applies to both vehicles and trailers)
+      // Client filter
       if (clientFilter !== "all") {
         if (vehicle.client_id !== clientFilter) return false;
+      }
+
+      // Hub filter
+      if (hubFilter !== "all") {
+        if (vehicle.hub_id !== hubFilter) return false;
       }
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
@@ -324,7 +333,7 @@ export default function Maintenance() {
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter, hubFilter]);
 
   const filteredHubs = useMemo(() => {
     if (clientFilter === "all") return hubs;
@@ -430,6 +439,7 @@ export default function Maintenance() {
     setTrailerPlate(trailer?.plate || "");
     setTrailerInternalId(trailer?.mobile_number || "");
     setTrailerClientId(trailer?.client_id || "");
+    setTrailerHubId(trailer?.hub_id || "");
     setTrailerStatus(trailer ? (vehicles.find(v => v.id === trailer.id) ? "active" : "uncoupled") : "uncoupled");
   };
 
@@ -443,6 +453,7 @@ export default function Maintenance() {
             plate: trailerPlate.trim().toUpperCase(), 
             internal_id: trailerInternalId.trim() || null,
             client_id: trailerClientId || null,
+            hub_id: trailerHubId || null,
             status: trailerStatus,
           })
           .eq("id", trailerDialog.trailer.id);
@@ -454,6 +465,7 @@ export default function Maintenance() {
             plate: trailerPlate.trim().toUpperCase(), 
             internal_id: trailerInternalId.trim() || null,
             client_id: trailerClientId || null,
+            hub_id: trailerHubId || null,
             status: trailerStatus,
           });
         if (error) throw error;
@@ -484,6 +496,7 @@ export default function Maintenance() {
     setVehiclePlate(vehicle?.plate || "");
     setVehicleMobile(vehicle?.mobile_number || "");
     setVehicleClientId(vehicle?.client_id || "");
+    setVehicleHubId(vehicle?.hub_id || "");
     setVehicleStatus(vehicle?.status || "active");
   };
 
@@ -497,6 +510,7 @@ export default function Maintenance() {
             plate: vehiclePlate.trim().toUpperCase(), 
             mobile_number: vehicleMobile.trim() || null,
             client_id: vehicleClientId || null,
+            hub_id: vehicleHubId || null,
             status: vehicleStatus,
           } as any)
           .eq("id", vehicleDialog.vehicle.id);
@@ -508,6 +522,7 @@ export default function Maintenance() {
             plate: vehiclePlate.trim().toUpperCase(), 
             mobile_number: vehicleMobile.trim() || null,
             client_id: vehicleClientId || null,
+            hub_id: vehicleHubId || null,
             status: vehicleStatus,
           } as any);
         if (error) throw error;
@@ -785,19 +800,21 @@ export default function Maintenance() {
                     <TableHead>Matrícula</TableHead>
                     <TableHead>Móvel</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Hub</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {vehiclesList.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
                   ) : (
                     vehiclesList.map(v => (
                       <TableRow key={v.id}>
                         <TableCell className="font-mono font-medium">{v.plate}</TableCell>
                         <TableCell>{v.mobile_number || "—"}</TableCell>
                         <TableCell>{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
+                        <TableCell>{hubs.find(h => h.id === v.hub_id)?.name || "—"}</TableCell>
                         <TableCell>
                           <Badge variant={(v as any).status === "active" ? "default" : (v as any).status === "maintenance" ? "destructive" : "secondary"} className="text-xs">
                             {(v as any).status === "active" ? "Ativo" : (v as any).status === "inactive" ? "Inativo" : (v as any).status === "maintenance" ? "Em manutenção" : (v as any).status || "Ativo"}
@@ -884,19 +901,21 @@ export default function Maintenance() {
                     <TableHead>Matrícula</TableHead>
                     <TableHead>ID Interno</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Hub</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {trailersList.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
                   ) : (
                     trailersList.map(t => (
                       <TableRow key={t.id}>
                         <TableCell className="font-mono font-medium">{t.plate}</TableCell>
                         <TableCell>{t.mobile_number || "—"}</TableCell>
                         <TableCell>{clients.find(c => c.id === t.client_id)?.name || "—"}</TableCell>
+                        <TableCell>{hubs.find(h => h.id === t.hub_id)?.name || "—"}</TableCell>
                         <TableCell><Badge variant="secondary" className="text-xs">{t.is_trailer ? "Reboque" : "—"}</Badge></TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -941,6 +960,18 @@ export default function Maintenance() {
                   <SelectItem value="">Sem cliente</SelectItem>
                   {clients.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Hub</Label>
+              <Select value={trailerHubId} onValueChange={setTrailerHubId}>
+                <SelectTrigger><SelectValue placeholder="Sem hub" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem hub</SelectItem>
+                  {hubs.filter(h => !trailerClientId || h.client_id === trailerClientId).map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1007,6 +1038,18 @@ export default function Maintenance() {
                   <SelectItem value="">Sem cliente</SelectItem>
                   {clients.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Hub</Label>
+              <Select value={vehicleHubId} onValueChange={setVehicleHubId}>
+                <SelectTrigger><SelectValue placeholder="Sem hub" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem hub</SelectItem>
+                  {hubs.filter(h => !vehicleClientId || h.client_id === vehicleClientId).map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1103,6 +1146,8 @@ export default function Maintenance() {
         onImported={fetchData}
         selectedClientId={clientFilter !== "all" ? clientFilter : undefined}
         selectedClientName={clientFilter !== "all" ? clients.find(c => c.id === clientFilter)?.name : undefined}
+        selectedHubId={hubFilter !== "all" ? hubFilter : undefined}
+        selectedHubName={hubFilter !== "all" ? hubs.find(h => h.id === hubFilter)?.name : undefined}
       />
     </div>
   );

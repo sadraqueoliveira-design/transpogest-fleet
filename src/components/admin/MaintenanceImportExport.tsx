@@ -227,9 +227,11 @@ interface ImportDialogProps {
   onImported: () => void;
   selectedClientId?: string;
   selectedClientName?: string;
+  selectedHubId?: string;
+  selectedHubName?: string;
 }
 
-export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported, selectedClientId, selectedClientName }: ImportDialogProps) {
+export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported, selectedClientId, selectedClientName, selectedHubId, selectedHubName }: ImportDialogProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewRows, setPreviewRows] = useState<ImportPreviewRow[]>([]);
   const [detectedCategories, setDetectedCategories] = useState<string[]>([]);
@@ -760,22 +762,26 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
-      // Assign client_id to imported vehicles and trailers if a client is selected
-      if (selectedClientId) {
+      // Assign client_id and hub_id to imported vehicles and trailers
+      if (selectedClientId || selectedHubId) {
         for (const row of previewRows) {
           if (row.hasMatch && row.vehicleId) {
+            const updates: Record<string, any> = {};
+            if (selectedClientId) updates.client_id = selectedClientId;
+            if (selectedHubId) updates.hub_id = selectedHubId;
+            
             if (isTrailerPlate(row.plate)) {
               await supabase.from("trailers")
-                .update({ client_id: selectedClientId })
+                .update(updates)
                 .eq("id", row.vehicleId);
             } else {
               await supabase.from("vehicles")
-                .update({ client_id: selectedClientId })
+                .update(updates)
                 .eq("id", row.vehicleId);
             }
           }
         }
-        console.log(`[import] Assigned client_id=${selectedClientId} to imported vehicles and trailers`);
+        console.log(`[import] Assigned client_id=${selectedClientId}, hub_id=${selectedHubId} to imported vehicles and trailers`);
       }
 
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
@@ -884,6 +890,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
                   <div className="mb-4 rounded-md bg-accent/50 border border-accent px-3 py-2 text-sm">
                     <Building2 className="h-4 w-4 inline mr-1.5" />
                     Os veículos importados serão associados ao cliente <strong>{selectedClientName}</strong>
+                    {selectedHubName && <> e ao hub <strong>{selectedHubName}</strong></>}
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground mb-4">
