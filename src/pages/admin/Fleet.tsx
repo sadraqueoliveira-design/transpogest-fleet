@@ -356,14 +356,13 @@ export default function Fleet() {
               <Select value={docType} onValueChange={setDocType}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="insurance">Seguro</SelectItem>
-                  <SelectItem value="inspection">Inspeção</SelectItem>
-                  <SelectItem value="registration">Registo</SelectItem>
-                  <SelectItem value="tachograph">Tacógrafo</SelectItem>
-                  <SelectItem value="other">Outro</SelectItem>
+                  {Object.entries(docTypeLabels).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+            <Input type="date" value={docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder="Validade" className="h-8 text-sm" />
             <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
             <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => fileInputRef.current?.click()}>
