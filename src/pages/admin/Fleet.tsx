@@ -158,7 +158,8 @@ export default function Fleet() {
     const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, docFile);
     if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
     const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
-    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id, expiry_date: docExpiry || null } as any);
+    const finalExpiry = docType === "atp_certificate" && docExpiry ? (() => { const [y, m] = docExpiry.split("-").map(Number); const ld = new Date(y, m, 0).getDate(); return `${y}-${String(m).padStart(2,"0")}-${String(ld).padStart(2,"0")}`; })() : (docExpiry || null);
+    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id, expiry_date: finalExpiry } as any);
     if (error) { toast.error("Erro: " + error.message); } else { toast.success("Documento adicionado"); setDocName(""); setDocType("other"); setDocFile(null); setDocExpiry(""); fetchDocs(selectedVehicle.id); }
     setUploading(false);
   };
@@ -169,12 +170,13 @@ export default function Fleet() {
     else { toast.success("Documento removido"); if (selectedVehicle) fetchDocs(selectedVehicle.id); }
   };
 
-  const expiryBadge = (date: string | null) => {
+  const expiryBadge = (date: string | null, docType?: string) => {
     if (!date) return null;
     const days = differenceInDays(parseISO(date), new Date());
+    const displayDate = docType === "atp_certificate" ? format(parseISO(date), "MM/yyyy") : format(parseISO(date), "dd/MM/yyyy");
     if (days < 0) return <Badge variant="destructive">Expirado</Badge>;
     if (days < 30) return <Badge className="bg-warning text-warning-foreground"><AlertCircle className="mr-1 h-3 w-3" />{days}d</Badge>;
-    return <Badge variant="secondary">{format(parseISO(date), "dd/MM/yyyy")}</Badge>;
+    return <Badge variant="secondary">{displayDate}</Badge>;
   };
 
   const exportData = filtered.map(v => ({
@@ -362,7 +364,9 @@ export default function Fleet() {
                 </SelectContent>
               </Select>
             </div>
-            <Input type="date" value={docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder="Validade" className="h-8 text-sm" />
+            {docType !== "vehicle_registration" && (
+              <Input type={docType === "atp_certificate" ? "month" : "date"} value={docType === "atp_certificate" && docExpiry.length === 10 ? docExpiry.slice(0,7) : docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder={docType === "atp_certificate" ? "Mês/Ano" : "Validade"} className="h-8 text-sm" />
+            )}
             <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
             <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => fileInputRef.current?.click()}>
@@ -382,7 +386,7 @@ export default function Fleet() {
                     <p className="text-sm font-medium truncate">{doc.name}</p>
                     <div className="flex items-center gap-1 flex-wrap">
                       <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
-                      {doc.expiry_date && expiryBadge(doc.expiry_date)}
+                      {doc.expiry_date && expiryBadge(doc.expiry_date, doc.doc_type)}
                     </div>
                   </div>
                 </div>

@@ -34,12 +34,29 @@ const docTypeLabels: Record<string, string> = {
   other: "Outro",
 };
 
-function ExpiryBadge({ date }: { date: string | null }) {
+function ExpiryBadge({ date, docType }: { date: string | null; docType?: string }) {
   if (!date) return null;
   const days = differenceInDays(parseISO(date), new Date());
+  const displayDate = docType === "atp_certificate" ? format(parseISO(date), "MM/yyyy") : format(parseISO(date), "dd/MM/yyyy");
   if (days < 0) return <Badge variant="destructive" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" />Expirado</Badge>;
   if (days < 30) return <Badge className="bg-orange-500/20 text-orange-700 border-orange-300 text-[10px] gap-1"><AlertCircle className="h-3 w-3" />{days}d</Badge>;
-  return <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-300"><CalendarDays className="h-3 w-3" />{format(parseISO(date), "dd/MM/yyyy")}</Badge>;
+  return <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-300"><CalendarDays className="h-3 w-3" />{displayDate}</Badge>;
+}
+
+function getExpiryInputType(docType: string): string | null {
+  if (docType === "vehicle_registration") return null; // no expiry needed
+  if (docType === "atp_certificate") return "month";
+  return "date";
+}
+
+function normalizeExpiry(docType: string, value: string): string {
+  if (docType === "atp_certificate" && value) {
+    // value is "YYYY-MM", convert to last day of month
+    const [year, month] = value.split("-").map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  }
+  return value;
 }
 
 export default function DriverDocuments() {
@@ -99,7 +116,7 @@ export default function DriverDocuments() {
       doc_type: docType,
       file_url: urlData.publicUrl,
       uploaded_by: user.id,
-      expiry_date: docExpiry || null,
+      expiry_date: normalizeExpiry(docType, docExpiry) || null,
     } as any);
     if (error) { toast.error("Erro: " + error.message); }
     else {
@@ -151,10 +168,12 @@ export default function DriverDocuments() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Data de validade</Label>
-                  <Input type="date" value={docExpiry} onChange={e => setDocExpiry(e.target.value)} />
-                </div>
+                {getExpiryInputType(docType) && (
+                  <div>
+                    <Label>{docType === "atp_certificate" ? "Validade (Mês/Ano)" : "Data de validade"}</Label>
+                    <Input type={getExpiryInputType(docType)!} value={docType === "atp_certificate" && docExpiry.length === 10 ? docExpiry.slice(0, 7) : docExpiry} onChange={e => setDocExpiry(e.target.value)} />
+                  </div>
+                )}
                 <div>
                   <Label>Ficheiro</Label>
                   <div className="flex gap-2 mt-1">
@@ -203,7 +222,7 @@ export default function DriverDocuments() {
                       <Badge variant="secondary" className="text-xs">
                         {docTypeLabels[doc.doc_type] || doc.doc_type}
                       </Badge>
-                      <ExpiryBadge date={doc.expiry_date} />
+                      <ExpiryBadge date={doc.expiry_date} docType={doc.doc_type} />
                     </div>
                   </div>
                 </div>
