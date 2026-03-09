@@ -48,7 +48,11 @@ type Vehicle = {
   engine_hours: number | null;
   mobile_number: string | null;
   is_trailer?: boolean;
+  client_id?: string | null;
 };
+
+type ClientOption = { id: string; name: string; code: string };
+type HubOption = { id: string; name: string; code: string; client_id: string };
 
 type MaintenanceRecord = {
   id: string;
