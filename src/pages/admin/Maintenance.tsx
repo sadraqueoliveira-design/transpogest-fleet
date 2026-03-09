@@ -201,6 +201,10 @@ export default function Maintenance() {
   const [showImport, setShowImport] = useState(false);
   const [alertDays, setAlertDays] = useState("15");
   const [savingAlertDays, setSavingAlertDays] = useState(false);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [hubs, setHubs] = useState<HubOption[]>([]);
+  const [clientFilter, setClientFilter] = useState("all");
+  const [hubFilter, setHubFilter] = useState("all");
 
   // Load alert threshold from app_config
   useEffect(() => {
