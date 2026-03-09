@@ -465,6 +465,7 @@ export default function Maintenance() {
             plate: trailerPlate.trim().toUpperCase(), 
             internal_id: trailerInternalId.trim() || null,
             client_id: trailerClientId || null,
+            hub_id: trailerHubId || null,
             status: trailerStatus,
           });
         if (error) throw error;
