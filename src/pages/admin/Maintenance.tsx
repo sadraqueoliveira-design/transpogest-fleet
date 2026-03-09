@@ -496,6 +496,7 @@ export default function Maintenance() {
     setVehiclePlate(vehicle?.plate || "");
     setVehicleMobile(vehicle?.mobile_number || "");
     setVehicleClientId(vehicle?.client_id || "");
+    setVehicleHubId(vehicle?.hub_id || "");
     setVehicleStatus(vehicle?.status || "active");
   };
 
