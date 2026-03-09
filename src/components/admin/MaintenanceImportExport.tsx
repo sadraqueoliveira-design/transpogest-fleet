@@ -484,6 +484,15 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
+      // Extract MOVEL (internal ID / mobile number)
+      if (movelRow >= 0) {
+        const movelVal = String(rawRows[movelRow]?.[colIdx] ?? "").trim();
+        if (movelVal && movelVal !== "0") {
+          (categories as any).__movel = movelVal;
+          console.log(`[transposed-parse] Movel for ${plate}: ${movelVal}`);
+        }
+      }
+
       if (Object.keys(categories).length > 0) {
         parsed.push({ plate, vehicleId, categories, hasMatch: !!vehicleId });
       }
