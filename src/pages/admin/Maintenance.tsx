@@ -492,6 +492,40 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
+            <div className="flex items-center gap-1.5">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Select value={clientFilter} onValueChange={(val) => { setClientFilter(val); setHubFilter("all"); }}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Todos os clientes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os clientes</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <Select value={hubFilter} onValueChange={(val) => {
+                setHubFilter(val);
+                if (val !== "all") {
+                  const hub = hubs.find(h => h.id === val);
+                  if (hub) setClientFilter(hub.client_id);
+                }
+              }}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Todos os hubs" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os hubs</SelectItem>
+                  {filteredHubs.map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <ToggleGroup
               type="multiple"
               value={categoryFilter}
@@ -511,8 +545,8 @@ export default function Maintenance() {
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            {(activeStatusFilter !== "all" || categoryFilter.length > 0) && (
-              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); }}>
+            {(activeStatusFilter !== "all" || categoryFilter.length > 0 || clientFilter !== "all" || hubFilter !== "all") && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); setClientFilter("all"); setHubFilter("all"); }}>
                 Limpar filtros
               </Button>
             )}
