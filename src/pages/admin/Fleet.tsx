@@ -41,6 +41,7 @@ interface VehicleDoc {
   doc_type: string;
   file_url: string;
   created_at: string;
+  expiry_date: string | null;
 }
 
 const docTypeLabels: Record<string, string> = {
@@ -77,6 +78,7 @@ export default function Fleet() {
   const [docName, setDocName] = useState("");
   const [docType, setDocType] = useState("other");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docExpiry, setDocExpiry] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -156,8 +158,8 @@ export default function Fleet() {
     const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, docFile);
     if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
     const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
-    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id } as any);
-    if (error) { toast.error("Erro: " + error.message); } else { toast.success("Documento adicionado"); setDocName(""); setDocType("other"); setDocFile(null); fetchDocs(selectedVehicle.id); }
+    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id, expiry_date: docExpiry || null } as any);
+    if (error) { toast.error("Erro: " + error.message); } else { toast.success("Documento adicionado"); setDocName(""); setDocType("other"); setDocFile(null); setDocExpiry(""); fetchDocs(selectedVehicle.id); }
     setUploading(false);
   };
 
@@ -354,14 +356,13 @@ export default function Fleet() {
               <Select value={docType} onValueChange={setDocType}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="insurance">Seguro</SelectItem>
-                  <SelectItem value="inspection">Inspeção</SelectItem>
-                  <SelectItem value="registration">Registo</SelectItem>
-                  <SelectItem value="tachograph">Tacógrafo</SelectItem>
-                  <SelectItem value="other">Outro</SelectItem>
+                  {Object.entries(docTypeLabels).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+            <Input type="date" value={docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder="Validade" className="h-8 text-sm" />
             <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
             <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => fileInputRef.current?.click()}>
@@ -379,7 +380,10 @@ export default function Fleet() {
                   <FileText className="h-4 w-4 text-primary shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{doc.name}</p>
-                    <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                      {doc.expiry_date && expiryBadge(doc.expiry_date)}
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">

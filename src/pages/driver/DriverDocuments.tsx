@@ -3,13 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, ExternalLink, Plus, Camera, Upload, Loader2 } from "lucide-react";
+import { FileText, ExternalLink, Plus, Camera, Upload, Loader2, Trash2, AlertCircle, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+import { differenceInDays, format, parseISO } from "date-fns";
 
 interface VehicleDoc {
   id: string;
@@ -17,6 +19,8 @@ interface VehicleDoc {
   doc_type: string;
   file_url: string;
   created_at: string;
+  uploaded_by: string | null;
+  expiry_date: string | null;
 }
 
 const docTypeLabels: Record<string, string> = {
@@ -30,6 +34,14 @@ const docTypeLabels: Record<string, string> = {
   other: "Outro",
 };
 
+function ExpiryBadge({ date }: { date: string | null }) {
+  if (!date) return null;
+  const days = differenceInDays(parseISO(date), new Date());
+  if (days < 0) return <Badge variant="destructive" className="text-[10px] gap-1"><AlertCircle className="h-3 w-3" />Expirado</Badge>;
+  if (days < 30) return <Badge className="bg-orange-500/20 text-orange-700 border-orange-300 text-[10px] gap-1"><AlertCircle className="h-3 w-3" />{days}d</Badge>;
+  return <Badge variant="outline" className="text-[10px] gap-1 text-emerald-600 border-emerald-300"><CalendarDays className="h-3 w-3" />{format(parseISO(date), "dd/MM/yyyy")}</Badge>;
+}
+
 export default function DriverDocuments() {
   const { user } = useAuth();
   const [docs, setDocs] = useState<VehicleDoc[]>([]);
@@ -41,6 +53,8 @@ export default function DriverDocuments() {
   const [docName, setDocName] = useState("");
   const [docType, setDocType] = useState("other");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docExpiry, setDocExpiry] = useState("");
+  const [deleteDoc, setDeleteDoc] = useState<VehicleDoc | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,7 +64,7 @@ export default function DriverDocuments() {
       .select("*")
       .eq("vehicle_id", vId)
       .order("created_at", { ascending: false });
-    if (data) setDocs(data as VehicleDoc[]);
+    if (data) setDocs(data as unknown as VehicleDoc[]);
   };
 
   useEffect(() => {
@@ -85,15 +99,24 @@ export default function DriverDocuments() {
       doc_type: docType,
       file_url: urlData.publicUrl,
       uploaded_by: user.id,
+      expiry_date: docExpiry || null,
     } as any);
     if (error) { toast.error("Erro: " + error.message); }
     else {
       toast.success("Documento adicionado");
-      setDocName(""); setDocType("other"); setDocFile(null);
+      setDocName(""); setDocType("other"); setDocFile(null); setDocExpiry("");
       setDialogOpen(false);
       await fetchDocs(vehicleId);
     }
     setUploading(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteDoc || !vehicleId) return;
+    const { error } = await supabase.from("vehicle_documents").delete().eq("id", deleteDoc.id);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Documento eliminado"); await fetchDocs(vehicleId); }
+    setDeleteDoc(null);
   };
 
   return (
@@ -127,6 +150,10 @@ export default function DriverDocuments() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <Label>Data de validade</Label>
+                  <Input type="date" value={docExpiry} onChange={e => setDocExpiry(e.target.value)} />
                 </div>
                 <div>
                   <Label>Ficheiro</Label>
@@ -172,21 +199,48 @@ export default function DriverDocuments() {
                   <FileText className="h-8 w-8 text-primary shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium text-sm truncate">{doc.name}</p>
-                    <Badge variant="secondary" className="text-xs mt-1">
-                      {docTypeLabels[doc.doc_type] || doc.doc_type}
-                    </Badge>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">
+                        {docTypeLabels[doc.doc_type] || doc.doc_type}
+                      </Badge>
+                      <ExpiryBadge date={doc.expiry_date} />
+                    </div>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" asChild>
-                  <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="mr-1 h-3 w-3" />Abrir
-                  </a>
-                </Button>
+                <div className="flex gap-1 shrink-0">
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="mr-1 h-3 w-3" />Abrir
+                    </a>
+                  </Button>
+                  {doc.uploaded_by === user?.id && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDoc(doc)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      <AlertDialog open={!!deleteDoc} onOpenChange={(o) => !o && setDeleteDoc(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar documento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O documento "{deleteDoc?.name}" será eliminado permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

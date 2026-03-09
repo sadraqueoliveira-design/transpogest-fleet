@@ -1,44 +1,43 @@
 
 
-# Melhorias nos Documentos de Veículos + Badges por Hub
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Alterações
+## Problem analysis
 
-### 1. Migração SQL
-- Adicionar coluna `expiry_date date` à tabela `vehicle_documents`
-- Adicionar RLS policy para drivers poderem eliminar documentos que eles próprios enviaram (`uploaded_by = auth.uid()`)
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-```sql
-ALTER TABLE public.vehicle_documents ADD COLUMN expiry_date date;
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-CREATE POLICY "Drivers can delete own uploaded docs"
-ON public.vehicle_documents FOR DELETE TO authenticated
-USING (uploaded_by = auth.uid());
-```
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-### 2. `DriverDocuments.tsx` — Eliminar + Validade + Alertas
-- Adicionar `uploaded_by` e `expiry_date` ao tipo `VehicleDoc` e à query
-- Adicionar campo "Data de validade" (input date) no dialog de upload
-- Mostrar data de validade em cada documento com badge colorida:
-  - Vermelho: expirado
-  - Laranja: expira em < 30 dias
-  - Verde: válido
-- Botão "Eliminar" visível apenas nos documentos enviados pelo próprio motorista (`uploaded_by === user.id`)
-- AlertDialog de confirmação antes de eliminar
-- Função `handleDelete` que apaga o registo da BD
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-### 3. `Fleet.tsx` (admin) — Validade
-- Adicionar campo `expiry_date` no dialog de upload de documentos do admin
-- Mostrar a data de validade na listagem de documentos do veículo
+## Solution
 
-### 4. `Maintenance.tsx` — Badges por hub nas tabs
-- Na tab "Veículos", mostrar badge com contagem total de veículos
-- Na tab "Reboques", mostrar badge com contagem total de reboques
-- Se um hub está filtrado, mostrar o nome do hub e a contagem filtrada
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-### Ficheiros alterados
-- **Migração SQL** — `expiry_date` + RLS delete
-- `src/pages/driver/DriverDocuments.tsx` — eliminar docs próprios, validade, alertas visuais
-- `src/pages/admin/Fleet.tsx` — campo validade no upload
-- `src/pages/admin/Maintenance.tsx` — badges com contagem nas tabs
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
+
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
+
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
+
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
+
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 
