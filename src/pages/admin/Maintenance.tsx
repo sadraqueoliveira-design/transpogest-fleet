@@ -283,9 +283,8 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
-      // Client filter
+      // Client filter (applies to both vehicles and trailers)
       if (clientFilter !== "all") {
-        if (vehicle.is_trailer) return false; // trailers have no client_id
         if (vehicle.client_id !== clientFilter) return false;
       }
 
