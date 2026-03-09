@@ -1355,15 +1355,7 @@ export type Database = {
           updated_at?: string
           vehicle_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "vehicle_maintenance_schedule_vehicle_id_fkey"
-            columns: ["vehicle_id"]
-            isOneToOne: false
-            referencedRelation: "vehicles"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       vehicles: {
         Row: {

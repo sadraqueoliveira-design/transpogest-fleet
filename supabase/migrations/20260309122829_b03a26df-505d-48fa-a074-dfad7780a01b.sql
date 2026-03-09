@@ -1,0 +1,1 @@
+ALTER TABLE public.vehicle_maintenance_schedule DROP CONSTRAINT vehicle_maintenance_schedule_vehicle_id_fkey;
