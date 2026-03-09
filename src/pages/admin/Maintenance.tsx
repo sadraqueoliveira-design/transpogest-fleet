@@ -965,6 +965,18 @@ export default function Maintenance() {
               </Select>
             </div>
             <div className="space-y-2">
+              <Label>Hub</Label>
+              <Select value={trailerHubId} onValueChange={setTrailerHubId}>
+                <SelectTrigger><SelectValue placeholder="Sem hub" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem hub</SelectItem>
+                  {hubs.filter(h => !trailerClientId || h.client_id === trailerClientId).map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
               <Label>Estado</Label>
               <Select value={trailerStatus} onValueChange={setTrailerStatus}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
