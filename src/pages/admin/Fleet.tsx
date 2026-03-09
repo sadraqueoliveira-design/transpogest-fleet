@@ -78,6 +78,7 @@ export default function Fleet() {
   const [docName, setDocName] = useState("");
   const [docType, setDocType] = useState("other");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docExpiry, setDocExpiry] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
