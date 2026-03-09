@@ -769,7 +769,58 @@ export default function Maintenance() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="records" className="space-y-4">
+        <TabsContent value="vehicles" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{vehiclesList.length} veículos registados</p>
+            <Button size="sm" className="gap-1.5" onClick={() => openVehicleDialog("add")}>
+              <Plus className="h-4 w-4" /> Adicionar Veículo
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Móvel</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vehiclesList.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
+                  ) : (
+                    vehiclesList.map(v => (
+                      <TableRow key={v.id}>
+                        <TableCell className="font-mono font-medium">{v.plate}</TableCell>
+                        <TableCell>{v.mobile_number || "—"}</TableCell>
+                        <TableCell>{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={(v as any).status === "active" ? "default" : (v as any).status === "maintenance" ? "destructive" : "secondary"} className="text-xs">
+                            {(v as any).status === "active" ? "Ativo" : (v as any).status === "inactive" ? "Inativo" : (v as any).status === "maintenance" ? "Em manutenção" : (v as any).status || "Ativo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openVehicleDialog("edit", v)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteVehicleId(v.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
           <div className="flex items-center justify-end gap-2">
             <ImportButton
               columns={["plate", "type", "description", "cost", "status", "date_scheduled"]}
