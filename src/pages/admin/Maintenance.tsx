@@ -477,7 +477,62 @@ export default function Maintenance() {
     setDeleteTrailerId(null);
   };
 
+  // Vehicle CRUD functions
+  const openVehicleDialog = (mode: "add" | "edit", vehicle?: any) => {
+    setVehicleDialog({ mode, vehicle });
+    setVehiclePlate(vehicle?.plate || "");
+    setVehicleMobile(vehicle?.mobile_number || "");
+    setVehicleClientId(vehicle?.client_id || "");
+    setVehicleStatus(vehicle?.status || "active");
+  };
+
+  const handleSaveVehicle = async () => {
+    if (!vehiclePlate.trim()) { toast.error("Matrícula obrigatória"); return; }
+    setSavingVehicle(true);
+    try {
+      if (vehicleDialog?.mode === "edit" && vehicleDialog.vehicle) {
+        const { error } = await supabase.from("vehicles")
+          .update({ 
+            plate: vehiclePlate.trim().toUpperCase(), 
+            mobile_number: vehicleMobile.trim() || null,
+            client_id: vehicleClientId || null,
+            status: vehicleStatus,
+          } as any)
+          .eq("id", vehicleDialog.vehicle.id);
+        if (error) throw error;
+        toast.success("Veículo atualizado");
+      } else {
+        const { error } = await supabase.from("vehicles")
+          .insert({ 
+            plate: vehiclePlate.trim().toUpperCase(), 
+            mobile_number: vehicleMobile.trim() || null,
+            client_id: vehicleClientId || null,
+            status: vehicleStatus,
+          } as any);
+        if (error) throw error;
+        toast.success("Veículo criado");
+      }
+      setVehicleDialog(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Desconhecido"));
+    } finally {
+      setSavingVehicle(false);
+    }
+  };
+
+  const handleDeleteVehicle = async () => {
+    if (!deleteVehicleId) return;
+    await supabase.from("vehicle_maintenance_schedule").delete().eq("vehicle_id", deleteVehicleId);
+    await supabase.from("maintenance_records").delete().eq("vehicle_id", deleteVehicleId);
+    const { error } = await supabase.from("vehicles").delete().eq("id", deleteVehicleId);
+    if (error) { toast.error("Erro ao excluir: " + error.message); }
+    else { toast.success("Veículo excluído"); fetchData(); }
+    setDeleteVehicleId(null);
+  };
+
   const trailersList = vehicles.filter(v => v.is_trailer);
+  const vehiclesList = vehicles.filter(v => !v.is_trailer);
 
   if (loading) {
     return (
