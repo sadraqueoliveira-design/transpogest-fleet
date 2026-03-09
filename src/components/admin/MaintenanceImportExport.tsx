@@ -890,6 +890,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
                   <div className="mb-4 rounded-md bg-accent/50 border border-accent px-3 py-2 text-sm">
                     <Building2 className="h-4 w-4 inline mr-1.5" />
                     Os veículos importados serão associados ao cliente <strong>{selectedClientName}</strong>
+                    {selectedHubName && <> e ao hub <strong>{selectedHubName}</strong></>}
                   </div>
                 )}
                 <p className="text-sm text-muted-foreground mb-4">

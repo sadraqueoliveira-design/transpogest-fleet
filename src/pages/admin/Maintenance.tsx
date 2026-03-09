@@ -1146,6 +1146,8 @@ export default function Maintenance() {
         onImported={fetchData}
         selectedClientId={clientFilter !== "all" ? clientFilter : undefined}
         selectedClientName={clientFilter !== "all" ? clients.find(c => c.id === clientFilter)?.name : undefined}
+        selectedHubId={hubFilter !== "all" ? hubFilter : undefined}
+        selectedHubName={hubFilter !== "all" ? hubs.find(h => h.id === hubFilter)?.name : undefined}
       />
     </div>
   );
