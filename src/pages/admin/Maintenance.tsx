@@ -214,6 +214,7 @@ export default function Maintenance() {
   const [trailerPlate, setTrailerPlate] = useState("");
   const [trailerInternalId, setTrailerInternalId] = useState("");
   const [trailerClientId, setTrailerClientId] = useState<string>("");
+  const [trailerHubId, setTrailerHubId] = useState<string>("");
   const [trailerStatus, setTrailerStatus] = useState("uncoupled");
   const [savingTrailer, setSavingTrailer] = useState(false);
   const [deleteTrailerId, setDeleteTrailerId] = useState<string | null>(null);
