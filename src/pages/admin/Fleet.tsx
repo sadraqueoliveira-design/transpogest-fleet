@@ -158,8 +158,8 @@ export default function Fleet() {
     const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, docFile);
     if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
     const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
-    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id } as any);
-    if (error) { toast.error("Erro: " + error.message); } else { toast.success("Documento adicionado"); setDocName(""); setDocType("other"); setDocFile(null); fetchDocs(selectedVehicle.id); }
+    const { error } = await supabase.from("vehicle_documents").insert({ vehicle_id: selectedVehicle.id, name: docName.trim(), doc_type: docType, file_url: urlData.publicUrl, uploaded_by: user?.id, expiry_date: docExpiry || null } as any);
+    if (error) { toast.error("Erro: " + error.message); } else { toast.success("Documento adicionado"); setDocName(""); setDocType("other"); setDocFile(null); setDocExpiry(""); fetchDocs(selectedVehicle.id); }
     setUploading(false);
   };
 
