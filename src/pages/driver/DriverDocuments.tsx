@@ -266,6 +266,8 @@ export default function DriverDocuments() {
         </div>
       )}
 
+      <input ref={replaceInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplace(e.target.files[0]); }} />
+
       <AlertDialog open={!!deleteDoc} onOpenChange={(o) => !o && setDeleteDoc(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
