@@ -512,44 +512,73 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
 
       if (ext === "csv") {
         const text = await file.text();
-        rawRows = text.split(/\r?\n/).map(l => l.split(/[;,]/));
+        // Stateful CSV parser: handle quoted fields with delimiters inside
+        rawRows = text.split(/\r?\n/).map(line => {
+          const fields: string[] = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (inQuotes) {
+              if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+              else if (ch === '"') { inQuotes = false; }
+              else { current += ch; }
+            } else {
+              if (ch === '"') { inQuotes = true; }
+              else if (ch === ';' || ch === ',') { fields.push(current); current = ""; }
+              else { current += ch; }
+            }
+          }
+          fields.push(current);
+          return fields;
+        });
       } else {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array", cellDates: false });
         
-        // Try all sheets to find the one with maintenance data
+        // Score each sheet: count labels (full grid scan) + plates detected
         let bestRows: any[][] = [];
-        let bestMatchCount = 0;
+        let bestScore = 0;
+        let bestSheetName = "";
         
         for (const sheetName of wb.SheetNames) {
           const sheetRows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true }) as any[][];
           if (sheetRows.length < 2) continue;
           
-          // Count how many known labels this sheet has
-          let matchCount = 0;
-          for (let r = 0; r < Math.min(sheetRows.length, 30); r++) {
-            for (let c = 0; c <= 5; c++) {
+          let labelMatches = 0;
+          let plateMatches = 0;
+          const scanRows = Math.min(sheetRows.length, 50);
+          const maxSheetCols = Math.max(...sheetRows.slice(0, scanRows).map(r => r?.length ?? 0), 0);
+          
+          for (let r = 0; r < scanRows; r++) {
+            for (let c = 0; c < maxSheetCols; c++) {
               const val = String(sheetRows[r]?.[c] ?? "").trim();
-              if (val && matchesKnownLabel(val)) matchCount++;
+              if (!val) continue;
+              if (matchesKnownLabel(val)) labelMatches++;
+              if (looksLikePlate(val)) plateMatches++;
             }
           }
           
-          console.log(`Sheet "${sheetName}": ${sheetRows.length} rows, ${matchCount} label matches`);
+          // Score: prioritize sheets with both labels AND plates
+          const score = labelMatches * 2 + plateMatches * 3;
+          console.log(`Sheet "${sheetName}": ${sheetRows.length} rows, ${labelMatches} labels, ${plateMatches} plates, score=${score}`);
           
-          if (matchCount > bestMatchCount) {
-            bestMatchCount = matchCount;
+          if (score > bestScore) {
+            bestScore = score;
             bestRows = sheetRows;
+            bestSheetName = sheetName;
           }
         }
         
         // If no sheet had matches, fall back to first sheet
         if (bestRows.length === 0) {
           bestRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true }) as any[][];
+          bestSheetName = wb.SheetNames[0];
         }
         rawRows = bestRows;
         
-        // Debug: log first 5 rows so we can see what the file looks like
-        console.log("First 5 rows of selected sheet:", rawRows.slice(0, 5).map(r => (r || []).slice(0, 6)));
+        console.log(`Selected sheet: "${bestSheetName}" (score=${bestScore})`);
+        console.log("First 5 rows:", rawRows.slice(0, 5).map(r => (r || []).slice(0, 10)));
       }
 
       if (rawRows.length < 2) { toast.error("Ficheiro vazio ou sem dados"); return; }
