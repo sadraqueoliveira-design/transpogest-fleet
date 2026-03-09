@@ -172,6 +172,21 @@ export default function Fleet() {
     else { toast.success("Documento removido"); if (selectedVehicle) fetchDocs(selectedVehicle.id); }
   };
 
+  const handleReplaceDoc = async (file: File) => {
+    if (!replacingDocId || !selectedVehicle || !user) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${selectedVehicle.id}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, file);
+    if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
+    const { error } = await supabase.from("vehicle_documents").update({ file_url: urlData.publicUrl } as any).eq("id", replacingDocId);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Documento substituído"); fetchDocs(selectedVehicle.id); }
+    setUploading(false);
+    setReplacingDocId(null);
+  };
+
   const expiryBadge = (date: string | null, docType?: string) => {
     if (!date) return null;
     const days = differenceInDays(parseISO(date), new Date());
