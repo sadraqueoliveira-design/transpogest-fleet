@@ -44,7 +44,9 @@ interface VehicleDoc {
 }
 
 const docTypeLabels: Record<string, string> = {
-  insurance: "Seguro", inspection: "Inspeção", registration: "Registo", tachograph: "Tacógrafo", other: "Outro",
+  insurance: "Seguro", inspection: "Inspeção", registration: "Registo", tachograph: "Tacógrafo",
+  community_license: "Licença Comunitária", atp_certificate: "Certificado ATP", vehicle_registration: "Livrete",
+  other: "Outro",
 };
 
 const FLEET_ALIASES: Record<string, string[]> = {
