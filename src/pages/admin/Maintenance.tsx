@@ -749,8 +749,53 @@ export default function Maintenance() {
               </Table>
             </CardContent>
           </Card>
+        <TabsContent value="trailers" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{trailersList.length} reboques registados</p>
+            <Button size="sm" className="gap-1.5" onClick={() => openTrailerDialog("add")}>
+              <Plus className="h-4 w-4" /> Adicionar Reboque
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>ID Interno</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trailersList.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
+                  ) : (
+                    trailersList.map(t => (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-mono font-medium">{t.plate}</TableCell>
+                        <TableCell>{t.mobile_number || "—"}</TableCell>
+                        <TableCell>{clients.find(c => c.id === t.client_id)?.name || "—"}</TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs">{t.is_trailer ? "Reboque" : "—"}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openTrailerDialog("edit", t)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteTrailerId(t.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
-      </Tabs>
 
       {/* Edit Dialog */}
       <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
