@@ -1,43 +1,43 @@
 
 
-# Reboques sem dados — Necessário reimportar Excel
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Diagnóstico
+## Problem analysis
 
-A base de dados está vazia para reboques:
-- Tabela `trailers`: **0 registos**
-- Categoria "Manutenção Reboques" em `vehicle_maintenance_schedule`: **0 registos**
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-O código de importação já foi atualizado para:
-1. Reconhecer matrículas L-NNNNNN
-2. Mapear a linha "MANUTENÇÕES REBOQUES" do Excel como categoria válida
-3. Auto-criar reboques na tabela `trailers` durante a importação
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-**Mas o ficheiro Excel ainda não foi reimportado** desde essas alterações. Os dados simplesmente não existem na base de dados.
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-## O que acontece na linha "MANUTENÇÕES REBOQUES" do Excel
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-Essa linha contém **datas** associadas a cada **veículo** (não a matrículas L- separadas). Quando o Excel for reimportado, cada veículo receberá um registo na categoria "Manutenção Reboques" com a data correspondente.
+## Solution
 
-As matrículas L- (se existirem numa linha "MATRICULAS" separada no Excel) serão auto-criadas na tabela `trailers` e também receberão os seus registos de manutenção.
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-## Solução
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
 
-Não é necessário alterar código. O utilizador precisa de:
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
 
-1. **Reimportar o ficheiro Excel de manutenções** na página de Manutenção (botão "Importar")
-2. Os dados de "MANUTENÇÕES REBOQUES" serão automaticamente importados como nova categoria
-3. As matrículas L- serão auto-criadas na tabela `trailers`
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
 
-Se o "Móvel" (número interno) dos reboques também existir no Excel, atualmente a linha "MOVEL" está a ser ignorada (`SKIP_ROWS`). Posso alterar o código para capturar o valor "MOVEL" e usá-lo como `mobile_number` dos veículos e `internal_id` dos reboques durante a importação.
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
 
-## Alteração proposta
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
 
-**Ficheiro**: `src/components/admin/MaintenanceImportExport.tsx`
-
-1. Remover `"MOVEL"` do `SKIP_ROWS`
-2. Capturar a linha "MOVEL" durante o parsing (tal como se faz com "MOTORISTA")
-3. Ao importar, atualizar o campo `mobile_number` nos veículos e `internal_id` nos trailers com o valor correspondente da coluna
-
-Isto garante que, após reimportação, a coluna "Móvel" na grelha mostra os valores correctos para veículos e reboques.
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 

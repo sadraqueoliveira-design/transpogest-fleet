@@ -278,7 +278,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
   const SKIP_ROWS = new Set([
     "DIAS FALTA", "DIAS EM FALTA", "HORAS ATUAIS", "HORAS EM FALTA",
     "KM,S FALTA", "ATUALIZAÇÃO KM,S", "ATUALIZACAO KM,S",
-    "MOVEL", "MOTORISTA",
+    "MOTORISTA", "MOVEL",
     "MÉDIA IDADE", "MEDIA IDADE",
   ]);
 
@@ -421,14 +421,18 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       return { parsed: [], detected: [] };
     }
 
-    // Step 4: Find MOTORISTA row for employee numbers
+    // Step 4: Find MOTORISTA and MOVEL rows
     let motoristaRow = -1;
+    let movelRow = -1;
     for (let r = 0; r < rawRows.length; r++) {
       const label = normalizeLabel(String(rawRows[r]?.[labelCol] ?? ""));
       if (label === "MOTORISTA" || label.includes("MOTORISTA")) {
         motoristaRow = r;
         console.log(`[transposed-parse] MOTORISTA row found at ${r}`);
-        break;
+      }
+      if (label === "MOVEL" || label === "MÓVEL") {
+        movelRow = r;
+        console.log(`[transposed-parse] MOVEL row found at ${r}`);
       }
     }
 
@@ -477,6 +481,15 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
           if (!categories["Lavagem"]) categories["Lavagem"] = {};
           (categories["Lavagem"] as any).employee = empVal;
           console.log(`[transposed-parse] Motorista for ${plate}: ${empVal}`);
+        }
+      }
+
+      // Extract MOVEL (internal ID / mobile number)
+      if (movelRow >= 0) {
+        const movelVal = String(rawRows[movelRow]?.[colIdx] ?? "").trim();
+        if (movelVal && movelVal !== "0") {
+          (categories as any).__movel = movelVal;
+          console.log(`[transposed-parse] Movel for ${plate}: ${movelVal}`);
         }
       }
 
@@ -684,6 +697,24 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
           } else {
             console.warn(`[import] Failed to create trailer ${formattedPlate}:`, error?.message);
           }
+        }
+      }
+
+      // Sync MOVEL values to vehicles (mobile_number) and trailers (internal_id)
+      for (const row of previewRows) {
+        const movelVal = (row.categories as any).__movel;
+        if (!movelVal || !row.vehicleId) continue;
+        
+        if (isTrailerPlate(row.plate)) {
+          await supabase.from("trailers")
+            .update({ internal_id: movelVal })
+            .eq("id", row.vehicleId);
+          console.log(`[import] Set trailer ${row.plate} internal_id=${movelVal}`);
+        } else {
+          await supabase.from("vehicles")
+            .update({ mobile_number: movelVal })
+            .eq("id", row.vehicleId);
+          console.log(`[import] Set vehicle ${row.plate} mobile_number=${movelVal}`);
         }
       }
 
