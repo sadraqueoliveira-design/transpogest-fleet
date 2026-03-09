@@ -1,0 +1,1 @@
+ALTER TABLE public.vehicles ADD COLUMN status text NOT NULL DEFAULT 'active';

@@ -50,6 +50,7 @@ type Vehicle = {
   mobile_number: string | null;
   is_trailer?: boolean;
   client_id?: string | null;
+  status?: string;
 };
 
 type ClientOption = { id: string; name: string; code: string };
@@ -216,6 +217,15 @@ export default function Maintenance() {
   const [savingTrailer, setSavingTrailer] = useState(false);
   const [deleteTrailerId, setDeleteTrailerId] = useState<string | null>(null);
 
+  // Vehicle CRUD state
+  const [vehicleDialog, setVehicleDialog] = useState<{ mode: "add" | "edit"; vehicle?: any } | null>(null);
+  const [vehiclePlate, setVehiclePlate] = useState("");
+  const [vehicleMobile, setVehicleMobile] = useState("");
+  const [vehicleClientId, setVehicleClientId] = useState<string>("");
+  const [vehicleStatus, setVehicleStatus] = useState("active");
+  const [savingVehicle, setSavingVehicle] = useState(false);
+  const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
+
   // Load alert threshold from app_config
   useEffect(() => {
     supabase.from("app_config").select("value").eq("key", "maintenance_alert_days").single()
@@ -236,7 +246,7 @@ export default function Maintenance() {
   const fetchData = async () => {
     const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }, { data: cData }, { data: hData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id, status").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
       supabase.from("trailers").select("id, plate, internal_id, status, client_id"),
       supabase.from("clients").select("id, name, code").order("name"),
@@ -249,7 +259,7 @@ export default function Maintenance() {
     const map: Record<string, string> = {};
     if (vData) {
       vData.forEach(v => {
-        allVehicles.push({ ...v, is_trailer: false });
+        allVehicles.push({ ...v, is_trailer: false, status: (v as any).status || 'active' });
         map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
       });
     }
@@ -468,7 +478,62 @@ export default function Maintenance() {
     setDeleteTrailerId(null);
   };
 
+  // Vehicle CRUD functions
+  const openVehicleDialog = (mode: "add" | "edit", vehicle?: any) => {
+    setVehicleDialog({ mode, vehicle });
+    setVehiclePlate(vehicle?.plate || "");
+    setVehicleMobile(vehicle?.mobile_number || "");
+    setVehicleClientId(vehicle?.client_id || "");
+    setVehicleStatus(vehicle?.status || "active");
+  };
+
+  const handleSaveVehicle = async () => {
+    if (!vehiclePlate.trim()) { toast.error("Matrícula obrigatória"); return; }
+    setSavingVehicle(true);
+    try {
+      if (vehicleDialog?.mode === "edit" && vehicleDialog.vehicle) {
+        const { error } = await supabase.from("vehicles")
+          .update({ 
+            plate: vehiclePlate.trim().toUpperCase(), 
+            mobile_number: vehicleMobile.trim() || null,
+            client_id: vehicleClientId || null,
+            status: vehicleStatus,
+          } as any)
+          .eq("id", vehicleDialog.vehicle.id);
+        if (error) throw error;
+        toast.success("Veículo atualizado");
+      } else {
+        const { error } = await supabase.from("vehicles")
+          .insert({ 
+            plate: vehiclePlate.trim().toUpperCase(), 
+            mobile_number: vehicleMobile.trim() || null,
+            client_id: vehicleClientId || null,
+            status: vehicleStatus,
+          } as any);
+        if (error) throw error;
+        toast.success("Veículo criado");
+      }
+      setVehicleDialog(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Desconhecido"));
+    } finally {
+      setSavingVehicle(false);
+    }
+  };
+
+  const handleDeleteVehicle = async () => {
+    if (!deleteVehicleId) return;
+    await supabase.from("vehicle_maintenance_schedule").delete().eq("vehicle_id", deleteVehicleId);
+    await supabase.from("maintenance_records").delete().eq("vehicle_id", deleteVehicleId);
+    const { error } = await supabase.from("vehicles").delete().eq("id", deleteVehicleId);
+    if (error) { toast.error("Erro ao excluir: " + error.message); }
+    else { toast.success("Veículo excluído"); fetchData(); }
+    setDeleteVehicleId(null);
+  };
+
   const trailersList = vehicles.filter(v => v.is_trailer);
+  const vehiclesList = vehicles.filter(v => !v.is_trailer);
 
   if (loading) {
     return (
@@ -542,6 +607,7 @@ export default function Maintenance() {
       <Tabs defaultValue="schedule" className="space-y-4">
         <TabsList>
           <TabsTrigger value="schedule">Planeamento</TabsTrigger>
+          <TabsTrigger value="vehicles" className="gap-1"><Truck className="h-3.5 w-3.5" /> Veículos</TabsTrigger>
           <TabsTrigger value="trailers" className="gap-1"><Truck className="h-3.5 w-3.5" /> Reboques</TabsTrigger>
           <TabsTrigger value="records">Registos</TabsTrigger>
         </TabsList>
@@ -700,6 +766,58 @@ export default function Maintenance() {
                   </TableBody>
                 </Table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="vehicles" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{vehiclesList.length} veículos registados</p>
+            <Button size="sm" className="gap-1.5" onClick={() => openVehicleDialog("add")}>
+              <Plus className="h-4 w-4" /> Adicionar Veículo
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>Móvel</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {vehiclesList.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
+                  ) : (
+                    vehiclesList.map(v => (
+                      <TableRow key={v.id}>
+                        <TableCell className="font-mono font-medium">{v.plate}</TableCell>
+                        <TableCell>{v.mobile_number || "—"}</TableCell>
+                        <TableCell>{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
+                        <TableCell>
+                          <Badge variant={(v as any).status === "active" ? "default" : (v as any).status === "maintenance" ? "destructive" : "secondary"} className="text-xs">
+                            {(v as any).status === "active" ? "Ativo" : (v as any).status === "inactive" ? "Inativo" : (v as any).status === "maintenance" ? "Em manutenção" : (v as any).status || "Ativo"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openVehicleDialog("edit", v)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteVehicleId(v.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
@@ -866,7 +984,71 @@ export default function Maintenance() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Edit Dialog */}
+      {/* Vehicle CRUD Dialog */}
+      <Dialog open={!!vehicleDialog} onOpenChange={(open) => !open && setVehicleDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{vehicleDialog?.mode === "edit" ? "Editar Veículo" : "Adicionar Veículo"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Matrícula</Label>
+              <Input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} placeholder="Ex: 12-AB-34" />
+            </div>
+            <div className="space-y-2">
+              <Label>ID Interno (Móvel)</Label>
+              <Input value={vehicleMobile} onChange={e => setVehicleMobile(e.target.value)} placeholder="Ex: M001" />
+            </div>
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              <Select value={vehicleClientId} onValueChange={setVehicleClientId}>
+                <SelectTrigger><SelectValue placeholder="Sem cliente" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem cliente</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <Select value={vehicleStatus} onValueChange={setVehicleStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="inactive">Inativo</SelectItem>
+                  <SelectItem value="maintenance">Em manutenção</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVehicleDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSaveVehicle} disabled={savingVehicle}>
+              {savingVehicle ? "A guardar..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Vehicle Confirmation */}
+      <AlertDialog open={!!deleteVehicleId} onOpenChange={(open) => !open && setDeleteVehicleId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Veículo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja excluir este veículo? Os registos de manutenção associados também serão eliminados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteVehicle} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

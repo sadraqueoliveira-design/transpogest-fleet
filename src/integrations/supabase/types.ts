@@ -1393,6 +1393,7 @@ export type Database = {
           reefer_set_point_1: number | null
           reefer_set_point_2: number | null
           rpm: number | null
+          status: string
           tachograph_calibration_date: string | null
           tachograph_status: string | null
           temperature_data: Json | null
@@ -1425,6 +1426,7 @@ export type Database = {
           reefer_set_point_1?: number | null
           reefer_set_point_2?: number | null
           rpm?: number | null
+          status?: string
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null
@@ -1457,6 +1459,7 @@ export type Database = {
           reefer_set_point_1?: number | null
           reefer_set_point_2?: number | null
           rpm?: number | null
+          status?: string
           tachograph_calibration_date?: string | null
           tachograph_status?: string | null
           temperature_data?: Json | null
