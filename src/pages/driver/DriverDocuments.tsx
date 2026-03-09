@@ -168,10 +168,12 @@ export default function DriverDocuments() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Data de validade</Label>
-                  <Input type="date" value={docExpiry} onChange={e => setDocExpiry(e.target.value)} />
-                </div>
+                {getExpiryInputType(docType) && (
+                  <div>
+                    <Label>{docType === "atp_certificate" ? "Validade (Mês/Ano)" : "Data de validade"}</Label>
+                    <Input type={getExpiryInputType(docType)!} value={docType === "atp_certificate" && docExpiry.length === 10 ? docExpiry.slice(0, 7) : docExpiry} onChange={e => setDocExpiry(e.target.value)} />
+                  </div>
+                )}
                 <div>
                   <Label>Ficheiro</Label>
                   <div className="flex gap-2 mt-1">
