@@ -444,12 +444,11 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       }
     }
 
-    // Step 5: Extract plates from the plates row
+    // Step 5: Extract plates from the plates row — scan from col 0
     const platesRowData = rawRows[platesRow];
-    const startCol = labelCol + 1;
     const plates: { colIdx: number; plate: string }[] = [];
 
-    for (let c = startCol; c < platesRowData.length; c++) {
+    for (let c = 0; c < platesRowData.length; c++) {
       const cellVal = String(platesRowData[c] ?? "").trim();
       if (!cellVal || cellVal.includes("***") || normalizeLabel(cellVal).includes("VIATURA")) continue;
       plates.push({ colIdx: c, plate: cellVal });
