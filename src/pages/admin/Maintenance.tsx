@@ -206,6 +206,15 @@ export default function Maintenance() {
   const [hubs, setHubs] = useState<HubOption[]>([]);
   const [clientFilter, setClientFilter] = useState("all");
   const [hubFilter, setHubFilter] = useState("all");
+  
+  // Trailer CRUD state
+  const [trailerDialog, setTrailerDialog] = useState<{ mode: "add" | "edit"; trailer?: any } | null>(null);
+  const [trailerPlate, setTrailerPlate] = useState("");
+  const [trailerInternalId, setTrailerInternalId] = useState("");
+  const [trailerClientId, setTrailerClientId] = useState<string>("");
+  const [trailerStatus, setTrailerStatus] = useState("uncoupled");
+  const [savingTrailer, setSavingTrailer] = useState(false);
+  const [deleteTrailerId, setDeleteTrailerId] = useState<string | null>(null);
 
   // Load alert threshold from app_config
   useEffect(() => {
