@@ -1189,6 +1189,38 @@ export default function Maintenance() {
         selectedHubId={hubFilter !== "all" ? hubFilter : undefined}
         selectedHubName={hubFilter !== "all" ? hubs.find(h => h.id === hubFilter)?.name : undefined}
       />
+
+      {/* Vehicle Documents Dialog */}
+      <Dialog open={!!docsVehicleId} onOpenChange={(open) => !open && setDocsVehicleId(null)}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Documentos — {docsVehiclePlate}</DialogTitle></DialogHeader>
+          {loadingDocs ? (
+            <p className="text-sm text-muted-foreground text-center py-4">A carregar...</p>
+          ) : vehicleDocs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Sem documentos</p>
+          ) : (
+            <div className="space-y-2">
+              {vehicleDocs.map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between border rounded-lg p-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Badge variant="secondary" className="text-[10px]">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                        {doc.expiry_date && docsExpiryBadge(doc.expiry_date, doc.doc_type)}
+                      </div>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
+                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
