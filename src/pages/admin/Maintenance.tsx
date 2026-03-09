@@ -749,6 +749,8 @@ export default function Maintenance() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
         <TabsContent value="trailers" className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">{trailersList.length} reboques registados</p>
