@@ -760,6 +760,18 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
+      // Assign client_id to imported vehicles if a client is selected
+      if (selectedClientId) {
+        for (const row of previewRows) {
+          if (row.hasMatch && row.vehicleId && !isTrailerPlate(row.plate)) {
+            await supabase.from("vehicles")
+              .update({ client_id: selectedClientId })
+              .eq("id", row.vehicleId);
+          }
+        }
+        console.log(`[import] Assigned client_id=${selectedClientId} to imported vehicles`);
+      }
+
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
       
       for (const cat of selectedCategories) {
