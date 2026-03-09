@@ -282,6 +282,12 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
+      // Client filter
+      if (clientFilter !== "all") {
+        if (vehicle.is_trailer) return false; // trailers have no client_id
+        if (vehicle.client_id !== clientFilter) return false;
+      }
+
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
 
       // Category filter: only show vehicles that have a record in any selected category
@@ -298,7 +304,12 @@ export default function Maintenance() {
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter]);
+
+  const filteredHubs = useMemo(() => {
+    if (clientFilter === "all") return hubs;
+    return hubs.filter(h => h.client_id === clientFilter);
+  }, [hubs, clientFilter]);
 
   // Summary stats
   const stats = useMemo(() => {
