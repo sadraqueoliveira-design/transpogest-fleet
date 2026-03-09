@@ -72,8 +72,10 @@ export default function DriverDocuments() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docExpiry, setDocExpiry] = useState("");
   const [deleteDoc, setDeleteDoc] = useState<VehicleDoc | null>(null);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = async (vId: string) => {
     const { data } = await supabase
