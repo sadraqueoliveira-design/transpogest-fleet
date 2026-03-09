@@ -411,11 +411,14 @@ export default function Fleet() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                     <a href={doc.file_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a>
                   </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setReplacingDocId(doc.id); replaceInputRef.current?.click(); }} title="Substituir ficheiro">
+                    <Upload className="h-3 w-3" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               </div>
             ))}
-          </div>
+            <input ref={replaceInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplaceDoc(e.target.files[0]); }} />
         </DialogContent>
       </Dialog>
 
