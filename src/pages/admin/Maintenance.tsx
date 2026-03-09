@@ -982,7 +982,71 @@ export default function Maintenance() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Edit Dialog */}
+      {/* Vehicle CRUD Dialog */}
+      <Dialog open={!!vehicleDialog} onOpenChange={(open) => !open && setVehicleDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{vehicleDialog?.mode === "edit" ? "Editar Veículo" : "Adicionar Veículo"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Matrícula</Label>
+              <Input value={vehiclePlate} onChange={e => setVehiclePlate(e.target.value)} placeholder="Ex: 12-AB-34" />
+            </div>
+            <div className="space-y-2">
+              <Label>ID Interno (Móvel)</Label>
+              <Input value={vehicleMobile} onChange={e => setVehicleMobile(e.target.value)} placeholder="Ex: M001" />
+            </div>
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              <Select value={vehicleClientId} onValueChange={setVehicleClientId}>
+                <SelectTrigger><SelectValue placeholder="Sem cliente" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem cliente</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <Select value={vehicleStatus} onValueChange={setVehicleStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="inactive">Inativo</SelectItem>
+                  <SelectItem value="maintenance">Em manutenção</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVehicleDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSaveVehicle} disabled={savingVehicle}>
+              {savingVehicle ? "A guardar..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Vehicle Confirmation */}
+      <AlertDialog open={!!deleteVehicleId} onOpenChange={(open) => !open && setDeleteVehicleId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Veículo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja excluir este veículo? Os registos de manutenção associados também serão eliminados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteVehicle} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
