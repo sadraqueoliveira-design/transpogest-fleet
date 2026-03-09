@@ -901,19 +901,21 @@ export default function Maintenance() {
                     <TableHead>Matrícula</TableHead>
                     <TableHead>ID Interno</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Hub</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {trailersList.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
                   ) : (
                     trailersList.map(t => (
                       <TableRow key={t.id}>
                         <TableCell className="font-mono font-medium">{t.plate}</TableCell>
                         <TableCell>{t.mobile_number || "—"}</TableCell>
                         <TableCell>{clients.find(c => c.id === t.client_id)?.name || "—"}</TableCell>
+                        <TableCell>{hubs.find(h => h.id === t.hub_id)?.name || "—"}</TableCell>
                         <TableCell><Badge variant="secondary" className="text-xs">{t.is_trailer ? "Reboque" : "—"}</Badge></TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
