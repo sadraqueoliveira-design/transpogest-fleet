@@ -251,7 +251,7 @@ export default function Maintenance() {
       supabase.from("vehicle_maintenance_schedule").select("*"),
       supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id, hub_id, status").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
-      supabase.from("trailers").select("id, plate, internal_id, status, client_id"),
+      supabase.from("trailers").select("id, plate, internal_id, status, client_id, hub_id"),
       supabase.from("clients").select("id, name, code").order("name"),
       supabase.from("hubs").select("id, name, code, client_id").in("type", ["hub", "armazém"]).order("name"),
     ]);
