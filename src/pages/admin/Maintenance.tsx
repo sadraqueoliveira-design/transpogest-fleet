@@ -241,6 +241,29 @@ export default function Maintenance() {
       .then(({ data }) => { if (data?.value) setAlertDays(data.value); });
   }, []);
 
+  const docTypeLabels: Record<string, string> = {
+    insurance: "Seguro", inspection: "Inspeção", registration: "Registo", tachograph: "Tacógrafo",
+    community_license: "Licença Comunitária", atp_certificate: "Certificado ATP", vehicle_registration: "Livrete", other: "Outro",
+  };
+
+  const fetchVehicleDocs = async (vehicleId: string, plate: string) => {
+    setDocsVehicleId(vehicleId);
+    setDocsVehiclePlate(plate);
+    setLoadingDocs(true);
+    const { data } = await supabase.from("vehicle_documents").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
+    setVehicleDocs(data || []);
+    setLoadingDocs(false);
+  };
+
+  const docsExpiryBadge = (date: string | null, docType?: string) => {
+    if (!date) return null;
+    const days = differenceInDays(parseISO(date), new Date());
+    const displayDate = docType === "atp_certificate" ? format(parseISO(date), "MM/yyyy") : format(parseISO(date), "dd/MM/yyyy");
+    if (days < 0) return <Badge variant="destructive" className="text-[10px]">Expirado</Badge>;
+    if (days < 30) return <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-[10px]">{days}d</Badge>;
+    return <Badge variant="secondary" className="text-[10px]">{displayDate}</Badge>;
+  };
+
   const handleAlertDaysChange = async (value: string) => {
     setAlertDays(value);
     setSavingAlertDays(true);
