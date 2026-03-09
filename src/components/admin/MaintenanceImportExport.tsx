@@ -373,15 +373,22 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     const detected: string[] = [];
 
     for (let r = 0; r < rawRows.length; r++) {
+      // Search for MATRICULAS in ALL columns, not just labelCol
+      if (platesRow === -1) {
+        for (let c = 0; c < maxCols; c++) {
+          const cellVal = normalizeLabel(String(rawRows[r]?.[c] ?? ""));
+          if (cellVal === "MATRICULAS" || cellVal.includes("MATRICULA")) {
+            platesRow = r;
+            console.log(`[transposed-parse] MATRICULAS row found at row=${r} col=${c} via label`);
+            break;
+          }
+        }
+        if (platesRow === r) continue;
+      }
+
       const label = String(rawRows[r]?.[labelCol] ?? "").trim();
       const normLabel = normalizeLabel(label);
       if (!normLabel) continue;
-
-      if (normLabel === "MATRICULAS" || normLabel.includes("MATRICULA")) {
-        platesRow = r;
-        console.log(`[transposed-parse] MATRICULAS row found at ${r} via label`);
-        continue;
-      }
 
       // Check if it's a skip row
       if ([...SKIP_ROWS].some(s => normalizeLabel(s) === normLabel || normLabel.includes(normalizeLabel(s)))) continue;
@@ -396,11 +403,10 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     // Step 3: Fallback — if MATRICULAS row not found, search by license plate content
     if (platesRow === -1) {
       console.log("[transposed-parse] MATRICULAS label not found, searching by plate patterns...");
-      const startCol = labelCol + 1;
       for (let r = 0; r < maxRows; r++) {
         let plateCount = 0;
         const rowLen = rawRows[r]?.length ?? 0;
-        for (let c = startCol; c < rowLen; c++) {
+        for (let c = 0; c < rowLen; c++) {
           const val = String(rawRows[r]?.[c] ?? "").trim();
           if (val && looksLikePlate(val)) plateCount++;
         }
@@ -421,27 +427,28 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       return { parsed: [], detected: [] };
     }
 
-    // Step 4: Find MOTORISTA and MOVEL rows
+    // Step 4: Find MOTORISTA and MOVEL rows — search ALL columns
     let motoristaRow = -1;
     let movelRow = -1;
     for (let r = 0; r < rawRows.length; r++) {
-      const label = normalizeLabel(String(rawRows[r]?.[labelCol] ?? ""));
-      if (label === "MOTORISTA" || label.includes("MOTORISTA")) {
-        motoristaRow = r;
-        console.log(`[transposed-parse] MOTORISTA row found at ${r}`);
-      }
-      if (label === "MOVEL" || label === "MÓVEL") {
-        movelRow = r;
-        console.log(`[transposed-parse] MOVEL row found at ${r}`);
+      for (let c = 0; c < maxCols; c++) {
+        const label = normalizeLabel(String(rawRows[r]?.[c] ?? ""));
+        if (motoristaRow === -1 && (label === "MOTORISTA" || label.includes("MOTORISTA"))) {
+          motoristaRow = r;
+          console.log(`[transposed-parse] MOTORISTA row found at row=${r} col=${c}`);
+        }
+        if (movelRow === -1 && (label === "MOVEL" || label.includes("MOVEL"))) {
+          movelRow = r;
+          console.log(`[transposed-parse] MOVEL row found at row=${r} col=${c}`);
+        }
       }
     }
 
-    // Step 5: Extract plates from the plates row
+    // Step 5: Extract plates from the plates row — scan from col 0
     const platesRowData = rawRows[platesRow];
-    const startCol = labelCol + 1;
     const plates: { colIdx: number; plate: string }[] = [];
 
-    for (let c = startCol; c < platesRowData.length; c++) {
+    for (let c = 0; c < platesRowData.length; c++) {
       const cellVal = String(platesRowData[c] ?? "").trim();
       if (!cellVal || cellVal.includes("***") || normalizeLabel(cellVal).includes("VIATURA")) continue;
       plates.push({ colIdx: c, plate: cellVal });
