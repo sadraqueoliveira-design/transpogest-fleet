@@ -278,7 +278,7 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
   const SKIP_ROWS = new Set([
     "DIAS FALTA", "DIAS EM FALTA", "HORAS ATUAIS", "HORAS EM FALTA",
     "KM,S FALTA", "ATUALIZAÇÃO KM,S", "ATUALIZACAO KM,S",
-    "MOVEL", "MOTORISTA",
+    "MOTORISTA", "MOVEL",
     "MÉDIA IDADE", "MEDIA IDADE",
   ]);
 
