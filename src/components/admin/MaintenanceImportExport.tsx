@@ -227,9 +227,11 @@ interface ImportDialogProps {
   onImported: () => void;
   selectedClientId?: string;
   selectedClientName?: string;
+  selectedHubId?: string;
+  selectedHubName?: string;
 }
 
-export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported, selectedClientId, selectedClientName }: ImportDialogProps) {
+export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported, selectedClientId, selectedClientName, selectedHubId, selectedHubName }: ImportDialogProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewRows, setPreviewRows] = useState<ImportPreviewRow[]>([]);
   const [detectedCategories, setDetectedCategories] = useState<string[]>([]);
