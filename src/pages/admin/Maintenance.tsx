@@ -252,6 +252,7 @@ export default function Maintenance() {
           engine_hours: null,
           mobile_number: t.internal_id || null,
           is_trailer: true,
+          client_id: (t as any).client_id || null,
         });
         map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
       });
