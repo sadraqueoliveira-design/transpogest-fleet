@@ -419,6 +419,7 @@ export default function Fleet() {
               </div>
             ))}
             <input ref={replaceInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplaceDoc(e.target.files[0]); }} />
+          </div>
         </DialogContent>
       </Dialog>
 
