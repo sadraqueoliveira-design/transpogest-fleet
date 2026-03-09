@@ -116,7 +116,7 @@ export default function DriverDocuments() {
       doc_type: docType,
       file_url: urlData.publicUrl,
       uploaded_by: user.id,
-      expiry_date: docExpiry || null,
+      expiry_date: normalizeExpiry(docType, docExpiry) || null,
     } as any);
     if (error) { toast.error("Erro: " + error.message); }
     else {
