@@ -373,15 +373,22 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     const detected: string[] = [];
 
     for (let r = 0; r < rawRows.length; r++) {
+      // Search for MATRICULAS in ALL columns, not just labelCol
+      if (platesRow === -1) {
+        for (let c = 0; c < maxCols; c++) {
+          const cellVal = normalizeLabel(String(rawRows[r]?.[c] ?? ""));
+          if (cellVal === "MATRICULAS" || cellVal.includes("MATRICULA")) {
+            platesRow = r;
+            console.log(`[transposed-parse] MATRICULAS row found at row=${r} col=${c} via label`);
+            break;
+          }
+        }
+        if (platesRow === r) continue;
+      }
+
       const label = String(rawRows[r]?.[labelCol] ?? "").trim();
       const normLabel = normalizeLabel(label);
       if (!normLabel) continue;
-
-      if (normLabel === "MATRICULAS" || normLabel.includes("MATRICULA")) {
-        platesRow = r;
-        console.log(`[transposed-parse] MATRICULAS row found at ${r} via label`);
-        continue;
-      }
 
       // Check if it's a skip row
       if ([...SKIP_ROWS].some(s => normalizeLabel(s) === normLabel || normLabel.includes(normalizeLabel(s)))) continue;
