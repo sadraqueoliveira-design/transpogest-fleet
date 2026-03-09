@@ -762,22 +762,26 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
-      // Assign client_id to imported vehicles and trailers if a client is selected
-      if (selectedClientId) {
+      // Assign client_id and hub_id to imported vehicles and trailers
+      if (selectedClientId || selectedHubId) {
         for (const row of previewRows) {
           if (row.hasMatch && row.vehicleId) {
+            const updates: Record<string, any> = {};
+            if (selectedClientId) updates.client_id = selectedClientId;
+            if (selectedHubId) updates.hub_id = selectedHubId;
+            
             if (isTrailerPlate(row.plate)) {
               await supabase.from("trailers")
-                .update({ client_id: selectedClientId })
+                .update(updates)
                 .eq("id", row.vehicleId);
             } else {
               await supabase.from("vehicles")
-                .update({ client_id: selectedClientId })
+                .update(updates)
                 .eq("id", row.vehicleId);
             }
           }
         }
-        console.log(`[import] Assigned client_id=${selectedClientId} to imported vehicles and trailers`);
+        console.log(`[import] Assigned client_id=${selectedClientId}, hub_id=${selectedHubId} to imported vehicles and trailers`);
       }
 
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
