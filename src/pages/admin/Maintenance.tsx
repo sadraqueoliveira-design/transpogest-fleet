@@ -223,6 +223,7 @@ export default function Maintenance() {
   const [vehiclePlate, setVehiclePlate] = useState("");
   const [vehicleMobile, setVehicleMobile] = useState("");
   const [vehicleClientId, setVehicleClientId] = useState<string>("");
+  const [vehicleHubId, setVehicleHubId] = useState<string>("");
   const [vehicleStatus, setVehicleStatus] = useState("active");
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
