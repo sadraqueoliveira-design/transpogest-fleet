@@ -821,6 +821,7 @@ export default function Maintenance() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="records" className="space-y-4">
           <div className="flex items-center justify-end gap-2">
             <ImportButton
               columns={["plate", "type", "description", "cost", "status", "date_scheduled"]}
