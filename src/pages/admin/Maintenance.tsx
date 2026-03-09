@@ -229,6 +229,12 @@ export default function Maintenance() {
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
 
+  // Vehicle docs state
+  const [docsVehicleId, setDocsVehicleId] = useState<string | null>(null);
+  const [docsVehiclePlate, setDocsVehiclePlate] = useState("");
+  const [vehicleDocs, setVehicleDocs] = useState<any[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+
   // Load alert threshold from app_config
   useEffect(() => {
     supabase.from("app_config").select("value").eq("key", "maintenance_alert_days").single()
