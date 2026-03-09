@@ -740,6 +740,8 @@ export default function Maintenance() {
         vehicles={vehicles}
         scheduleLookup={scheduleLookup}
         onImported={fetchData}
+        selectedClientId={clientFilter !== "all" ? clientFilter : undefined}
+        selectedClientName={clientFilter !== "all" ? clients.find(c => c.id === clientFilter)?.name : undefined}
       />
     </div>
   );
