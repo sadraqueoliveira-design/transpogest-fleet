@@ -259,7 +259,7 @@ export default function Maintenance() {
     const map: Record<string, string> = {};
     if (vData) {
       vData.forEach(v => {
-        allVehicles.push({ ...v, is_trailer: false });
+        allVehicles.push({ ...v, is_trailer: false, status: (v as any).status || 'active' });
         map[v.plate.replace(/[\s-]/g, "").toUpperCase()] = v.id;
       });
     }
