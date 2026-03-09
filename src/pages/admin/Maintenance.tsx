@@ -510,6 +510,7 @@ export default function Maintenance() {
             plate: vehiclePlate.trim().toUpperCase(), 
             mobile_number: vehicleMobile.trim() || null,
             client_id: vehicleClientId || null,
+            hub_id: vehicleHubId || null,
             status: vehicleStatus,
           } as any)
           .eq("id", vehicleDialog.vehicle.id);
