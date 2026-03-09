@@ -427,18 +427,20 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       return { parsed: [], detected: [] };
     }
 
-    // Step 4: Find MOTORISTA and MOVEL rows
+    // Step 4: Find MOTORISTA and MOVEL rows — search ALL columns
     let motoristaRow = -1;
     let movelRow = -1;
     for (let r = 0; r < rawRows.length; r++) {
-      const label = normalizeLabel(String(rawRows[r]?.[labelCol] ?? ""));
-      if (label === "MOTORISTA" || label.includes("MOTORISTA")) {
-        motoristaRow = r;
-        console.log(`[transposed-parse] MOTORISTA row found at ${r}`);
-      }
-      if (label === "MOVEL" || label === "MÓVEL") {
-        movelRow = r;
-        console.log(`[transposed-parse] MOVEL row found at ${r}`);
+      for (let c = 0; c < maxCols; c++) {
+        const label = normalizeLabel(String(rawRows[r]?.[c] ?? ""));
+        if (motoristaRow === -1 && (label === "MOTORISTA" || label.includes("MOTORISTA"))) {
+          motoristaRow = r;
+          console.log(`[transposed-parse] MOTORISTA row found at row=${r} col=${c}`);
+        }
+        if (movelRow === -1 && (label === "MOVEL" || label.includes("MOVEL"))) {
+          movelRow = r;
+          console.log(`[transposed-parse] MOVEL row found at row=${r} col=${c}`);
+        }
       }
     }
 
