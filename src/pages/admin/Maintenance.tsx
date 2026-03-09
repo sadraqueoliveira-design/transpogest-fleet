@@ -14,7 +14,7 @@ import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport"
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin, Plus, Pencil, Trash2, Truck } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin, Plus, Pencil, Trash2, Truck, FileText, ExternalLink } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
@@ -229,11 +229,40 @@ export default function Maintenance() {
   const [savingVehicle, setSavingVehicle] = useState(false);
   const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
 
+  // Vehicle docs state
+  const [docsVehicleId, setDocsVehicleId] = useState<string | null>(null);
+  const [docsVehiclePlate, setDocsVehiclePlate] = useState("");
+  const [vehicleDocs, setVehicleDocs] = useState<any[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+
   // Load alert threshold from app_config
   useEffect(() => {
     supabase.from("app_config").select("value").eq("key", "maintenance_alert_days").single()
       .then(({ data }) => { if (data?.value) setAlertDays(data.value); });
   }, []);
+
+  const docTypeLabels: Record<string, string> = {
+    insurance: "Seguro", inspection: "Inspeção", registration: "Registo", tachograph: "Tacógrafo",
+    community_license: "Licença Comunitária", atp_certificate: "Certificado ATP", vehicle_registration: "Livrete", other: "Outro",
+  };
+
+  const fetchVehicleDocs = async (vehicleId: string, plate: string) => {
+    setDocsVehicleId(vehicleId);
+    setDocsVehiclePlate(plate);
+    setLoadingDocs(true);
+    const { data } = await supabase.from("vehicle_documents").select("*").eq("vehicle_id", vehicleId).order("created_at", { ascending: false });
+    setVehicleDocs(data || []);
+    setLoadingDocs(false);
+  };
+
+  const docsExpiryBadge = (date: string | null, docType?: string) => {
+    if (!date) return null;
+    const days = differenceInDays(parseISO(date), new Date());
+    const displayDate = docType === "atp_certificate" ? format(parseISO(date), "MM/yyyy") : format(parseISO(date), "dd/MM/yyyy");
+    if (days < 0) return <Badge variant="destructive" className="text-[10px]">Expirado</Badge>;
+    if (days < 30) return <Badge className="bg-orange-100 text-orange-700 border-orange-200 text-[10px]">{days}d</Badge>;
+    return <Badge variant="secondary" className="text-[10px]">{displayDate}</Badge>;
+  };
 
   const handleAlertDaysChange = async (value: string) => {
     setAlertDays(value);
@@ -762,7 +791,12 @@ export default function Maintenance() {
                       filteredVehicles.map(v => (
                         <TableRow key={v.id}>
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
-                            {v.plate}
+                            <div className="flex items-center gap-1">
+                              {v.plate}
+                              <Button variant="ghost" size="icon" className="h-6 w-6 ml-0.5" onClick={() => fetchVehicleDocs(v.id, v.plate)} title="Ver documentos">
+                                <FileText className="h-3.5 w-3.5 text-primary" />
+                              </Button>
+                            </div>
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge variant={v.is_trailer ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
@@ -1155,6 +1189,38 @@ export default function Maintenance() {
         selectedHubId={hubFilter !== "all" ? hubFilter : undefined}
         selectedHubName={hubFilter !== "all" ? hubs.find(h => h.id === hubFilter)?.name : undefined}
       />
+
+      {/* Vehicle Documents Dialog */}
+      <Dialog open={!!docsVehicleId} onOpenChange={(open) => !open && setDocsVehicleId(null)}>
+        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Documentos — {docsVehiclePlate}</DialogTitle></DialogHeader>
+          {loadingDocs ? (
+            <p className="text-sm text-muted-foreground text-center py-4">A carregar...</p>
+          ) : vehicleDocs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Sem documentos</p>
+          ) : (
+            <div className="space-y-2">
+              {vehicleDocs.map((doc: any) => (
+                <div key={doc.id} className="flex items-center justify-between border rounded-lg p-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.name}</p>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <Badge variant="secondary" className="text-[10px]">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                        {doc.expiry_date && docsExpiryBadge(doc.expiry_date, doc.doc_type)}
+                      </div>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" asChild>
+                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

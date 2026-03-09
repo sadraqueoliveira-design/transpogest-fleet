@@ -72,8 +72,10 @@ export default function DriverDocuments() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [docExpiry, setDocExpiry] = useState("");
   const [deleteDoc, setDeleteDoc] = useState<VehicleDoc | null>(null);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = async (vId: string) => {
     const { data } = await supabase
@@ -134,6 +136,21 @@ export default function DriverDocuments() {
     if (error) { toast.error("Erro: " + error.message); }
     else { toast.success("Documento eliminado"); await fetchDocs(vehicleId); }
     setDeleteDoc(null);
+  };
+
+  const handleReplace = async (file: File) => {
+    if (!replacingDocId || !vehicleId || !user) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${vehicleId}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, file);
+    if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
+    const { error } = await supabase.from("vehicle_documents").update({ file_url: urlData.publicUrl } as any).eq("id", replacingDocId);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Documento substituído"); await fetchDocs(vehicleId); }
+    setUploading(false);
+    setReplacingDocId(null);
   };
 
   return (
@@ -233,9 +250,14 @@ export default function DriverDocuments() {
                     </a>
                   </Button>
                   {doc.uploaded_by === user?.id && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDoc(doc)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setReplacingDocId(doc.id); replaceInputRef.current?.click(); }} title="Substituir ficheiro">
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDoc(doc)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -243,6 +265,8 @@ export default function DriverDocuments() {
           ))}
         </div>
       )}
+
+      <input ref={replaceInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplace(e.target.files[0]); }} />
 
       <AlertDialog open={!!deleteDoc} onOpenChange={(o) => !o && setDeleteDoc(null)}>
         <AlertDialogContent>

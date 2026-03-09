@@ -81,6 +81,8 @@ export default function Fleet() {
   const [docExpiry, setDocExpiry] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
 
   const fetchVehicles = async () => {
     const [{ data: vData }, { data: cData }] = await Promise.all([
@@ -168,6 +170,21 @@ export default function Fleet() {
     const { error } = await supabase.from("vehicle_documents").delete().eq("id", docId);
     if (error) toast.error(error.message);
     else { toast.success("Documento removido"); if (selectedVehicle) fetchDocs(selectedVehicle.id); }
+  };
+
+  const handleReplaceDoc = async (file: File) => {
+    if (!replacingDocId || !selectedVehicle || !user) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${selectedVehicle.id}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, file);
+    if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
+    const { error } = await supabase.from("vehicle_documents").update({ file_url: urlData.publicUrl } as any).eq("id", replacingDocId);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Documento substituído"); fetchDocs(selectedVehicle.id); }
+    setUploading(false);
+    setReplacingDocId(null);
   };
 
   const expiryBadge = (date: string | null, docType?: string) => {
@@ -394,10 +411,14 @@ export default function Fleet() {
                   <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
                     <a href={doc.file_url} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3 w-3" /></a>
                   </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setReplacingDocId(doc.id); replaceInputRef.current?.click(); }} title="Substituir ficheiro">
+                    <Upload className="h-3 w-3" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               </div>
             ))}
+            <input ref={replaceInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplaceDoc(e.target.files[0]); }} />
           </div>
         </DialogContent>
       </Dialog>
