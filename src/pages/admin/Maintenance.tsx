@@ -13,7 +13,7 @@ import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport"
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
@@ -48,7 +48,11 @@ type Vehicle = {
   engine_hours: number | null;
   mobile_number: string | null;
   is_trailer?: boolean;
+  client_id?: string | null;
 };
+
+type ClientOption = { id: string; name: string; code: string };
+type HubOption = { id: string; name: string; code: string; client_id: string };
 
 type MaintenanceRecord = {
   id: string;
@@ -197,6 +201,10 @@ export default function Maintenance() {
   const [showImport, setShowImport] = useState(false);
   const [alertDays, setAlertDays] = useState("15");
   const [savingAlertDays, setSavingAlertDays] = useState(false);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [hubs, setHubs] = useState<HubOption[]>([]);
+  const [clientFilter, setClientFilter] = useState("all");
+  const [hubFilter, setHubFilter] = useState("all");
 
   // Load alert threshold from app_config
   useEffect(() => {
@@ -216,13 +224,17 @@ export default function Maintenance() {
   };
 
   const fetchData = async () => {
-    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }] = await Promise.all([
+    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }, { data: cData }, { data: hData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
       supabase.from("trailers").select("id, plate, internal_id, status"),
+      supabase.from("clients").select("id, name, code").order("name"),
+      supabase.from("hubs").select("id, name, code, client_id").order("name"),
     ]);
     if (sData) setSchedules(sData as any);
+    if (cData) setClients(cData as ClientOption[]);
+    if (hData) setHubs(hData as HubOption[]);
     const allVehicles: Vehicle[] = [];
     const map: Record<string, string> = {};
     if (vData) {
@@ -270,6 +282,12 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
+      // Client filter
+      if (clientFilter !== "all") {
+        if (vehicle.is_trailer) return false; // trailers have no client_id
+        if (vehicle.client_id !== clientFilter) return false;
+      }
+
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
 
       // Category filter: only show vehicles that have a record in any selected category
@@ -286,7 +304,12 @@ export default function Maintenance() {
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter]);
+
+  const filteredHubs = useMemo(() => {
+    if (clientFilter === "all") return hubs;
+    return hubs.filter(h => h.client_id === clientFilter);
+  }, [hubs, clientFilter]);
 
   // Summary stats
   const stats = useMemo(() => {
@@ -469,6 +492,40 @@ export default function Maintenance() {
                 className="pl-9"
               />
             </div>
+            <div className="flex items-center gap-1.5">
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+              <Select value={clientFilter} onValueChange={(val) => { setClientFilter(val); setHubFilter("all"); }}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Todos os clientes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os clientes</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <Select value={hubFilter} onValueChange={(val) => {
+                setHubFilter(val);
+                if (val !== "all") {
+                  const hub = hubs.find(h => h.id === val);
+                  if (hub) setClientFilter(hub.client_id);
+                }
+              }}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Todos os hubs" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os hubs</SelectItem>
+                  {filteredHubs.map(h => (
+                    <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <ToggleGroup
               type="multiple"
               value={categoryFilter}
@@ -488,8 +545,8 @@ export default function Maintenance() {
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            {(activeStatusFilter !== "all" || categoryFilter.length > 0) && (
-              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); }}>
+            {(activeStatusFilter !== "all" || categoryFilter.length > 0 || clientFilter !== "all" || hubFilter !== "all") && (
+              <Button variant="outline" size="sm" onClick={() => { setActiveStatusFilter("all"); setCategoryFilter([]); setClientFilter("all"); setHubFilter("all"); }}>
                 Limpar filtros
               </Button>
             )}
