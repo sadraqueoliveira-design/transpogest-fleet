@@ -41,6 +41,7 @@ interface VehicleDoc {
   doc_type: string;
   file_url: string;
   created_at: string;
+  expiry_date: string | null;
 }
 
 const docTypeLabels: Record<string, string> = {
