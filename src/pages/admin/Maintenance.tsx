@@ -14,7 +14,7 @@ import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport"
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin, Plus, Pencil, Trash2, Truck } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin, Plus, Pencil, Trash2, Truck, FileText, ExternalLink } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
