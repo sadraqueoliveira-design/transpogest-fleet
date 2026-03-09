@@ -1,0 +1,1 @@
+ALTER TABLE public.trailers ADD COLUMN client_id uuid REFERENCES public.clients(id);

@@ -8,12 +8,13 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
 import { ScheduleExportDialog, ScheduleImportDialog } from "@/components/admin/MaintenanceImportExport";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, Clock, Wrench, CalendarDays, Droplets, Shield, Thermometer, Gauge, Upload, Download, Bell, Building2, MapPin, Plus, Pencil, Trash2, Truck } from "lucide-react";
 import { differenceInDays, format, parseISO } from "date-fns";
 import { pt } from "date-fns/locale";
 
@@ -205,6 +206,15 @@ export default function Maintenance() {
   const [hubs, setHubs] = useState<HubOption[]>([]);
   const [clientFilter, setClientFilter] = useState("all");
   const [hubFilter, setHubFilter] = useState("all");
+  
+  // Trailer CRUD state
+  const [trailerDialog, setTrailerDialog] = useState<{ mode: "add" | "edit"; trailer?: any } | null>(null);
+  const [trailerPlate, setTrailerPlate] = useState("");
+  const [trailerInternalId, setTrailerInternalId] = useState("");
+  const [trailerClientId, setTrailerClientId] = useState<string>("");
+  const [trailerStatus, setTrailerStatus] = useState("uncoupled");
+  const [savingTrailer, setSavingTrailer] = useState(false);
+  const [deleteTrailerId, setDeleteTrailerId] = useState<string | null>(null);
 
   // Load alert threshold from app_config
   useEffect(() => {
@@ -228,7 +238,7 @@ export default function Maintenance() {
       supabase.from("vehicle_maintenance_schedule").select("*"),
       supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
-      supabase.from("trailers").select("id, plate, internal_id, status"),
+      supabase.from("trailers").select("id, plate, internal_id, status, client_id"),
       supabase.from("clients").select("id, name, code").order("name"),
       supabase.from("hubs").select("id, name, code, client_id").in("type", ["hub", "armazém"]).order("name"),
     ]);
@@ -252,6 +262,7 @@ export default function Maintenance() {
           engine_hours: null,
           mobile_number: t.internal_id || null,
           is_trailer: true,
+          client_id: (t as any).client_id || null,
         });
         map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
       });
@@ -282,9 +293,8 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
-      // Client filter
+      // Client filter (applies to both vehicles and trailers)
       if (clientFilter !== "all") {
-        if (vehicle.is_trailer) return false; // trailers have no client_id
         if (vehicle.client_id !== clientFilter) return false;
       }
 
@@ -405,6 +415,60 @@ export default function Maintenance() {
     toast.success(`${payload.length} registo(s) importado(s)`);
     fetchData();
   };
+  const openTrailerDialog = (mode: "add" | "edit", trailer?: any) => {
+    setTrailerDialog({ mode, trailer });
+    setTrailerPlate(trailer?.plate || "");
+    setTrailerInternalId(trailer?.mobile_number || "");
+    setTrailerClientId(trailer?.client_id || "");
+    setTrailerStatus(trailer ? (vehicles.find(v => v.id === trailer.id) ? "active" : "uncoupled") : "uncoupled");
+  };
+
+  const handleSaveTrailer = async () => {
+    if (!trailerPlate.trim()) { toast.error("Matrícula obrigatória"); return; }
+    setSavingTrailer(true);
+    try {
+      if (trailerDialog?.mode === "edit" && trailerDialog.trailer) {
+        const { error } = await supabase.from("trailers")
+          .update({ 
+            plate: trailerPlate.trim().toUpperCase(), 
+            internal_id: trailerInternalId.trim() || null,
+            client_id: trailerClientId || null,
+            status: trailerStatus,
+          })
+          .eq("id", trailerDialog.trailer.id);
+        if (error) throw error;
+        toast.success("Reboque atualizado");
+      } else {
+        const { error } = await supabase.from("trailers")
+          .insert({ 
+            plate: trailerPlate.trim().toUpperCase(), 
+            internal_id: trailerInternalId.trim() || null,
+            client_id: trailerClientId || null,
+            status: trailerStatus,
+          });
+        if (error) throw error;
+        toast.success("Reboque criado");
+      }
+      setTrailerDialog(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Desconhecido"));
+    } finally {
+      setSavingTrailer(false);
+    }
+  };
+
+  const handleDeleteTrailer = async () => {
+    if (!deleteTrailerId) return;
+    // Also delete maintenance schedules for this trailer
+    await supabase.from("vehicle_maintenance_schedule").delete().eq("vehicle_id", deleteTrailerId);
+    const { error } = await supabase.from("trailers").delete().eq("id", deleteTrailerId);
+    if (error) { toast.error("Erro ao excluir: " + error.message); }
+    else { toast.success("Reboque excluído"); fetchData(); }
+    setDeleteTrailerId(null);
+  };
+
+  const trailersList = vehicles.filter(v => v.is_trailer);
 
   if (loading) {
     return (
@@ -478,6 +542,7 @@ export default function Maintenance() {
       <Tabs defaultValue="schedule" className="space-y-4">
         <TabsList>
           <TabsTrigger value="schedule">Planeamento</TabsTrigger>
+          <TabsTrigger value="trailers" className="gap-1"><Truck className="h-3.5 w-3.5" /> Reboques</TabsTrigger>
           <TabsTrigger value="records">Registos</TabsTrigger>
         </TabsList>
 
@@ -685,7 +750,121 @@ export default function Maintenance() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="trailers" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">{trailersList.length} reboques registados</p>
+            <Button size="sm" className="gap-1.5" onClick={() => openTrailerDialog("add")}>
+              <Plus className="h-4 w-4" /> Adicionar Reboque
+            </Button>
+          </div>
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Matrícula</TableHead>
+                    <TableHead>ID Interno</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trailersList.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem reboques registados</TableCell></TableRow>
+                  ) : (
+                    trailersList.map(t => (
+                      <TableRow key={t.id}>
+                        <TableCell className="font-mono font-medium">{t.plate}</TableCell>
+                        <TableCell>{t.mobile_number || "—"}</TableCell>
+                        <TableCell>{clients.find(c => c.id === t.client_id)?.name || "—"}</TableCell>
+                        <TableCell><Badge variant="secondary" className="text-xs">{t.is_trailer ? "Reboque" : "—"}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openTrailerDialog("edit", t)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => setDeleteTrailerId(t.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Trailer CRUD Dialog */}
+      <Dialog open={!!trailerDialog} onOpenChange={(open) => !open && setTrailerDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{trailerDialog?.mode === "edit" ? "Editar Reboque" : "Adicionar Reboque"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Matrícula</Label>
+              <Input value={trailerPlate} onChange={e => setTrailerPlate(e.target.value)} placeholder="Ex: L-123456" />
+            </div>
+            <div className="space-y-2">
+              <Label>ID Interno (Móvel)</Label>
+              <Input value={trailerInternalId} onChange={e => setTrailerInternalId(e.target.value)} placeholder="Ex: R001" />
+            </div>
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              <Select value={trailerClientId} onValueChange={setTrailerClientId}>
+                <SelectTrigger><SelectValue placeholder="Sem cliente" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem cliente</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <Select value={trailerStatus} onValueChange={setTrailerStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="uncoupled">Desacoplado</SelectItem>
+                  <SelectItem value="coupled">Acoplado</SelectItem>
+                  <SelectItem value="maintenance">Em manutenção</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTrailerDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSaveTrailer} disabled={savingTrailer}>
+              {savingTrailer ? "A guardar..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Trailer Confirmation */}
+      <AlertDialog open={!!deleteTrailerId} onOpenChange={(open) => !open && setDeleteTrailerId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Reboque</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja excluir este reboque? Os registos de manutenção associados também serão eliminados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTrailer} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit Dialog */}
       <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
