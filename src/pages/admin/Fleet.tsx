@@ -380,7 +380,10 @@ export default function Fleet() {
                   <FileText className="h-4 w-4 text-primary shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{doc.name}</p>
-                    <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
+                      {doc.expiry_date && expiryBadge(doc.expiry_date)}
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
