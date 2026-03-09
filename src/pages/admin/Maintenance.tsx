@@ -333,7 +333,7 @@ export default function Maintenance() {
         return getScheduleStatus(daysRemaining) === activeStatusFilter;
       });
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter]);
+  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter, hubFilter]);
 
   const filteredHubs = useMemo(() => {
     if (clientFilter === "all") return hubs;
