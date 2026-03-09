@@ -700,6 +700,24 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
+      // Sync MOVEL values to vehicles (mobile_number) and trailers (internal_id)
+      for (const row of previewRows) {
+        const movelVal = (row.categories as any).__movel;
+        if (!movelVal || !row.vehicleId) continue;
+        
+        if (isTrailerPlate(row.plate)) {
+          await supabase.from("trailers")
+            .update({ internal_id: movelVal })
+            .eq("id", row.vehicleId);
+          console.log(`[import] Set trailer ${row.plate} internal_id=${movelVal}`);
+        } else {
+          await supabase.from("vehicles")
+            .update({ mobile_number: movelVal })
+            .eq("id", row.vehicleId);
+          console.log(`[import] Set vehicle ${row.plate} mobile_number=${movelVal}`);
+        }
+      }
+
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
       
       for (const cat of selectedCategories) {
