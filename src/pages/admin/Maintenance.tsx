@@ -50,6 +50,7 @@ type Vehicle = {
   mobile_number: string | null;
   is_trailer?: boolean;
   client_id?: string | null;
+  status?: string;
 };
 
 type ClientOption = { id: string; name: string; code: string };
