@@ -307,9 +307,14 @@ export default function Maintenance() {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
-      // Client filter (applies to both vehicles and trailers)
+      // Client filter
       if (clientFilter !== "all") {
         if (vehicle.client_id !== clientFilter) return false;
+      }
+
+      // Hub filter
+      if (hubFilter !== "all") {
+        if (vehicle.hub_id !== hubFilter) return false;
       }
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
