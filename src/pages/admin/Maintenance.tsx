@@ -224,13 +224,17 @@ export default function Maintenance() {
   };
 
   const fetchData = async () => {
-    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }] = await Promise.all([
+    const [{ data: sData }, { data: vData }, { data: mData }, { data: tData }, { data: cData }, { data: hData }] = await Promise.all([
       supabase.from("vehicle_maintenance_schedule").select("*"),
-      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number").order("plate"),
+      supabase.from("vehicles").select("id, plate, odometer_km, engine_hours, mobile_number, client_id").order("plate"),
       supabase.from("maintenance_records").select("*, vehicles(plate)").order("created_at", { ascending: false }).limit(100),
       supabase.from("trailers").select("id, plate, internal_id, status"),
+      supabase.from("clients").select("id, name, code").order("name"),
+      supabase.from("hubs").select("id, name, code, client_id").order("name"),
     ]);
     if (sData) setSchedules(sData as any);
+    if (cData) setClients(cData as ClientOption[]);
+    if (hData) setHubs(hData as HubOption[]);
     const allVehicles: Vehicle[] = [];
     const map: Record<string, string> = {};
     if (vData) {
