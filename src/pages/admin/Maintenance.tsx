@@ -796,6 +796,73 @@ export default function Maintenance() {
             </CardContent>
           </Card>
         </TabsContent>
+      </Tabs>
+
+      {/* Trailer CRUD Dialog */}
+      <Dialog open={!!trailerDialog} onOpenChange={(open) => !open && setTrailerDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{trailerDialog?.mode === "edit" ? "Editar Reboque" : "Adicionar Reboque"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Matrícula</Label>
+              <Input value={trailerPlate} onChange={e => setTrailerPlate(e.target.value)} placeholder="Ex: L-123456" />
+            </div>
+            <div className="space-y-2">
+              <Label>ID Interno (Móvel)</Label>
+              <Input value={trailerInternalId} onChange={e => setTrailerInternalId(e.target.value)} placeholder="Ex: R001" />
+            </div>
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              <Select value={trailerClientId} onValueChange={setTrailerClientId}>
+                <SelectTrigger><SelectValue placeholder="Sem cliente" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem cliente</SelectItem>
+                  {clients.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Estado</Label>
+              <Select value={trailerStatus} onValueChange={setTrailerStatus}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="uncoupled">Desacoplado</SelectItem>
+                  <SelectItem value="coupled">Acoplado</SelectItem>
+                  <SelectItem value="maintenance">Em manutenção</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTrailerDialog(null)}>Cancelar</Button>
+            <Button onClick={handleSaveTrailer} disabled={savingTrailer}>
+              {savingTrailer ? "A guardar..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Trailer Confirmation */}
+      <AlertDialog open={!!deleteTrailerId} onOpenChange={(open) => !open && setDeleteTrailerId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Reboque</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem a certeza que deseja excluir este reboque? Os registos de manutenção associados também serão eliminados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTrailer} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Edit Dialog */}
       <Dialog open={!!editDialog} onOpenChange={(open) => !open && setEditDialog(null)}>
