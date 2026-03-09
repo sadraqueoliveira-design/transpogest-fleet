@@ -403,11 +403,10 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
     // Step 3: Fallback — if MATRICULAS row not found, search by license plate content
     if (platesRow === -1) {
       console.log("[transposed-parse] MATRICULAS label not found, searching by plate patterns...");
-      const startCol = labelCol + 1;
       for (let r = 0; r < maxRows; r++) {
         let plateCount = 0;
         const rowLen = rawRows[r]?.length ?? 0;
-        for (let c = startCol; c < rowLen; c++) {
+        for (let c = 0; c < rowLen; c++) {
           const val = String(rawRows[r]?.[c] ?? "").trim();
           if (val && looksLikePlate(val)) plateCount++;
         }
