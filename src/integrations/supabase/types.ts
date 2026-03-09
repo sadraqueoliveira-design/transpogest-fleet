@@ -1187,6 +1187,7 @@ export type Database = {
       }
       trailers: {
         Row: {
+          client_id: string | null
           created_at: string
           id: string
           internal_id: string | null
@@ -1198,6 +1199,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          client_id?: string | null
           created_at?: string
           id?: string
           internal_id?: string | null
@@ -1209,6 +1211,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          client_id?: string | null
           created_at?: string
           id?: string
           internal_id?: string | null
@@ -1220,6 +1223,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "trailers_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "trailers_last_linked_vehicle_id_fkey"
             columns: ["last_linked_vehicle_id"]
