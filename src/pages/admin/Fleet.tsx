@@ -385,7 +385,7 @@ export default function Fleet() {
                     <p className="text-sm font-medium truncate">{doc.name}</p>
                     <div className="flex items-center gap-1 flex-wrap">
                       <Badge variant="secondary" className="text-xs">{docTypeLabels[doc.doc_type] || doc.doc_type}</Badge>
-                      {doc.expiry_date && expiryBadge(doc.expiry_date)}
+                      {doc.expiry_date && expiryBadge(doc.expiry_date, doc.doc_type)}
                     </div>
                   </div>
                 </div>
