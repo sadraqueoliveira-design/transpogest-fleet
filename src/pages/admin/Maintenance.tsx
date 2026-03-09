@@ -542,6 +542,7 @@ export default function Maintenance() {
       <Tabs defaultValue="schedule" className="space-y-4">
         <TabsList>
           <TabsTrigger value="schedule">Planeamento</TabsTrigger>
+          <TabsTrigger value="trailers" className="gap-1"><Truck className="h-3.5 w-3.5" /> Reboques</TabsTrigger>
           <TabsTrigger value="records">Registos</TabsTrigger>
         </TabsList>
 
