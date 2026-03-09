@@ -1,47 +1,43 @@
 
 
-# Atribuir client_id aos veículos na importação de manutenção
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Contexto
+## Problem analysis
 
-- A página **Frota** já permite editar `client_id` manualmente por veículo (inline edit com dropdown de clientes)
-- O problema: ao importar a planilha de manutenção, os veículos novos ou existentes não recebem `client_id` automaticamente
-- O utilizador quer que, ao importar com um cliente/hub selecionado nos filtros, os veículos importados fiquem associados a esse cliente
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-## Plano
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-### 1. Passar o `clientFilter` selecionado ao `ScheduleImportDialog`
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-Na `Maintenance.tsx`, adicionar uma nova prop `selectedClientId` ao `ScheduleImportDialog` com o valor do `clientFilter` atual (se diferente de "all").
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-### 2. Atualizar `ScheduleImportDialog` para receber e usar `selectedClientId`
+## Solution
 
-No `MaintenanceImportExport.tsx`:
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-- Adicionar prop opcional `selectedClientId?: string` ao `ImportDialogProps`
-- No `handleImport`, depois de criar trailers e sincronizar MOVEL, adicionar um passo que atualiza o `client_id` dos veículos importados (que não sejam reboques) para o `selectedClientId`
-- Mostrar um aviso no UI do dialog quando um cliente está pré-selecionado: "Os veículos importados serão associados ao cliente X"
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
 
-### 3. Lógica de atribuição no import
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
 
-```typescript
-// Após sync de MOVEL, antes de processar categorias:
-if (selectedClientId) {
-  for (const row of validRows) {
-    if (!isTrailerPlate(row.plate) && row.vehicleId) {
-      await supabase.from("vehicles")
-        .update({ client_id: selectedClientId })
-        .eq("id", row.vehicleId);
-    }
-  }
-}
-```
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
 
-### 4. Passar nome do cliente para exibição
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
 
-Passar também a lista de `clients` ou o nome do cliente selecionado para mostrar no dialog de importação a indicação visual de qual cliente será associado.
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
 
-### Ficheiros alterados
-- `src/pages/admin/Maintenance.tsx` — passar `selectedClientId` e `clientName` ao import dialog
-- `src/components/admin/MaintenanceImportExport.tsx` — receber props, mostrar aviso, atualizar `client_id` no import
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 

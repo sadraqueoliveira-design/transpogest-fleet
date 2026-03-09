@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Upload, Download, FileSpreadsheet, Check, X, AlertTriangle } from "lucide-react";
+import { Upload, Download, FileSpreadsheet, Check, X, AlertTriangle, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import * as XLSX from "xlsx";
@@ -225,9 +225,11 @@ interface ImportDialogProps {
   vehicles: Vehicle[];
   scheduleLookup: Record<string, Record<string, ScheduleRow>>;
   onImported: () => void;
+  selectedClientId?: string;
+  selectedClientName?: string;
 }
 
-export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported }: ImportDialogProps) {
+export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, onImported, selectedClientId, selectedClientName }: ImportDialogProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewRows, setPreviewRows] = useState<ImportPreviewRow[]>([]);
   const [detectedCategories, setDetectedCategories] = useState<string[]>([]);
@@ -758,6 +760,18 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         }
       }
 
+      // Assign client_id to imported vehicles if a client is selected
+      if (selectedClientId) {
+        for (const row of previewRows) {
+          if (row.hasMatch && row.vehicleId && !isTrailerPlate(row.plate)) {
+            await supabase.from("vehicles")
+              .update({ client_id: selectedClientId })
+              .eq("id", row.vehicleId);
+          }
+        }
+        console.log(`[import] Assigned client_id=${selectedClientId} to imported vehicles`);
+      }
+
       const validRows = previewRows.filter(r => r.hasMatch && r.vehicleId);
       
       for (const cat of selectedCategories) {
@@ -860,6 +874,12 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
             <div className="flex flex-col items-center gap-4 py-8">
               <div className="rounded-xl border-2 border-dashed border-muted-foreground/25 p-8 text-center">
                 <FileSpreadsheet className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                {selectedClientName && (
+                  <div className="mb-4 rounded-md bg-accent/50 border border-accent px-3 py-2 text-sm">
+                    <Building2 className="h-4 w-4 inline mr-1.5" />
+                    Os veículos importados serão associados ao cliente <strong>{selectedClientName}</strong>
+                  </div>
+                )}
                 <p className="text-sm text-muted-foreground mb-4">
                   Selecione um ficheiro Excel (.xlsx, .xlsm) ou CSV com as colunas de manutenção.
                 </p>
