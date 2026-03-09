@@ -363,7 +363,9 @@ export default function Fleet() {
                 </SelectContent>
               </Select>
             </div>
-            <Input type="date" value={docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder="Validade" className="h-8 text-sm" />
+            {docType !== "vehicle_registration" && (
+              <Input type={docType === "atp_certificate" ? "month" : "date"} value={docType === "atp_certificate" && docExpiry.length === 10 ? docExpiry.slice(0,7) : docExpiry} onChange={(e) => setDocExpiry(e.target.value)} placeholder={docType === "atp_certificate" ? "Mês/Ano" : "Validade"} className="h-8 text-sm" />
+            )}
             <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" className="hidden" onChange={(e) => setDocFile(e.target.files?.[0] || null)} />
             <div className="flex gap-2">
               <Button type="button" variant="outline" size="sm" className="flex-1" onClick={() => fileInputRef.current?.click()}>
