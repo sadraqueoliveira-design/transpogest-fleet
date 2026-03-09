@@ -81,6 +81,8 @@ export default function Fleet() {
   const [docExpiry, setDocExpiry] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
 
   const fetchVehicles = async () => {
     const [{ data: vData }, { data: cData }] = await Promise.all([
