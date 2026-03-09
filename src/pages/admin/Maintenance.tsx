@@ -791,7 +791,12 @@ export default function Maintenance() {
                       filteredVehicles.map(v => (
                         <TableRow key={v.id}>
                           <TableCell className="sticky left-0 bg-background z-10 font-mono font-medium text-sm">
-                            {v.plate}
+                            <div className="flex items-center gap-1">
+                              {v.plate}
+                              <Button variant="ghost" size="icon" className="h-6 w-6 ml-0.5" onClick={() => fetchVehicleDocs(v.id, v.plate)} title="Ver documentos">
+                                <FileText className="h-3.5 w-3.5 text-primary" />
+                              </Button>
+                            </div>
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge variant={v.is_trailer ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
