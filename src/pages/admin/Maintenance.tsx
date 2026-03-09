@@ -800,19 +800,21 @@ export default function Maintenance() {
                     <TableHead>Matrícula</TableHead>
                     <TableHead>Móvel</TableHead>
                     <TableHead>Cliente</TableHead>
+                    <TableHead>Hub</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {vehiclesList.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Sem veículos registados</TableCell></TableRow>
                   ) : (
                     vehiclesList.map(v => (
                       <TableRow key={v.id}>
                         <TableCell className="font-mono font-medium">{v.plate}</TableCell>
                         <TableCell>{v.mobile_number || "—"}</TableCell>
                         <TableCell>{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
+                        <TableCell>{hubs.find(h => h.id === v.hub_id)?.name || "—"}</TableCell>
                         <TableCell>
                           <Badge variant={(v as any).status === "active" ? "default" : (v as any).status === "maintenance" ? "destructive" : "secondary"} className="text-xs">
                             {(v as any).status === "active" ? "Ativo" : (v as any).status === "inactive" ? "Inativo" : (v as any).status === "maintenance" ? "Em manutenção" : (v as any).status || "Ativo"}
