@@ -222,7 +222,7 @@ export default function DriverDocuments() {
                       <Badge variant="secondary" className="text-xs">
                         {docTypeLabels[doc.doc_type] || doc.doc_type}
                       </Badge>
-                      <ExpiryBadge date={doc.expiry_date} />
+                      <ExpiryBadge date={doc.expiry_date} docType={doc.doc_type} />
                     </div>
                   </div>
                 </div>

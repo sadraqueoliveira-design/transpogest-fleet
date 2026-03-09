@@ -170,12 +170,13 @@ export default function Fleet() {
     else { toast.success("Documento removido"); if (selectedVehicle) fetchDocs(selectedVehicle.id); }
   };
 
-  const expiryBadge = (date: string | null) => {
+  const expiryBadge = (date: string | null, docType?: string) => {
     if (!date) return null;
     const days = differenceInDays(parseISO(date), new Date());
+    const displayDate = docType === "atp_certificate" ? format(parseISO(date), "MM/yyyy") : format(parseISO(date), "dd/MM/yyyy");
     if (days < 0) return <Badge variant="destructive">Expirado</Badge>;
     if (days < 30) return <Badge className="bg-warning text-warning-foreground"><AlertCircle className="mr-1 h-3 w-3" />{days}d</Badge>;
-    return <Badge variant="secondary">{format(parseISO(date), "dd/MM/yyyy")}</Badge>;
+    return <Badge variant="secondary">{displayDate}</Badge>;
   };
 
   const exportData = filtered.map(v => ({
