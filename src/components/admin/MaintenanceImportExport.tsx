@@ -421,14 +421,18 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
       return { parsed: [], detected: [] };
     }
 
-    // Step 4: Find MOTORISTA row for employee numbers
+    // Step 4: Find MOTORISTA and MOVEL rows
     let motoristaRow = -1;
+    let movelRow = -1;
     for (let r = 0; r < rawRows.length; r++) {
       const label = normalizeLabel(String(rawRows[r]?.[labelCol] ?? ""));
       if (label === "MOTORISTA" || label.includes("MOTORISTA")) {
         motoristaRow = r;
         console.log(`[transposed-parse] MOTORISTA row found at ${r}`);
-        break;
+      }
+      if (label === "MOVEL" || label === "MÓVEL") {
+        movelRow = r;
+        console.log(`[transposed-parse] MOVEL row found at ${r}`);
       }
     }
 
