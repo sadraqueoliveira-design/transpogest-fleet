@@ -415,8 +415,62 @@ export default function Maintenance() {
     toast.success(`${payload.length} registo(s) importado(s)`);
     fetchData();
   };
+  const openTrailerDialog = (mode: "add" | "edit", trailer?: any) => {
+    setTrailerDialog({ mode, trailer });
+    setTrailerPlate(trailer?.plate || "");
+    setTrailerInternalId(trailer?.mobile_number || "");
+    setTrailerClientId(trailer?.client_id || "");
+    setTrailerStatus(trailer ? (vehicles.find(v => v.id === trailer.id) ? "active" : "uncoupled") : "uncoupled");
+  };
 
-  if (loading) {
+  const handleSaveTrailer = async () => {
+    if (!trailerPlate.trim()) { toast.error("Matrícula obrigatória"); return; }
+    setSavingTrailer(true);
+    try {
+      if (trailerDialog?.mode === "edit" && trailerDialog.trailer) {
+        const { error } = await supabase.from("trailers")
+          .update({ 
+            plate: trailerPlate.trim().toUpperCase(), 
+            internal_id: trailerInternalId.trim() || null,
+            client_id: trailerClientId || null,
+            status: trailerStatus,
+          })
+          .eq("id", trailerDialog.trailer.id);
+        if (error) throw error;
+        toast.success("Reboque atualizado");
+      } else {
+        const { error } = await supabase.from("trailers")
+          .insert({ 
+            plate: trailerPlate.trim().toUpperCase(), 
+            internal_id: trailerInternalId.trim() || null,
+            client_id: trailerClientId || null,
+            status: trailerStatus,
+          });
+        if (error) throw error;
+        toast.success("Reboque criado");
+      }
+      setTrailerDialog(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error("Erro: " + (err.message || "Desconhecido"));
+    } finally {
+      setSavingTrailer(false);
+    }
+  };
+
+  const handleDeleteTrailer = async () => {
+    if (!deleteTrailerId) return;
+    // Also delete maintenance schedules for this trailer
+    await supabase.from("vehicle_maintenance_schedule").delete().eq("vehicle_id", deleteTrailerId);
+    const { error } = await supabase.from("trailers").delete().eq("id", deleteTrailerId);
+    if (error) { toast.error("Erro ao excluir: " + error.message); }
+    else { toast.success("Reboque excluído"); fetchData(); }
+    setDeleteTrailerId(null);
+  };
+
+  const trailersList = vehicles.filter(v => v.is_trailer);
+
+
     return (
       <div className="flex items-center justify-center py-20">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
