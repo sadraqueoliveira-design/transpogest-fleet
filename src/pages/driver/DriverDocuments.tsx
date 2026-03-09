@@ -138,6 +138,21 @@ export default function DriverDocuments() {
     setDeleteDoc(null);
   };
 
+  const handleReplace = async (file: File) => {
+    if (!replacingDocId || !vehicleId || !user) return;
+    setUploading(true);
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${vehicleId}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, file);
+    if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
+    const { error } = await supabase.from("vehicle_documents").update({ file_url: urlData.publicUrl } as any).eq("id", replacingDocId);
+    if (error) { toast.error("Erro: " + error.message); }
+    else { toast.success("Documento substituído"); await fetchDocs(vehicleId); }
+    setUploading(false);
+    setReplacingDocId(null);
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
