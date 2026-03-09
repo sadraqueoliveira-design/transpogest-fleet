@@ -1189,6 +1189,7 @@ export type Database = {
         Row: {
           client_id: string | null
           created_at: string
+          hub_id: string | null
           id: string
           internal_id: string | null
           last_lat: number | null
@@ -1201,6 +1202,7 @@ export type Database = {
         Insert: {
           client_id?: string | null
           created_at?: string
+          hub_id?: string | null
           id?: string
           internal_id?: string | null
           last_lat?: number | null
@@ -1213,6 +1215,7 @@ export type Database = {
         Update: {
           client_id?: string | null
           created_at?: string
+          hub_id?: string | null
           id?: string
           internal_id?: string | null
           last_lat?: number | null
@@ -1228,6 +1231,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trailers_hub_id_fkey"
+            columns: ["hub_id"]
+            isOneToOne: false
+            referencedRelation: "hubs"
             referencedColumns: ["id"]
           },
           {
@@ -1377,6 +1387,7 @@ export type Database = {
           current_driver_id: string | null
           engine_hours: number | null
           fuel_level_percent: number | null
+          hub_id: string | null
           id: string
           inspection_expiry: string | null
           insurance_expiry: string | null
@@ -1410,6 +1421,7 @@ export type Database = {
           current_driver_id?: string | null
           engine_hours?: number | null
           fuel_level_percent?: number | null
+          hub_id?: string | null
           id?: string
           inspection_expiry?: string | null
           insurance_expiry?: string | null
@@ -1443,6 +1455,7 @@ export type Database = {
           current_driver_id?: string | null
           engine_hours?: number | null
           fuel_level_percent?: number | null
+          hub_id?: string | null
           id?: string
           inspection_expiry?: string | null
           insurance_expiry?: string | null
@@ -1473,6 +1486,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vehicles_hub_id_fkey"
+            columns: ["hub_id"]
+            isOneToOne: false
+            referencedRelation: "hubs"
             referencedColumns: ["id"]
           },
         ]

@@ -276,6 +276,7 @@ export default function Maintenance() {
           mobile_number: t.internal_id || null,
           is_trailer: true,
           client_id: (t as any).client_id || null,
+          hub_id: (t as any).hub_id || null,
         });
         map[t.plate.replace(/[\s-]/g, "").toUpperCase()] = t.id;
       });
