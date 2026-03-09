@@ -439,6 +439,7 @@ export default function Maintenance() {
     setTrailerPlate(trailer?.plate || "");
     setTrailerInternalId(trailer?.mobile_number || "");
     setTrailerClientId(trailer?.client_id || "");
+    setTrailerHubId(trailer?.hub_id || "");
     setTrailerStatus(trailer ? (vehicles.find(v => v.id === trailer.id) ? "active" : "uncoupled") : "uncoupled");
   };
 
