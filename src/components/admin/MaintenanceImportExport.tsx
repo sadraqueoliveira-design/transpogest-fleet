@@ -590,6 +590,10 @@ export function ScheduleImportDialog({ open, onClose, vehicles, scheduleLookup, 
         if (parsed.length === 0) { toast.error("Nenhum dado válido encontrado no formato transposto"); return; }
         if (detected.length === 0) { toast.error("Nenhuma categoria reconhecida"); return; }
 
+        if (parsed.length < 2) {
+          toast.warning(`Atenção: apenas ${parsed.length} matrícula(s) detetada(s). Verifique se o ficheiro contém a folha correta.`);
+        }
+
         setPreviewRows(parsed);
         setDetectedCategories(detected);
         setSelectedCategories(new Set(detected));
