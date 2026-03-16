@@ -98,7 +98,13 @@ export default function Fleet() {
 
   const filtered = vehicles.filter(v => {
     if (clientFilter && clientFilter !== "all" && v.client_id !== clientFilter) return false;
-    if (search && !v.plate.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      const match = v.plate.toLowerCase().includes(s)
+        || (v.brand?.toLowerCase().includes(s) ?? false)
+        || (v.model?.toLowerCase().includes(s) ?? false);
+      if (!match) return false;
+    }
     return true;
   });
 
