@@ -123,6 +123,7 @@ export default function Fleet() {
       plate: v.plate, brand: v.brand, model: v.model, vin: v.vin,
       insurance_expiry: v.insurance_expiry, inspection_expiry: v.inspection_expiry,
       tachograph_calibration_date: v.tachograph_calibration_date, client_id: v.client_id,
+      mobile_number: v.mobile_number,
     });
   };
 
