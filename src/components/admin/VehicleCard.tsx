@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   Truck, Navigation, Fuel, Gauge, Snowflake, CreditCard, Clock,
-  Activity, Droplets, AlertTriangle, MapPin
+  Activity, Droplets, AlertTriangle, MapPin, Phone
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { pt } from "date-fns/locale";
