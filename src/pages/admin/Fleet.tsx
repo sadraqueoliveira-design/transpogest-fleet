@@ -341,7 +341,14 @@ export default function Fleet() {
                   <>
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-mono font-bold text-base">{v.plate}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-mono font-bold text-base">{v.plate}</p>
+                          {v.mobile_number && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              · <Phone className="h-3 w-3" />{v.mobile_number}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</p>
                         <p className="text-xs text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "Sem cliente"}</p>
                       </div>
