@@ -1,32 +1,43 @@
 
 
-# Melhorar Responsividade da Página Frota para Telemóveis
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Problema
+## Problem analysis
 
-A página de Gestão de Frota usa uma tabela HTML com 10 colunas que não se adapta bem a ecrãs pequenos. No telemóvel, a tabela fica cortada e difícil de usar (como mostra a imagem).
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-## Solução
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-Substituir a tabela por um layout responsivo: **cards em mobile, tabela em desktop**.
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-### Implementação
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-**Ficheiro:** `src/pages/admin/Fleet.tsx`
+## Solution
 
-1. **Header/botões (linhas 219-257):** Reorganizar para empilhar verticalmente em mobile — título em cima, botões em baixo com `flex-wrap` e tamanhos menores.
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
 
-2. **Filtros (linhas 260-275):** Empilhar verticalmente em mobile (`flex-col sm:flex-row`), select ocupa largura total.
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
 
-3. **Tabela (linhas 277-365):** 
-   - Manter a `<Table>` mas escondê-la em mobile (`hidden lg:block`)
-   - Adicionar uma vista de cards visível apenas em mobile (`lg:hidden`) que mostra cada veículo como um card com:
-     - Matrícula + Marca/Modelo no topo
-     - Cliente
-     - Badges de validade (Seguro, Inspeção, Tacógrafo) em linha
-     - Dados de telemetria (Combustível, Km, Horas) compactos
-     - Botões de ação (Editar, Docs, Eliminar)
-   - Edição inline em mobile usa um layout empilhado com inputs de largura total
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
 
-4. **Diálogos:** O diálogo de documentos já usa `max-w-lg` e funciona razoavelmente; ajustar o grid interno para `grid-cols-1` em mobile.
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
+
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
+
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 
