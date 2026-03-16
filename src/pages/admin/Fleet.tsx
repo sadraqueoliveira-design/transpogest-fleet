@@ -240,14 +240,14 @@ export default function Fleet() {
             <DialogContent>
               <DialogHeader><DialogTitle>Adicionar Veículo</DialogTitle></DialogHeader>
               <form onSubmit={handleCreate} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Matrícula *</Label><Input value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} required /></div>
                   <div className="space-y-2"><Label>Marca</Label><Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Modelo</Label><Input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} /></div>
                   <div className="space-y-2"><Label>VIN</Label><Input value={form.vin} onChange={(e) => setForm({ ...form, vin: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Seguro Expira</Label><Input type="date" value={form.insurance_expiry} onChange={(e) => setForm({ ...form, insurance_expiry: e.target.value })} /></div>
                   <div className="space-y-2"><Label>Inspeção Expira</Label><Input type="date" value={form.inspection_expiry} onChange={(e) => setForm({ ...form, inspection_expiry: e.target.value })} /></div>
-                  <div className="col-span-2 space-y-2"><Label>Calibração Tacógrafo</Label><Input type="date" value={form.tachograph_calibration_date} onChange={(e) => setForm({ ...form, tachograph_calibration_date: e.target.value })} /></div>
+                  <div className="sm:col-span-2 space-y-2"><Label>Calibração Tacógrafo</Label><Input type="date" value={form.tachograph_calibration_date} onChange={(e) => setForm({ ...form, tachograph_calibration_date: e.target.value })} /></div>
                 </div>
                 <Button type="submit" className="w-full">Adicionar</Button>
               </form>
