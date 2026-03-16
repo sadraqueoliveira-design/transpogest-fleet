@@ -483,7 +483,7 @@ export default function Fleet() {
           <DialogHeader><DialogTitle>Documentos — {selectedVehicle?.plate}</DialogTitle></DialogHeader>
           <div className="space-y-3 border rounded-lg p-3">
             <Label className="text-sm font-semibold">Carregar Documento</Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Input value={docName} onChange={(e) => setDocName(e.target.value)} placeholder="Nome do documento" className="h-8 text-sm" />
               <Select value={docType} onValueChange={setDocType}>
                 <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
