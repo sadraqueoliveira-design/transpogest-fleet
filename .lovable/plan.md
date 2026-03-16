@@ -1,43 +1,55 @@
 
 
-# Fix: Debounce removals to prevent TMX jitter from creating spurious events
+# Notificar admins quando motorista renova documento
 
-## Problem analysis
+## Abordagem
 
-Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
-- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
-- Then a `backfill` insertion at ~10:28/10:55
-- The driver actually inserted the card around 05:00-06:00
+Após a renovação bem-sucedida no `handleRenew`, chamar a edge function `send-fcm` para enviar push a todos os admins/managers. O padrão já existe no projeto (ex: `check-document-expiry`, `check-maintenance-alerts`).
 
-The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
+## Implementação
 
-The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
+### 1. Modificar `handleRenew` em `DriverDocuments.tsx`
 
-**Root causes**:
-1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
-2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
+Após o update com sucesso (linha 183-186), adicionar:
 
-## Solution
+1. Buscar todos os admin/manager IDs via `user_roles` (role in admin, manager)
+2. Para cada um, invocar `send-fcm` com:
+   - `title`: "📄 Documento Renovado"
+   - `body`: "{nome do motorista} renovou {tipo do doc} - {matrícula}"
+   - `data.route`: "/admin/fleet"
+3. Usar `supabase.functions.invoke("send-fcm", ...)` (padrão frontend)
 
-### Change 1: Debounce removals (anti-flicker)
-In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
+### 2. Obter dados para a mensagem
 
-Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
+- Nome do motorista: disponível via `useAuth()` → `profile.full_name`
+- Matrícula: já em `vehiclePlate` state
+- Tipo do documento: `docTypeLabels[renewDoc.doc_type]`
 
-### Change 2: Preserve earliest backfill timestamp
-When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
+### Código resumido
 
-In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+```typescript
+// After successful renew, notify admins
+const { data: staffRoles } = await supabase
+  .from("user_roles")
+  .select("user_id")
+  .in("role", ["admin", "manager"]);
 
-### File to change
-`supabase/functions/sync-trackit-data/index.ts`:
+if (staffRoles?.length) {
+  const docLabel = docTypeLabels[renewDoc.doc_type] || renewDoc.doc_type;
+  const driverName = profile?.full_name || "Motorista";
+  
+  for (const staff of staffRoles) {
+    supabase.functions.invoke("send-fcm", {
+      body: {
+        user_id: staff.user_id,
+        title: "📄 Documento Renovado",
+        body: `${driverName} renovou ${docLabel} - ${vehiclePlate}`,
+        data: { route: "/admin/fleet" },
+      },
+    });
+  }
+}
+```
 
-1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
-2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
-3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
-
-### Expected outcome
-- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
-- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
-- Real removals (single, clean transition) will still be recorded normally
+Sem alterações à base de dados -- usa apenas a infraestrutura de push existente.
 
