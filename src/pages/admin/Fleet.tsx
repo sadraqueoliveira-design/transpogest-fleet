@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search } from "lucide-react";
+import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
