@@ -137,6 +137,7 @@ export default function Fleet() {
       inspection_expiry: editForm.inspection_expiry || null,
       tachograph_calibration_date: editForm.tachograph_calibration_date || null,
       client_id: editForm.client_id || null,
+      mobile_number: editForm.mobile_number || null,
     }).eq("id", editingId);
     if (error) { toast.error("Erro: " + error.message); }
     else { toast.success("Veículo atualizado"); cancelEdit(); fetchVehicles(); }
