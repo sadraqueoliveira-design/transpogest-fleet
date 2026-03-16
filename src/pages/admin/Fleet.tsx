@@ -463,7 +463,7 @@ export default function Fleet() {
                     ) : (
                       <>
                         <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
-                        <TableCell>{v.mobile_number ? <span className="flex items-center gap-1 text-sm"><Phone className="h-3 w-3 text-muted-foreground" />{v.mobile_number}</span> : "—"}</TableCell>
+                        <TableCell>{v.mobile_number || "—"}</TableCell>
                         <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
                         <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
