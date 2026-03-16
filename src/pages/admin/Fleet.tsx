@@ -431,6 +431,7 @@ export default function Fleet() {
                     {editingId === v.id ? (
                       <>
                         <TableCell><Input value={editForm.plate || ""} onChange={e => setEditForm({...editForm, plate: e.target.value})} className="h-7 text-xs w-24 font-mono" /></TableCell>
+                        <TableCell><Input value={editForm.mobile_number || ""} onChange={e => setEditForm({...editForm, mobile_number: e.target.value})} className="h-7 text-xs w-20" placeholder="Nº" /></TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Input value={editForm.brand || ""} onChange={e => setEditForm({...editForm, brand: e.target.value})} placeholder="Marca" className="h-7 text-xs w-20" />
