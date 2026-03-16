@@ -64,7 +64,7 @@ function isExpiredOrExpiring(date: string | null): boolean {
 }
 
 export default function DriverDocuments() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [docs, setDocs] = useState<VehicleDoc[]>([]);
   const [vehicleId, setVehicleId] = useState<string | null>(null);
   const [vehiclePlate, setVehiclePlate] = useState<string | null>(null);
