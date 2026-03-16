@@ -216,7 +216,7 @@ export default function Fleet() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="page-header">Gestão de Frota</h1>
           <p className="page-subtitle">Gerir veículos e documentação</p>
