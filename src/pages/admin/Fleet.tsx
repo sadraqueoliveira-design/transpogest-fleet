@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search, Phone } from "lucide-react";
+import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
@@ -346,9 +346,7 @@ export default function Fleet() {
                         <div className="flex items-center gap-2">
                           <p className="font-mono font-bold text-base">{v.plate}</p>
                           {v.mobile_number && (
-                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                              · <Phone className="h-3 w-3" />{v.mobile_number}
-                            </span>
+                            <span className="text-xs text-muted-foreground">· {v.mobile_number}</span>
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</p>
@@ -465,7 +463,7 @@ export default function Fleet() {
                     ) : (
                       <>
                         <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
-                        <TableCell>{v.mobile_number ? <span className="flex items-center gap-1 text-sm"><Phone className="h-3 w-3 text-muted-foreground" />{v.mobile_number}</span> : "—"}</TableCell>
+                        <TableCell>{v.mobile_number || "—"}</TableCell>
                         <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
                         <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
