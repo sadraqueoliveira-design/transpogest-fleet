@@ -274,7 +274,120 @@ export default function Fleet() {
         <span className="text-sm text-muted-foreground whitespace-nowrap">{filtered.length} veículo(s)</span>
       </div>
 
-      <Card>
+      {/* Mobile Cards View */}
+      <div className="lg:hidden space-y-3">
+        {loading ? (
+          <p className="text-center py-8 text-muted-foreground">A carregar...</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</p>
+        ) : (
+          filtered.map((v) => (
+            <Card key={v.id}>
+              <CardContent className="p-4 space-y-3">
+                {editingId === v.id ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label className="text-xs">Matrícula</Label>
+                      <Input value={editForm.plate || ""} onChange={e => setEditForm({...editForm, plate: e.target.value})} className="h-9 font-mono" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <Label className="text-xs">Marca</Label>
+                        <Input value={editForm.brand || ""} onChange={e => setEditForm({...editForm, brand: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs">Modelo</Label>
+                        <Input value={editForm.model || ""} onChange={e => setEditForm({...editForm, model: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs">Cliente</Label>
+                      <Select value={editForm.client_id || "none"} onValueChange={val => setEditForm({...editForm, client_id: val === "none" ? null : val})}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhum</SelectItem>
+                          {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Seguro</Label>
+                        <Input type="date" value={editForm.insurance_expiry || ""} onChange={e => setEditForm({...editForm, insurance_expiry: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Inspeção</Label>
+                        <Input type="date" value={editForm.inspection_expiry || ""} onChange={e => setEditForm({...editForm, inspection_expiry: e.target.value})} className="h-9" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Tacógrafo</Label>
+                        <Input type="date" value={editForm.tachograph_calibration_date || ""} onChange={e => setEditForm({...editForm, tachograph_calibration_date: e.target.value})} className="h-9" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="flex-1" onClick={saveEdit}><Check className="mr-1 h-3.5 w-3.5" />Guardar</Button>
+                      <Button size="sm" variant="outline" className="flex-1" onClick={cancelEdit}><X className="mr-1 h-3.5 w-3.5" />Cancelar</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <p className="font-mono font-bold text-base">{v.plate}</p>
+                        <p className="text-sm text-muted-foreground">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</p>
+                        <p className="text-xs text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "Sem cliente"}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(v)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDocsDialog(v)}>
+                          <FileText className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteVehicle(v)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Expiry badges */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-muted-foreground">Seg:</span>{expiryBadge(v.insurance_expiry) || <span className="text-muted-foreground">—</span>}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-muted-foreground">Insp:</span>{expiryBadge(v.inspection_expiry) || <span className="text-muted-foreground">—</span>}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className="text-muted-foreground">Tac:</span>{expiryBadge(v.tachograph_calibration_date) || <span className="text-muted-foreground">—</span>}
+                      </div>
+                    </div>
+
+                    {/* Telemetry */}
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-muted-foreground">Comb.</p>
+                        <p className="font-semibold">{v.fuel_level_percent != null ? `${v.fuel_level_percent}%` : "—"}</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-muted-foreground">Km</p>
+                        <p className="font-semibold">{v.odometer_km != null ? v.odometer_km.toLocaleString() : "—"}</p>
+                      </div>
+                      <div className="bg-muted/50 rounded-lg p-2 text-center">
+                        <p className="text-muted-foreground">H. Motor</p>
+                        <p className="font-semibold">{v.engine_hours != null ? Math.round(v.engine_hours).toLocaleString("pt-PT") : "—"}</p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
+      {/* Desktop Table View */}
+      <Card className="hidden lg:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
