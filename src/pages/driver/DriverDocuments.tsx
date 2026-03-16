@@ -64,7 +64,7 @@ function isExpiredOrExpiring(date: string | null): boolean {
 }
 
 export default function DriverDocuments() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [docs, setDocs] = useState<VehicleDoc[]>([]);
   const [vehicleId, setVehicleId] = useState<string | null>(null);
   const [vehiclePlate, setVehiclePlate] = useState<string | null>(null);
@@ -183,6 +183,29 @@ export default function DriverDocuments() {
     else {
       toast.success("Documento renovado com sucesso");
       await fetchDocs(vehicleId);
+
+      // Notificar admins/managers
+      const { data: staffRoles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .in("role", ["admin", "manager"]);
+
+      if (staffRoles?.length) {
+        const docLabel = docTypeLabels[renewDoc.doc_type] || renewDoc.doc_type;
+        const driverName = profile?.full_name || "Motorista";
+        const staffIds = staffRoles.map((s) => s.user_id).filter((id) => id !== user.id);
+
+        if (staffIds.length > 0) {
+          supabase.functions.invoke("send-fcm", {
+            body: {
+              user_ids: staffIds,
+              title: "📄 Documento Renovado",
+              body: `${driverName} renovou ${docLabel} - ${vehiclePlate}`,
+              data: { route: "/admin/frota" },
+            },
+          });
+        }
+      }
     }
     setUploading(false);
     setRenewDoc(null);
