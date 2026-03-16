@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search } from "lucide-react";
+import { Plus, AlertCircle, Upload, FileText, Trash2, ExternalLink, Pencil, Check, X, Search, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { ImportButton, ExportButton } from "@/components/admin/BulkImportExport";
@@ -123,6 +123,7 @@ export default function Fleet() {
       plate: v.plate, brand: v.brand, model: v.model, vin: v.vin,
       insurance_expiry: v.insurance_expiry, inspection_expiry: v.inspection_expiry,
       tachograph_calibration_date: v.tachograph_calibration_date, client_id: v.client_id,
+      mobile_number: v.mobile_number,
     });
   };
 
@@ -136,6 +137,7 @@ export default function Fleet() {
       inspection_expiry: editForm.inspection_expiry || null,
       tachograph_calibration_date: editForm.tachograph_calibration_date || null,
       client_id: editForm.client_id || null,
+      mobile_number: editForm.mobile_number || null,
     }).eq("id", editingId);
     if (error) { toast.error("Erro: " + error.message); }
     else { toast.success("Veículo atualizado"); cancelEdit(); fetchVehicles(); }
@@ -341,7 +343,14 @@ export default function Fleet() {
                   <>
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-mono font-bold text-base">{v.plate}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-mono font-bold text-base">{v.plate}</p>
+                          {v.mobile_number && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              · <Phone className="h-3 w-3" />{v.mobile_number}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</p>
                         <p className="text-xs text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "Sem cliente"}</p>
                       </div>
@@ -401,6 +410,7 @@ export default function Fleet() {
             <TableHeader>
               <TableRow>
                 <TableHead>Matrícula</TableHead>
+                <TableHead>Nº Móvel</TableHead>
                 <TableHead>Marca/Modelo</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Seguro</TableHead>
@@ -414,15 +424,16 @@ export default function Fleet() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id}>
                     {editingId === v.id ? (
                       <>
                         <TableCell><Input value={editForm.plate || ""} onChange={e => setEditForm({...editForm, plate: e.target.value})} className="h-7 text-xs w-24 font-mono" /></TableCell>
+                        <TableCell><Input value={editForm.mobile_number || ""} onChange={e => setEditForm({...editForm, mobile_number: e.target.value})} className="h-7 text-xs w-20" placeholder="Nº" /></TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Input value={editForm.brand || ""} onChange={e => setEditForm({...editForm, brand: e.target.value})} placeholder="Marca" className="h-7 text-xs w-20" />
@@ -454,6 +465,7 @@ export default function Fleet() {
                     ) : (
                       <>
                         <TableCell className="font-mono font-semibold">{v.plate}</TableCell>
+                        <TableCell>{v.mobile_number ? <span className="flex items-center gap-1 text-sm"><Phone className="h-3 w-3 text-muted-foreground" />{v.mobile_number}</span> : "—"}</TableCell>
                         <TableCell>{[v.brand, v.model].filter(Boolean).join(" ") || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{clients.find(c => c.id === v.client_id)?.name || "—"}</TableCell>
                         <TableCell>{expiryBadge(v.insurance_expiry)}</TableCell>
