@@ -102,7 +102,8 @@ export default function Fleet() {
       const s = search.toLowerCase();
       const match = v.plate.toLowerCase().includes(s)
         || (v.brand?.toLowerCase().includes(s) ?? false)
-        || (v.model?.toLowerCase().includes(s) ?? false);
+        || (v.model?.toLowerCase().includes(s) ?? false)
+        || (v.mobile_number?.toLowerCase().includes(s) ?? false);
       if (!match) return false;
     }
     return true;
