@@ -422,9 +422,9 @@ export default function Fleet() {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
+                <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">Nenhum veículo encontrado</TableCell></TableRow>
               ) : (
                 filtered.map((v) => (
                   <TableRow key={v.id}>
