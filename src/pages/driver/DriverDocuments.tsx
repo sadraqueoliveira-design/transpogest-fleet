@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileText, ExternalLink, Plus, Camera, Upload, Loader2, Trash2, AlertCircle, CalendarDays } from "lucide-react";
+import { FileText, ExternalLink, Plus, Camera, Upload, Loader2, Trash2, AlertCircle, CalendarDays, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,19 +44,23 @@ function ExpiryBadge({ date, docType }: { date: string | null; docType?: string 
 }
 
 function getExpiryInputType(docType: string): string | null {
-  if (docType === "vehicle_registration") return null; // no expiry needed
+  if (docType === "vehicle_registration") return null;
   if (docType === "atp_certificate") return "month";
   return "date";
 }
 
 function normalizeExpiry(docType: string, value: string): string {
   if (docType === "atp_certificate" && value) {
-    // value is "YYYY-MM", convert to last day of month
     const [year, month] = value.split("-").map(Number);
     const lastDay = new Date(year, month, 0).getDate();
     return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   }
   return value;
+}
+
+function isExpiredOrExpiring(date: string | null): boolean {
+  if (!date) return false;
+  return differenceInDays(parseISO(date), new Date()) < 30;
 }
 
 export default function DriverDocuments() {
@@ -73,9 +77,14 @@ export default function DriverDocuments() {
   const [docExpiry, setDocExpiry] = useState("");
   const [deleteDoc, setDeleteDoc] = useState<VehicleDoc | null>(null);
   const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [renewDoc, setRenewDoc] = useState<VehicleDoc | null>(null);
+  const [renewExpiry, setRenewExpiry] = useState("");
+  const [renewFile, setRenewFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
+  const renewFileRef = useRef<HTMLInputElement>(null);
+  const renewCameraRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = async (vId: string) => {
     const { data } = await supabase
@@ -153,6 +162,42 @@ export default function DriverDocuments() {
     setReplacingDocId(null);
   };
 
+  const handleRenew = async () => {
+    if (!renewDoc || !renewFile || !vehicleId || !user) return;
+    if (!renewExpiry && getExpiryInputType(renewDoc.doc_type)) {
+      toast.error("Introduza a nova data de validade");
+      return;
+    }
+    setUploading(true);
+    const ext = renewFile.name.split(".").pop() || "jpg";
+    const path = `${vehicleId}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("vehicle-docs").upload(path, renewFile);
+    if (uploadError) { toast.error("Erro ao enviar: " + uploadError.message); setUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("vehicle-docs").getPublicUrl(path);
+    const newExpiry = normalizeExpiry(renewDoc.doc_type, renewExpiry) || null;
+    const { error } = await supabase.from("vehicle_documents").update({
+      file_url: urlData.publicUrl,
+      expiry_date: newExpiry,
+    } as any).eq("id", renewDoc.id);
+    if (error) { toast.error("Erro: " + error.message); }
+    else {
+      toast.success("Documento renovado com sucesso");
+      await fetchDocs(vehicleId);
+    }
+    setUploading(false);
+    setRenewDoc(null);
+    setRenewFile(null);
+    setRenewExpiry("");
+  };
+
+  const openRenewDialog = (doc: VehicleDoc) => {
+    setRenewDoc(doc);
+    setRenewFile(null);
+    setRenewExpiry("");
+  };
+
+  const expiryType = renewDoc ? getExpiryInputType(renewDoc.doc_type) : null;
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -228,45 +273,103 @@ export default function DriverDocuments() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {docs.map((doc) => (
-            <Card key={doc.id}>
-              <CardContent className="flex items-center justify-between py-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText className="h-8 w-8 text-primary shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{doc.name}</p>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      <Badge variant="secondary" className="text-xs">
-                        {docTypeLabels[doc.doc_type] || doc.doc_type}
-                      </Badge>
-                      <ExpiryBadge date={doc.expiry_date} docType={doc.doc_type} />
+          {docs.map((doc) => {
+            const expiring = isExpiredOrExpiring(doc.expiry_date);
+            return (
+              <Card key={doc.id} className={expiring ? "border-destructive/40" : ""}>
+                <CardContent className="flex items-center justify-between py-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-8 w-8 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{doc.name}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <Badge variant="secondary" className="text-xs">
+                          {docTypeLabels[doc.doc_type] || doc.doc_type}
+                        </Badge>
+                        <ExpiryBadge date={doc.expiry_date} docType={doc.doc_type} />
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="mr-1 h-3 w-3" />Abrir
-                    </a>
-                  </Button>
-                  {doc.uploaded_by === user?.id && (
-                    <>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setReplacingDocId(doc.id); replaceInputRef.current?.click(); }} title="Substituir ficheiro">
-                        <Upload className="h-4 w-4" />
+                  <div className="flex gap-1 shrink-0">
+                    {expiring && doc.doc_type !== "vehicle_registration" && (
+                      <Button variant="default" size="sm" className="gap-1" onClick={() => openRenewDialog(doc)}>
+                        <RefreshCw className="h-3 w-3" />Renovar
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDoc(doc)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    )}
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="mr-1 h-3 w-3" />Abrir
+                      </a>
+                    </Button>
+                    {doc.uploaded_by === user?.id && (
+                      <>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setReplacingDocId(doc.id); replaceInputRef.current?.click(); }} title="Substituir ficheiro">
+                          <Upload className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDeleteDoc(doc)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
       <input ref={replaceInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => { if (e.target.files?.[0]) handleReplace(e.target.files[0]); }} />
+
+      {/* Renew Dialog */}
+      <Dialog open={!!renewDoc} onOpenChange={(o) => { if (!o) { setRenewDoc(null); setRenewFile(null); setRenewExpiry(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-primary" />
+              Renovar Documento
+            </DialogTitle>
+          </DialogHeader>
+          {renewDoc && (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-sm font-medium">{renewDoc.name}</p>
+                <p className="text-xs text-muted-foreground">{docTypeLabels[renewDoc.doc_type] || renewDoc.doc_type}</p>
+              </div>
+
+              {expiryType && (
+                <div>
+                  <Label>{renewDoc.doc_type === "atp_certificate" ? "Nova Validade (Mês/Ano)" : "Nova Data de Validade"}</Label>
+                  <Input
+                    type={expiryType}
+                    value={renewExpiry}
+                    onChange={e => setRenewExpiry(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div>
+                <Label>Novo Ficheiro</Label>
+                <div className="flex gap-2 mt-1">
+                  <input ref={renewFileRef} type="file" accept="image/*,.pdf" className="hidden" onChange={e => { if (e.target.files?.[0]) setRenewFile(e.target.files[0]); }} />
+                  <input ref={renewCameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { if (e.target.files?.[0]) setRenewFile(e.target.files[0]); }} />
+                  <Button type="button" variant="outline" size="sm" onClick={() => renewFileRef.current?.click()}>
+                    <Upload className="mr-1 h-3 w-3" />Ficheiro
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => renewCameraRef.current?.click()}>
+                    <Camera className="mr-1 h-3 w-3" />Câmara
+                  </Button>
+                </div>
+                {renewFile && <p className="text-xs text-muted-foreground mt-1 truncate">{renewFile.name}</p>}
+              </div>
+
+              <Button onClick={handleRenew} disabled={uploading || !renewFile} className="w-full">
+                {uploading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />A renovar...</> : "Renovar Documento"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteDoc} onOpenChange={(o) => !o && setDeleteDoc(null)}>
         <AlertDialogContent>
