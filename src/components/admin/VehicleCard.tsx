@@ -27,6 +27,7 @@ interface Vehicle {
   reefer_set_point_1?: number | null;
   reefer_set_point_2?: number | null;
   adblue_level_percent?: number | null;
+  mobile_number?: string | null;
 }
 
 interface Trailer {
