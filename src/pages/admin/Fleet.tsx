@@ -28,6 +28,7 @@ interface Vehicle {
   odometer_km: number | null;
   engine_hours: number | null;
   client_id: string | null;
+  mobile_number: string | null;
 }
 
 interface ClientOption {
