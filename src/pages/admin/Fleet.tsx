@@ -408,6 +408,7 @@ export default function Fleet() {
             <TableHeader>
               <TableRow>
                 <TableHead>Matrícula</TableHead>
+                <TableHead>Nº Móvel</TableHead>
                 <TableHead>Marca/Modelo</TableHead>
                 <TableHead>Cliente</TableHead>
                 <TableHead>Seguro</TableHead>
