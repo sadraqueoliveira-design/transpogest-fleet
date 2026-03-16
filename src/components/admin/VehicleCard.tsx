@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   Truck, Navigation, Fuel, Gauge, Snowflake, CreditCard, Clock,
-  Activity, Droplets, AlertTriangle, MapPin
+  Activity, Droplets, AlertTriangle, MapPin, Phone
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { pt } from "date-fns/locale";
@@ -27,6 +27,7 @@ interface Vehicle {
   reefer_set_point_1?: number | null;
   reefer_set_point_2?: number | null;
   adblue_level_percent?: number | null;
+  mobile_number?: string | null;
 }
 
 interface Trailer {
@@ -112,6 +113,12 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
                 {linkedTrailer && (
                   <p className="text-[10px] font-medium text-primary mt-0.5">
                     🔗 {linkedTrailer.plate} {linkedTrailer.internal_id ? `(${linkedTrailer.internal_id})` : ""}
+                  </p>
+                )}
+                {v.mobile_number && (
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                    <Phone className="h-3 w-3" />
+                    Móvel: {v.mobile_number}
                   </p>
                 )}
               </div>
