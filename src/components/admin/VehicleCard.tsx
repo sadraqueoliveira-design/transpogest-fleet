@@ -115,6 +115,12 @@ export default function VehicleCard({ vehicle: v, hasAlert, clientName, linkedTr
                     🔗 {linkedTrailer.plate} {linkedTrailer.internal_id ? `(${linkedTrailer.internal_id})` : ""}
                   </p>
                 )}
+                {v.mobile_number && (
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                    <Phone className="h-3 w-3" />
+                    Móvel: {v.mobile_number}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-col items-end gap-1">
