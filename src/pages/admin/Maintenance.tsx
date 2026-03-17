@@ -370,7 +370,10 @@ export default function Maintenance() {
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
       if (categoryFilter.length > 0) {
-        if (!categoryFilter.some(cat => vehicleSchedules[cat])) return false;
+        if (!categoryFilter.some(cat => {
+          const s = vehicleSchedules[cat];
+          return s && getScheduleDaysRemaining(s, vehicle.engine_hours) !== null;
+        })) return false;
       }
 
       return true;
