@@ -221,6 +221,70 @@ export default function DriverRequests() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Request History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Histórico de Pedidos</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Sem pedidos anteriores</p>
+          ) : (
+            history.map((r) => {
+              const sc = statusConfig[r.status] || statusConfig.pending;
+              const StatusIcon = sc.icon;
+              const atts: string[] = r.details?.attachments || [];
+              return (
+                <div key={r.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card">
+                  <StatusIcon className={`h-5 w-5 shrink-0 mt-0.5 ${
+                    r.status === "approved" ? "text-success" : r.status === "rejected" ? "text-destructive" : "text-warning"
+                  }`} />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs">{typeMap[r.type] || r.type}</Badge>
+                      <Badge variant={sc.variant} className="text-xs">{sc.label}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-0.5">
+                      {r.details?.reason && <p>{r.details.reason}</p>}
+                      {r.details?.start_date && (
+                        <p>{r.details.start_date}{r.details.end_date ? ` → ${r.details.end_date}` : ""}</p>
+                      )}
+                      {r.details?.notes && <p className="line-clamp-1">{r.details.notes}</p>}
+                    </div>
+                    {atts.length > 0 && (
+                      <div className="flex gap-1 mt-1">
+                        {atts.slice(0, 4).map((url: string, i: number) => (
+                          <button key={i} onClick={() => setPreviewUrl(url)}
+                            className="h-8 w-8 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all">
+                            <img src={url} alt="" className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                        {atts.length > 4 && <span className="text-xs text-muted-foreground self-center">+{atts.length - 4}</span>}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground/60">
+                      {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Image Preview Dialog */}
+      <Dialog open={!!previewUrl} onOpenChange={() => setPreviewUrl(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Comprovativo</DialogTitle></DialogHeader>
+          {previewUrl && <img src={previewUrl} alt="Comprovativo" className="w-full rounded-md" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
