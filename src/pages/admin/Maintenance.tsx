@@ -78,7 +78,7 @@ const ALIASES: Record<string, string[]> = {
   date_scheduled: ["date_scheduled", "data", "data agendada"],
 };
 
-type ScheduleStatus = "expired" | "urgent" | "upcoming" | "ok";
+type ScheduleStatus = "expired" | "critical" | "urgent" | "upcoming" | "ok";
 
 function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
   if (schedule.category === "lavagem" && schedule.last_service_date) {
@@ -95,6 +95,7 @@ function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
 function getScheduleStatus(daysRemaining: number | null): ScheduleStatus | null {
   if (daysRemaining === null) return null;
   if (daysRemaining < 0) return "expired";
+  if (daysRemaining <= 15) return "critical";
   if (daysRemaining <= 30) return "urgent";
   if (daysRemaining <= 90) return "upcoming";
   return "ok";
@@ -359,7 +360,9 @@ export default function Maintenance() {
       if (scheduleValues.length === 0) return false;
       return scheduleValues.some((schedule) => {
         const daysRemaining = getScheduleDaysRemaining(schedule);
-        return getScheduleStatus(daysRemaining) === activeStatusFilter;
+        const status = getScheduleStatus(daysRemaining);
+        if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
+        return status === activeStatusFilter;
       });
     });
   }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter, hubFilter]);
@@ -371,17 +374,18 @@ export default function Maintenance() {
 
   // Summary stats
   const stats = useMemo(() => {
-    let expired = 0, urgent = 0, upcoming = 0, ok = 0;
+    let expired = 0, critical = 0, urgent = 0, upcoming = 0, ok = 0;
 
     schedules.forEach((schedule) => {
       const status = getScheduleStatus(getScheduleDaysRemaining(schedule));
       if (status === "expired") expired++;
+      else if (status === "critical") critical++;
       else if (status === "urgent") urgent++;
       else if (status === "upcoming") upcoming++;
       else if (status === "ok") ok++;
     });
 
-    return { expired, urgent, upcoming, ok };
+    return { expired, critical, urgent, upcoming, ok };
   }, [schedules]);
 
   const handleEdit = (vehicleId: string, category: string, current?: ScheduleRow) => {
@@ -605,8 +609,8 @@ export default function Maintenance() {
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-8 w-8 text-destructive" />
             <div>
-              <p className="text-2xl font-bold text-destructive">{stats.expired}</p>
-              <p className="text-xs text-muted-foreground">Expirados</p>
+              <p className="text-2xl font-bold text-destructive">{stats.expired + stats.critical}</p>
+              <p className="text-xs text-muted-foreground">Expirados / Críticos</p>
             </div>
           </CardContent>
         </Card>
@@ -618,7 +622,7 @@ export default function Maintenance() {
             <Clock className="h-8 w-8 text-orange-600" />
             <div>
               <p className="text-2xl font-bold text-orange-600">{stats.urgent}</p>
-              <p className="text-xs text-muted-foreground">Urgentes (&lt;30d)</p>
+              <p className="text-xs text-muted-foreground">Urgentes (16-30d)</p>
             </div>
           </CardContent>
         </Card>
