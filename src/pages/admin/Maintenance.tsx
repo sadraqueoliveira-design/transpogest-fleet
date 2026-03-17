@@ -360,7 +360,9 @@ export default function Maintenance() {
       if (scheduleValues.length === 0) return false;
       return scheduleValues.some((schedule) => {
         const daysRemaining = getScheduleDaysRemaining(schedule);
-        return getScheduleStatus(daysRemaining) === activeStatusFilter;
+        const status = getScheduleStatus(daysRemaining);
+        if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
+        return status === activeStatusFilter;
       });
     });
   }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter, hubFilter]);
