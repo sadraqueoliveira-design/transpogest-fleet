@@ -107,6 +107,15 @@ export default function DriverRequests() {
     setLoading(false);
   };
 
+  const cancelRequest = async (id: string) => {
+    const { error } = await supabase.from("service_requests").delete().eq("id", id).eq("driver_id", user?.id).eq("status", "pending");
+    if (error) toast.error("Erro ao cancelar pedido");
+    else {
+      toast.success("Pedido cancelado");
+      fetchHistory();
+    }
+  };
+
   const showDateFields = ["Vacation", "Absence", "SickLeave", "Insurance"].includes(type);
   const showAttachments = ["Absence", "SickLeave", "Insurance", "Document", "Other"].includes(type);
 
