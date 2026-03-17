@@ -171,9 +171,21 @@ function ScheduleCell({
     (activeStatusFilter === "expired" && (cellStatus === "expired" || cellStatus === "critical")) ||
     cellStatus === activeStatusFilter;
 
+  // When a status filter is active and this cell doesn't match, show a clean dash
+  if (!isMatch) {
+    return (
+      <TableCell 
+        className="text-center cursor-pointer hover:bg-muted/50 transition-colors p-1 border bg-muted/10"
+        onClick={() => onEdit(vehicle.id, category.key, schedule)}
+      >
+        <span className="text-muted-foreground/40 text-xs">—</span>
+      </TableCell>
+    );
+  }
+
   return (
     <TableCell 
-      className={`text-center cursor-pointer transition-colors p-1 border ${isMatch ? status.color : "bg-muted/30 text-muted-foreground"}`}
+      className={`text-center cursor-pointer transition-colors p-1 border ${status.color}`}
       onClick={() => onEdit(vehicle.id, category.key, schedule)}
     >
       <div className="flex flex-col items-center gap-0.5">
