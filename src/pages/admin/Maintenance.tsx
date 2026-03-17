@@ -366,7 +366,7 @@ export default function Maintenance() {
       const scheduleValues = Object.values(vehicleSchedules);
       if (scheduleValues.length === 0) return false;
       return scheduleValues.some((schedule) => {
-        const daysRemaining = getScheduleDaysRemaining(schedule);
+        const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
         const status = getScheduleStatus(daysRemaining);
         if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
         return status === activeStatusFilter;
