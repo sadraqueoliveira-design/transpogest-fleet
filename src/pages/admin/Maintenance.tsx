@@ -78,7 +78,7 @@ const ALIASES: Record<string, string[]> = {
   date_scheduled: ["date_scheduled", "data", "data agendada"],
 };
 
-type ScheduleStatus = "expired" | "urgent" | "upcoming" | "ok";
+type ScheduleStatus = "expired" | "critical" | "urgent" | "upcoming" | "ok";
 
 function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
   if (schedule.category === "lavagem" && schedule.last_service_date) {
