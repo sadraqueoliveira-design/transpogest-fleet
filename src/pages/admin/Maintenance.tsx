@@ -121,12 +121,14 @@ function ScheduleCell({
   schedule, 
   vehicle, 
   category, 
-  onEdit 
+  onEdit,
+  activeStatusFilter = "all"
 }: { 
   schedule: ScheduleRow | undefined; 
   vehicle: Vehicle;
   category: typeof CATEGORIES[number];
   onEdit: (vehicleId: string, category: string, current: ScheduleRow | undefined) => void;
+  activeStatusFilter?: "all" | ScheduleStatus;
 }) {
   if (!schedule) {
     return (
