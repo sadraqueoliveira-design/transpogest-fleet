@@ -80,9 +80,16 @@ const ALIASES: Record<string, string[]> = {
 
 type ScheduleStatus = "expired" | "critical" | "urgent" | "upcoming" | "ok";
 
-function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
+function getScheduleDaysRemaining(schedule: ScheduleRow, vehicleEngineHours?: number | null): number | null {
   if (schedule.category === "lavagem" && schedule.last_service_date) {
     return 30 - differenceInDays(new Date(), parseISO(schedule.last_service_date));
+  }
+
+  // Handle hours-based categories (e.g. "Revisão Horas")
+  if (schedule.category.toLowerCase() === "revisão horas" && schedule.next_due_hours != null) {
+    const currentHours = vehicleEngineHours || 0;
+    const hoursRemaining = schedule.next_due_hours - currentHours;
+    return Math.round(hoursRemaining / 8);
   }
 
   if (schedule.next_due_date) {
@@ -359,7 +366,7 @@ export default function Maintenance() {
       const scheduleValues = Object.values(vehicleSchedules);
       if (scheduleValues.length === 0) return false;
       return scheduleValues.some((schedule) => {
-        const daysRemaining = getScheduleDaysRemaining(schedule);
+        const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
         const status = getScheduleStatus(daysRemaining);
         if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
         return status === activeStatusFilter;
@@ -372,12 +379,25 @@ export default function Maintenance() {
     return hubs.filter(h => h.client_id === clientFilter);
   }, [hubs, clientFilter]);
 
-  // Summary stats
+  // Vehicle lookup by ID for engine_hours access
+  const vehicleLookup = useMemo(() => {
+    const map: Record<string, Vehicle> = {};
+    vehicles.forEach(v => { map[v.id] = v; });
+    return map;
+  }, [vehicles]);
+
+  // Summary stats — filtered by active filters, includes hours-based schedules
   const stats = useMemo(() => {
     let expired = 0, critical = 0, urgent = 0, upcoming = 0, ok = 0;
 
+    // Get filtered vehicle IDs to match what the grid shows
+    const filteredIds = new Set(filteredVehicles.map(v => v.id));
+
     schedules.forEach((schedule) => {
-      const status = getScheduleStatus(getScheduleDaysRemaining(schedule));
+      if (!filteredIds.has(schedule.vehicle_id)) return;
+      if (categoryFilter.length > 0 && !categoryFilter.includes(schedule.category)) return;
+      const vehicle = vehicleLookup[schedule.vehicle_id];
+      const status = getScheduleStatus(getScheduleDaysRemaining(schedule, vehicle?.engine_hours));
       if (status === "expired") expired++;
       else if (status === "critical") critical++;
       else if (status === "urgent") urgent++;
@@ -386,7 +406,7 @@ export default function Maintenance() {
     });
 
     return { expired, critical, urgent, upcoming, ok };
-  }, [schedules]);
+  }, [schedules, filteredVehicles, vehicleLookup, categoryFilter]);
 
   const handleEdit = (vehicleId: string, category: string, current?: ScheduleRow) => {
     setEditDialog({ vehicleId, category, current });
