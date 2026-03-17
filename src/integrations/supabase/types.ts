@@ -1535,7 +1535,14 @@ export type Database = {
       maintenance_status: "pending" | "in_progress" | "completed"
       maintenance_type: "preventive" | "corrective"
       request_status: "pending" | "approved" | "rejected"
-      request_type: "Uniform" | "Vacation" | "Document" | "Other"
+      request_type:
+        | "Uniform"
+        | "Vacation"
+        | "Document"
+        | "Other"
+        | "Absence"
+        | "SickLeave"
+        | "Insurance"
       route_status: "planned" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -1678,7 +1685,15 @@ export const Constants = {
       maintenance_status: ["pending", "in_progress", "completed"],
       maintenance_type: ["preventive", "corrective"],
       request_status: ["pending", "approved", "rejected"],
-      request_type: ["Uniform", "Vacation", "Document", "Other"],
+      request_type: [
+        "Uniform",
+        "Vacation",
+        "Document",
+        "Other",
+        "Absence",
+        "SickLeave",
+        "Insurance",
+      ],
       route_status: ["planned", "in_progress", "completed", "cancelled"],
     },
   },
