@@ -101,6 +101,7 @@ export default function DriverRequests() {
       toast.success("Pedido enviado com sucesso!");
       setDetails({});
       setAttachments([]);
+      fetchHistory();
     }
     setLoading(false);
   };
