@@ -844,6 +844,7 @@ export default function Maintenance() {
                               vehicle={v}
                               category={c}
                               onEdit={handleEdit}
+                              activeStatusFilter={activeStatusFilter}
                             />
                           ))}
                         </TableRow>
