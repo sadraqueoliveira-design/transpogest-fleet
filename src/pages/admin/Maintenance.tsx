@@ -95,6 +95,7 @@ function getScheduleDaysRemaining(schedule: ScheduleRow): number | null {
 function getScheduleStatus(daysRemaining: number | null): ScheduleStatus | null {
   if (daysRemaining === null) return null;
   if (daysRemaining < 0) return "expired";
+  if (daysRemaining <= 15) return "critical";
   if (daysRemaining <= 30) return "urgent";
   if (daysRemaining <= 90) return "upcoming";
   return "ok";
