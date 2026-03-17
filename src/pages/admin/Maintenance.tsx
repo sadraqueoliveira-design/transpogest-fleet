@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -171,9 +171,21 @@ function ScheduleCell({
     (activeStatusFilter === "expired" && (cellStatus === "expired" || cellStatus === "critical")) ||
     cellStatus === activeStatusFilter;
 
+  // When a status filter is active and this cell doesn't match, show a clean dash
+  if (!isMatch) {
+    return (
+      <TableCell 
+        className="text-center cursor-pointer hover:bg-muted/50 transition-colors p-1 border bg-muted/10"
+        onClick={() => onEdit(vehicle.id, category.key, schedule)}
+      >
+        <span className="text-muted-foreground/40 text-xs">—</span>
+      </TableCell>
+    );
+  }
+
   return (
     <TableCell 
-      className={`text-center cursor-pointer transition-colors p-1 border ${isMatch ? status.color : "bg-muted/30 text-muted-foreground"}`}
+      className={`text-center cursor-pointer transition-colors p-1 border ${status.color}`}
       onClick={() => onEdit(vehicle.id, category.key, schedule)}
     >
       <div className="flex flex-col items-center gap-0.5">
@@ -392,22 +404,49 @@ export default function Maintenance() {
     return { expired, critical, urgent, upcoming, ok };
   }, [schedules, baseFilteredVehicles, vehicleLookup, categoryFilter]);
 
-  // Visible vehicles: base + status filter (for the grid only)
-  const filteredVehicles = useMemo(() => {
-    if (activeStatusFilter === "all") return baseFilteredVehicles;
+  // Helper: get the worst (lowest) severity score for a vehicle's schedules
+  const getVehicleWorstSeverity = useCallback((vehicle: Vehicle): number => {
+    const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+    const scheduleValues = Object.values(vehicleSchedules);
+    if (scheduleValues.length === 0) return 999; // no schedules = bottom
+    let worst = 999;
+    for (const schedule of scheduleValues) {
+      const days = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
+      const status = getScheduleStatus(days);
+      const score = status === "expired" ? 0 : status === "critical" ? 1 : status === "urgent" ? 2 : status === "upcoming" ? 3 : status === "ok" ? 4 : 5;
+      if (score < worst) worst = score;
+    }
+    return worst;
+  }, [scheduleLookup]);
 
-    return baseFilteredVehicles.filter((vehicle) => {
-      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
-      const scheduleValues = Object.values(vehicleSchedules);
-      if (scheduleValues.length === 0) return false;
-      return scheduleValues.some((schedule) => {
-        const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
-        const status = getScheduleStatus(daysRemaining);
-        if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
-        return status === activeStatusFilter;
+  // Visible vehicles: base + status filter (for the grid only), sorted by severity
+  const filteredVehicles = useMemo(() => {
+    let result: Vehicle[];
+    if (activeStatusFilter === "all") {
+      result = [...baseFilteredVehicles];
+    } else {
+      result = baseFilteredVehicles.filter((vehicle) => {
+        const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+        const scheduleValues = Object.values(vehicleSchedules);
+        if (scheduleValues.length === 0) return false;
+        return scheduleValues.some((schedule) => {
+          const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
+          const status = getScheduleStatus(daysRemaining);
+          if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
+          return status === activeStatusFilter;
+        });
       });
-    });
-  }, [baseFilteredVehicles, scheduleLookup, activeStatusFilter]);
+    }
+    // Sort by worst severity (most critical first)
+    result.sort((a, b) => getVehicleWorstSeverity(a) - getVehicleWorstSeverity(b));
+    return result;
+  }, [baseFilteredVehicles, scheduleLookup, activeStatusFilter, getVehicleWorstSeverity]);
+
+  // Auto-scroll to top of table when filters change
+  const tableRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [activeStatusFilter, clientFilter, hubFilter, categoryFilter, search]);
 
   const filteredHubs = useMemo(() => {
     if (clientFilter === "all") return hubs;
@@ -791,7 +830,14 @@ export default function Maintenance() {
             <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
           </div>
 
-          <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Mostrando <span className="font-semibold text-foreground">{filteredVehicles.length}</span> de <span className="font-semibold text-foreground">{baseFilteredVehicles.length}</span> veículos
+              {activeStatusFilter !== "all" && <span className="ml-1">(filtro de status ativo)</span>}
+            </p>
+          </div>
+
+          <Card ref={tableRef}>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
