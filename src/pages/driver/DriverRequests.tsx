@@ -1,14 +1,27 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Camera, ImagePlus, X, Loader2 } from "lucide-react";
+import { Camera, ImagePlus, X, Loader2, Clock, CheckCircle2, XCircle, Eye } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+const typeMap: Record<string, string> = {
+  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta",
+  SickLeave: "Baixa Médica", Insurance: "Seguro", Document: "Documento", Other: "Outro",
+};
+
+const statusConfig: Record<string, { label: string; icon: typeof Clock; variant: "default" | "secondary" | "destructive" }> = {
+  pending: { label: "Pendente", icon: Clock, variant: "default" },
+  approved: { label: "Aprovado", icon: CheckCircle2, variant: "secondary" },
+  rejected: { label: "Rejeitado", icon: XCircle, variant: "destructive" },
+};
 
 export default function DriverRequests() {
   const { user } = useAuth();
@@ -17,8 +30,25 @@ export default function DriverRequests() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchHistory = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("service_requests")
+      .select("*")
+      .eq("driver_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setHistory(data);
+    setHistoryLoading(false);
+  };
+
+  useEffect(() => { fetchHistory(); }, [user]);
 
   const uploadFile = async (file: File) => {
     if (!user) return null;
@@ -71,6 +101,7 @@ export default function DriverRequests() {
       toast.success("Pedido enviado com sucesso!");
       setDetails({});
       setAttachments([]);
+      fetchHistory();
     }
     setLoading(false);
   };
@@ -190,6 +221,70 @@ export default function DriverRequests() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Request History */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Histórico de Pedidos</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">Sem pedidos anteriores</p>
+          ) : (
+            history.map((r) => {
+              const sc = statusConfig[r.status] || statusConfig.pending;
+              const StatusIcon = sc.icon;
+              const atts: string[] = r.details?.attachments || [];
+              return (
+                <div key={r.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card">
+                  <StatusIcon className={`h-5 w-5 shrink-0 mt-0.5 ${
+                    r.status === "approved" ? "text-success" : r.status === "rejected" ? "text-destructive" : "text-warning"
+                  }`} />
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs">{typeMap[r.type] || r.type}</Badge>
+                      <Badge variant={sc.variant} className="text-xs">{sc.label}</Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-0.5">
+                      {r.details?.reason && <p>{r.details.reason}</p>}
+                      {r.details?.start_date && (
+                        <p>{r.details.start_date}{r.details.end_date ? ` → ${r.details.end_date}` : ""}</p>
+                      )}
+                      {r.details?.notes && <p className="line-clamp-1">{r.details.notes}</p>}
+                    </div>
+                    {atts.length > 0 && (
+                      <div className="flex gap-1 mt-1">
+                        {atts.slice(0, 4).map((url: string, i: number) => (
+                          <button key={i} onClick={() => setPreviewUrl(url)}
+                            className="h-8 w-8 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all">
+                            <img src={url} alt="" className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                        {atts.length > 4 && <span className="text-xs text-muted-foreground self-center">+{atts.length - 4}</span>}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground/60">
+                      {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Image Preview Dialog */}
+      <Dialog open={!!previewUrl} onOpenChange={() => setPreviewUrl(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>Comprovativo</DialogTitle></DialogHeader>
+          {previewUrl && <img src={previewUrl} alt="Comprovativo" className="w-full rounded-md" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
