@@ -81,12 +81,14 @@ const ALIASES: Record<string, string[]> = {
 type ScheduleStatus = "expired" | "critical" | "urgent" | "upcoming" | "ok";
 
 function getScheduleDaysRemaining(schedule: ScheduleRow, vehicleEngineHours?: number | null): number | null {
-  if (schedule.category === "lavagem" && schedule.last_service_date) {
+  const cat = schedule.category?.trim().toLowerCase();
+
+  if (cat === "lavagem" && schedule.last_service_date) {
     return 30 - differenceInDays(new Date(), parseISO(schedule.last_service_date));
   }
 
   // Handle hours-based categories (e.g. "Revisão Horas")
-  if (schedule.category.toLowerCase() === "revisão horas" && schedule.next_due_hours != null) {
+  if (cat === "revisão horas" && schedule.next_due_hours != null) {
     const currentHours = vehicleEngineHours || 0;
     const hoursRemaining = schedule.next_due_hours - currentHours;
     return Math.round(hoursRemaining / 8);
