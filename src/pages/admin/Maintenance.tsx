@@ -425,7 +425,7 @@ export default function Maintenance() {
   // Visible vehicles: base + status filter (for the grid only), sorted by severity
   const filteredVehicles = useMemo(() => {
     // Determine which categories are currently visible in the grid
-    const visibleCategories = categoryFilter.length > 0 ? categoryFilter : CATEGORIES;
+    const visibleCategories = categoryFilter.length > 0 ? categoryFilter : CATEGORIES.map(c => c.key);
 
     let result: Vehicle[];
     if (activeStatusFilter === "all") {
