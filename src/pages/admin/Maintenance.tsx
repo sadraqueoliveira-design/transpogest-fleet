@@ -345,48 +345,25 @@ export default function Maintenance() {
     return lookup;
   }, [schedules]);
 
-  // Filter vehicles that have schedule data, match search and optional status filter
-  const filteredVehicles = useMemo(() => {
+  // Base filtered vehicles: search + client + hub + category (NO status filter)
+  const baseFilteredVehicles = useMemo(() => {
     const q = search.trim().toLowerCase();
 
     return vehicles.filter((vehicle) => {
       const matchesSearch = !q || vehicle.plate.toLowerCase().includes(q) || (vehicle.mobile_number && vehicle.mobile_number.toLowerCase().includes(q));
       if (!matchesSearch) return false;
 
-      // Client filter
-      if (clientFilter !== "all") {
-        if (vehicle.client_id !== clientFilter) return false;
-      }
-
-      // Hub filter
-      if (hubFilter !== "all") {
-        if (vehicle.hub_id !== hubFilter) return false;
-      }
+      if (clientFilter !== "all" && vehicle.client_id !== clientFilter) return false;
+      if (hubFilter !== "all" && vehicle.hub_id !== hubFilter) return false;
 
       const vehicleSchedules = scheduleLookup[vehicle.id] || {};
-
-      // Category filter: only show vehicles that have a record in any selected category
       if (categoryFilter.length > 0) {
         if (!categoryFilter.some(cat => vehicleSchedules[cat])) return false;
       }
 
-      if (activeStatusFilter === "all") return true;
-
-      const scheduleValues = Object.values(vehicleSchedules);
-      if (scheduleValues.length === 0) return false;
-      return scheduleValues.some((schedule) => {
-        const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
-        const status = getScheduleStatus(daysRemaining);
-        if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
-        return status === activeStatusFilter;
-      });
+      return true;
     });
-  }, [vehicles, scheduleLookup, search, activeStatusFilter, categoryFilter, clientFilter, hubFilter]);
-
-  const filteredHubs = useMemo(() => {
-    if (clientFilter === "all") return hubs;
-    return hubs.filter(h => h.client_id === clientFilter);
-  }, [hubs, clientFilter]);
+  }, [vehicles, scheduleLookup, search, categoryFilter, clientFilter, hubFilter]);
 
   // Vehicle lookup by ID for engine_hours access
   const vehicleLookup = useMemo(() => {
@@ -395,15 +372,13 @@ export default function Maintenance() {
     return map;
   }, [vehicles]);
 
-  // Summary stats — filtered by active filters, includes hours-based schedules
+  // Summary stats — based on baseFilteredVehicles (never affected by card click)
   const stats = useMemo(() => {
     let expired = 0, critical = 0, urgent = 0, upcoming = 0, ok = 0;
-
-    // Get filtered vehicle IDs to match what the grid shows
-    const filteredIds = new Set(filteredVehicles.map(v => v.id));
+    const baseIds = new Set(baseFilteredVehicles.map(v => v.id));
 
     schedules.forEach((schedule) => {
-      if (!filteredIds.has(schedule.vehicle_id)) return;
+      if (!baseIds.has(schedule.vehicle_id)) return;
       if (categoryFilter.length > 0 && !categoryFilter.includes(schedule.category)) return;
       const vehicle = vehicleLookup[schedule.vehicle_id];
       const status = getScheduleStatus(getScheduleDaysRemaining(schedule, vehicle?.engine_hours));
@@ -415,7 +390,29 @@ export default function Maintenance() {
     });
 
     return { expired, critical, urgent, upcoming, ok };
-  }, [schedules, filteredVehicles, vehicleLookup, categoryFilter]);
+  }, [schedules, baseFilteredVehicles, vehicleLookup, categoryFilter]);
+
+  // Visible vehicles: base + status filter (for the grid only)
+  const filteredVehicles = useMemo(() => {
+    if (activeStatusFilter === "all") return baseFilteredVehicles;
+
+    return baseFilteredVehicles.filter((vehicle) => {
+      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+      const scheduleValues = Object.values(vehicleSchedules);
+      if (scheduleValues.length === 0) return false;
+      return scheduleValues.some((schedule) => {
+        const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
+        const status = getScheduleStatus(daysRemaining);
+        if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
+        return status === activeStatusFilter;
+      });
+    });
+  }, [baseFilteredVehicles, scheduleLookup, activeStatusFilter]);
+
+  const filteredHubs = useMemo(() => {
+    if (clientFilter === "all") return hubs;
+    return hubs.filter(h => h.client_id === clientFilter);
+  }, [hubs, clientFilter]);
 
   const handleEdit = (vehicleId: string, category: string, current?: ScheduleRow) => {
     setEditDialog({ vehicleId, category, current });
