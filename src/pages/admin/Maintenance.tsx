@@ -424,15 +424,19 @@ export default function Maintenance() {
 
   // Visible vehicles: base + status filter (for the grid only), sorted by severity
   const filteredVehicles = useMemo(() => {
+    // Determine which categories are currently visible in the grid
+    const visibleCategories = categoryFilter.length > 0 ? categoryFilter : CATEGORIES;
+
     let result: Vehicle[];
     if (activeStatusFilter === "all") {
       result = [...baseFilteredVehicles];
     } else {
+      // Only check status for categories that are actually visible
       result = baseFilteredVehicles.filter((vehicle) => {
         const vehicleSchedules = scheduleLookup[vehicle.id] || {};
-        const scheduleValues = Object.values(vehicleSchedules);
-        if (scheduleValues.length === 0) return false;
-        return scheduleValues.some((schedule) => {
+        return visibleCategories.some((cat) => {
+          const schedule = vehicleSchedules[cat];
+          if (!schedule) return false;
           const daysRemaining = getScheduleDaysRemaining(schedule, vehicle.engine_hours);
           const status = getScheduleStatus(daysRemaining);
           if (activeStatusFilter === "expired") return status === "expired" || status === "critical";
@@ -440,10 +444,20 @@ export default function Maintenance() {
         });
       });
     }
+
+    // Remove vehicles where all visible columns are "—" (no useful data)
+    result = result.filter((vehicle) => {
+      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+      return visibleCategories.some((cat) => {
+        const schedule = vehicleSchedules[cat];
+        return schedule && getScheduleDaysRemaining(schedule, vehicle.engine_hours) !== null;
+      });
+    });
+
     // Sort by worst severity (most critical first)
     result.sort((a, b) => getVehicleWorstSeverity(a) - getVehicleWorstSeverity(b));
     return result;
-  }, [baseFilteredVehicles, scheduleLookup, activeStatusFilter, getVehicleWorstSeverity]);
+  }, [baseFilteredVehicles, scheduleLookup, activeStatusFilter, getVehicleWorstSeverity, categoryFilter]);
 
   // Auto-scroll to top of table when filters change
   const tableRef = useRef<HTMLDivElement>(null);
