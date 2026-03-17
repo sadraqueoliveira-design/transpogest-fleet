@@ -121,12 +121,14 @@ function ScheduleCell({
   schedule, 
   vehicle, 
   category, 
-  onEdit 
+  onEdit,
+  activeStatusFilter = "all"
 }: { 
   schedule: ScheduleRow | undefined; 
   vehicle: Vehicle;
   category: typeof CATEGORIES[number];
   onEdit: (vehicleId: string, category: string, current: ScheduleRow | undefined) => void;
+  activeStatusFilter?: "all" | ScheduleStatus;
 }) {
   if (!schedule) {
     return (
@@ -161,10 +163,15 @@ function ScheduleCell({
   }
 
   const status = getDaysStatus(daysRemaining);
+  const cellStatus = getScheduleStatus(daysRemaining);
+  
+  const isMatch = activeStatusFilter === "all" || 
+    (activeStatusFilter === "expired" && (cellStatus === "expired" || cellStatus === "critical")) ||
+    cellStatus === activeStatusFilter;
 
   return (
     <TableCell 
-      className={`text-center cursor-pointer transition-colors p-1 border ${status.color}`}
+      className={`text-center cursor-pointer transition-colors p-1 border ${isMatch ? status.color : "bg-muted/30 text-muted-foreground"}`}
       onClick={() => onEdit(vehicle.id, category.key, schedule)}
     >
       <div className="flex flex-col items-center gap-0.5">
@@ -837,6 +844,7 @@ export default function Maintenance() {
                               vehicle={v}
                               category={c}
                               onEdit={handleEdit}
+                              activeStatusFilter={activeStatusFilter}
                             />
                           ))}
                         </TableRow>
