@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Camera, ImagePlus, X, Loader2, Clock, CheckCircle2, XCircle, Eye } from "lucide-react";
+import { Camera, ImagePlus, X, Loader2, Clock, CheckCircle2, XCircle, Eye, Ban } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const typeMap: Record<string, string> = {
@@ -104,6 +105,15 @@ export default function DriverRequests() {
       fetchHistory();
     }
     setLoading(false);
+  };
+
+  const cancelRequest = async (id: string) => {
+    const { error } = await supabase.from("service_requests").delete().eq("id", id).eq("driver_id", user?.id).eq("status", "pending");
+    if (error) toast.error("Erro ao cancelar pedido");
+    else {
+      toast.success("Pedido cancelado");
+      fetchHistory();
+    }
   };
 
   const showDateFields = ["Vacation", "Absence", "SickLeave", "Insurance"].includes(type);
@@ -267,9 +277,30 @@ export default function DriverRequests() {
                         {atts.length > 4 && <span className="text-xs text-muted-foreground self-center">+{atts.length - 4}</span>}
                       </div>
                     )}
-                    <p className="text-xs text-muted-foreground/60">
-                      {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground/60">
+                        {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      {r.status === "pending" && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-destructive hover:text-destructive">
+                              <Ban className="h-3 w-3 mr-1" /> Cancelar
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
+                              <AlertDialogDescription>Esta ação é irreversível. O pedido será eliminado.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Não</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => cancelRequest(r.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sim, cancelar</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
