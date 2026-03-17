@@ -607,8 +607,8 @@ export default function Maintenance() {
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-8 w-8 text-destructive" />
             <div>
-              <p className="text-2xl font-bold text-destructive">{stats.expired}</p>
-              <p className="text-xs text-muted-foreground">Expirados</p>
+              <p className="text-2xl font-bold text-destructive">{stats.expired + stats.critical}</p>
+              <p className="text-xs text-muted-foreground">Expirados / Críticos</p>
             </div>
           </CardContent>
         </Card>
@@ -620,7 +620,7 @@ export default function Maintenance() {
             <Clock className="h-8 w-8 text-orange-600" />
             <div>
               <p className="text-2xl font-bold text-orange-600">{stats.urgent}</p>
-              <p className="text-xs text-muted-foreground">Urgentes (&lt;30d)</p>
+              <p className="text-xs text-muted-foreground">Urgentes (16-30d)</p>
             </div>
           </CardContent>
         </Card>
