@@ -372,17 +372,18 @@ export default function Maintenance() {
 
   // Summary stats
   const stats = useMemo(() => {
-    let expired = 0, urgent = 0, upcoming = 0, ok = 0;
+    let expired = 0, critical = 0, urgent = 0, upcoming = 0, ok = 0;
 
     schedules.forEach((schedule) => {
       const status = getScheduleStatus(getScheduleDaysRemaining(schedule));
       if (status === "expired") expired++;
+      else if (status === "critical") critical++;
       else if (status === "urgent") urgent++;
       else if (status === "upcoming") upcoming++;
       else if (status === "ok") ok++;
     });
 
-    return { expired, urgent, upcoming, ok };
+    return { expired, critical, urgent, upcoming, ok };
   }, [schedules]);
 
   const handleEdit = (vehicleId: string, category: string, current?: ScheduleRow) => {
