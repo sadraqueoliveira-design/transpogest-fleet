@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -8,28 +8,75 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { Camera, ImagePlus, X, Loader2 } from "lucide-react";
 
 export default function DriverRequests() {
   const { user } = useAuth();
   const [type, setType] = useState<string>("Uniform");
   const [details, setDetails] = useState<Record<string, string>>({});
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadFile = async (file: File) => {
+    if (!user) return null;
+    setUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage
+      .from("request-attachments")
+      .upload(path, file, { upsert: false });
+    setUploading(false);
+    if (error) {
+      toast.error("Erro ao carregar ficheiro");
+      return null;
+    }
+    const { data: urlData } = supabase.storage
+      .from("request-attachments")
+      .getPublicUrl(path);
+    return urlData.publicUrl;
+  };
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("Ficheiro demasiado grande (máx 10MB)");
+        continue;
+      }
+      const url = await uploadFile(file);
+      if (url) setAttachments((prev) => [...prev, url]);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    const payload: Record<string, any> = { ...details };
+    if (attachments.length > 0) payload.attachments = attachments;
+
     const { error } = await supabase.from("service_requests").insert({
       driver_id: user?.id,
       type: type as any,
-      details,
+      details: payload,
     });
     if (error) toast.error(error.message);
     else {
       toast.success("Pedido enviado com sucesso!");
       setDetails({});
+      setAttachments([]);
     }
     setLoading(false);
   };
+
+  const showDateFields = ["Vacation", "Absence", "SickLeave", "Insurance"].includes(type);
+  const showAttachments = ["Absence", "SickLeave", "Insurance", "Document", "Other"].includes(type);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -40,11 +87,14 @@ export default function DriverRequests() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label>Tipo de Pedido</Label>
-              <Select value={type} onValueChange={(v) => { setType(v); setDetails({}); }}>
+              <Select value={type} onValueChange={(v) => { setType(v); setDetails({}); setAttachments([]); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Uniform">Fardamento</SelectItem>
                   <SelectItem value="Vacation">Férias</SelectItem>
+                  <SelectItem value="Absence">Falta</SelectItem>
+                  <SelectItem value="SickLeave">Baixa Médica</SelectItem>
+                  <SelectItem value="Insurance">Seguro</SelectItem>
                   <SelectItem value="Document">Documento</SelectItem>
                   <SelectItem value="Other">Outro</SelectItem>
                 </SelectContent>
@@ -67,7 +117,7 @@ export default function DriverRequests() {
               </div>
             )}
 
-            {type === "Vacation" && (
+            {showDateFields && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Data Início</Label>
@@ -80,12 +130,61 @@ export default function DriverRequests() {
               </div>
             )}
 
+            {(type === "Absence" || type === "SickLeave" || type === "Insurance") && (
+              <div className="space-y-2">
+                <Label>Motivo</Label>
+                <Input
+                  value={details.reason || ""}
+                  onChange={(e) => setDetails({ ...details, reason: e.target.value })}
+                  placeholder={
+                    type === "SickLeave" ? "Ex: Consulta médica, hospitalização..."
+                    : type === "Insurance" ? "Ex: Acidente de trabalho, sinistro..."
+                    : "Ex: Motivo da falta..."
+                  }
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Observações</Label>
               <Textarea value={details.notes || ""} onChange={(e) => setDetails({ ...details, notes: e.target.value })} placeholder="Detalhes adicionais..." rows={3} />
             </div>
 
-            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+            {showAttachments && (
+              <div className="space-y-3">
+                <Label>Comprovativos</Label>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()} disabled={uploading}>
+                    <Camera className="h-4 w-4 mr-1" /> Câmara
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    <ImagePlus className="h-4 w-4 mr-1" /> Galeria
+                  </Button>
+                  {uploading && <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground" />}
+                </div>
+                <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+
+                {attachments.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {attachments.map((url, i) => (
+                      <div key={i} className="relative group rounded-md overflow-hidden border border-border">
+                        <img src={url} alt={`Anexo ${i + 1}`} className="w-full h-20 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(i)}
+                          className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" size="lg" disabled={loading || uploading}>
               {loading ? "A enviar..." : "Enviar Pedido"}
             </Button>
           </form>
