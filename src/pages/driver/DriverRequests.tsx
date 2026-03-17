@@ -277,9 +277,30 @@ export default function DriverRequests() {
                         {atts.length > 4 && <span className="text-xs text-muted-foreground self-center">+{atts.length - 4}</span>}
                       </div>
                     )}
-                    <p className="text-xs text-muted-foreground/60">
-                      {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground/60">
+                        {new Date(r.created_at).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      {r.status === "pending" && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-destructive hover:text-destructive">
+                              <Ban className="h-3 w-3 mr-1" /> Cancelar
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
+                              <AlertDialogDescription>Esta ação é irreversível. O pedido será eliminado.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Não</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => cancelRequest(r.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Sim, cancelar</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
