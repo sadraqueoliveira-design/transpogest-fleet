@@ -445,14 +445,16 @@ export default function Maintenance() {
       });
     }
 
-    // Remove vehicles where all visible columns are "—" (no useful data)
-    result = result.filter((vehicle) => {
-      const vehicleSchedules = scheduleLookup[vehicle.id] || {};
-      return visibleCategories.some((cat) => {
-        const schedule = vehicleSchedules[cat];
-        return schedule && getScheduleDaysRemaining(schedule, vehicle.engine_hours) !== null;
+    // Remove vehicles where all visible columns are "—" (only when filters are active)
+    if (activeStatusFilter !== "all" || categoryFilter.length > 0) {
+      result = result.filter((vehicle) => {
+        const vehicleSchedules = scheduleLookup[vehicle.id] || {};
+        return visibleCategories.some((cat) => {
+          const schedule = vehicleSchedules[cat];
+          return schedule && getScheduleDaysRemaining(schedule, vehicle.engine_hours) !== null;
+        });
       });
-    });
+    }
 
     // Sort by worst severity (most critical first)
     result.sort((a, b) => getVehicleWorstSeverity(a) - getVehicleWorstSeverity(b));
