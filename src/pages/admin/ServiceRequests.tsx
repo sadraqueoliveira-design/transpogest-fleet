@@ -4,12 +4,41 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Check, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Check, X, Paperclip, Eye } from "lucide-react";
 import { toast } from "sonner";
+
+const typeMap: Record<string, string> = {
+  Uniform: "Fardamento",
+  Vacation: "Férias",
+  Absence: "Falta",
+  SickLeave: "Baixa Médica",
+  Insurance: "Seguro",
+  Document: "Documento",
+  Other: "Outro",
+};
+
+const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+  pending: { label: "Pendente", variant: "default" },
+  approved: { label: "Aprovado", variant: "secondary" },
+  rejected: { label: "Rejeitado", variant: "destructive" },
+};
+
+function formatDetails(details: any, type: string): string {
+  if (!details) return "—";
+  const parts: string[] = [];
+  if (details.reason) parts.push(details.reason);
+  if (details.start_date && details.end_date) parts.push(`${details.start_date} → ${details.end_date}`);
+  else if (details.start_date) parts.push(`Início: ${details.start_date}`);
+  if (details.size) parts.push(`Tamanho: ${details.size}`);
+  if (details.notes) parts.push(details.notes);
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
 
 export default function ServiceRequests() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const fetchRequests = async () => {
     const { data } = await supabase
@@ -31,11 +60,9 @@ export default function ServiceRequests() {
     }
   };
 
-  const typeMap: Record<string, string> = { Uniform: "Fardamento", Vacation: "Férias", Document: "Documento", Other: "Outro" };
-  const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
-    pending: { label: "Pendente", variant: "default" },
-    approved: { label: "Aprovado", variant: "secondary" },
-    rejected: { label: "Rejeitado", variant: "destructive" },
+  const getAttachments = (details: any): string[] => {
+    if (!details?.attachments) return [];
+    return Array.isArray(details.attachments) ? details.attachments : [];
   };
 
   return (
@@ -52,37 +79,84 @@ export default function ServiceRequests() {
                 <TableHead>Motorista</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Detalhes</TableHead>
+                <TableHead>Anexos</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">A carregar...</TableCell></TableRow>
               ) : requests.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">Sem solicitações</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Sem solicitações</TableCell></TableRow>
               ) : (
-                requests.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell>{(r.profiles as any)?.full_name || "—"}</TableCell>
-                    <TableCell>{typeMap[r.type] || r.type}</TableCell>
-                    <TableCell className="max-w-[200px] truncate">{JSON.stringify(r.details)}</TableCell>
-                    <TableCell><Badge variant={statusMap[r.status]?.variant}>{statusMap[r.status]?.label}</Badge></TableCell>
-                    <TableCell>
-                      {r.status === "pending" && (
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-success" onClick={() => updateStatus(r.id, "approved")}><Check className="h-4 w-4" /></Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => updateStatus(r.id, "rejected")}><X className="h-4 w-4" /></Button>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                requests.map((r) => {
+                  const atts = getAttachments(r.details);
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{(r.profiles as any)?.full_name || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{typeMap[r.type] || r.type}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[250px]">
+                        <span className="text-sm text-muted-foreground line-clamp-2">
+                          {formatDetails(r.details, r.type)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {atts.length > 0 ? (
+                          <div className="flex gap-1 items-center">
+                            {atts.slice(0, 3).map((url: string, i: number) => (
+                              <button
+                                key={i}
+                                onClick={() => setPreviewUrl(url)}
+                                className="relative h-8 w-8 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+                              >
+                                <img src={url} alt="" className="h-full w-full object-cover" />
+                              </button>
+                            ))}
+                            {atts.length > 3 && (
+                              <span className="text-xs text-muted-foreground">+{atts.length - 3}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusMap[r.status]?.variant}>{statusMap[r.status]?.label}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {r.status === "pending" && (
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-success" onClick={() => updateStatus(r.id, "approved")}>
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => updateStatus(r.id, "rejected")}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={!!previewUrl} onOpenChange={() => setPreviewUrl(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Comprovativo</DialogTitle>
+          </DialogHeader>
+          {previewUrl && (
+            <img src={previewUrl} alt="Comprovativo" className="w-full rounded-md" />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
