@@ -12,6 +12,17 @@ import { toast } from "sonner";
 import { Camera, ImagePlus, X, Loader2, Clock, CheckCircle2, XCircle, Eye } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
+const typeMap: Record<string, string> = {
+  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta",
+  SickLeave: "Baixa Médica", Insurance: "Seguro", Document: "Documento", Other: "Outro",
+};
+
+const statusConfig: Record<string, { label: string; icon: typeof Clock; variant: "default" | "secondary" | "destructive" }> = {
+  pending: { label: "Pendente", icon: Clock, variant: "default" },
+  approved: { label: "Aprovado", icon: CheckCircle2, variant: "secondary" },
+  rejected: { label: "Rejeitado", icon: XCircle, variant: "destructive" },
+};
+
 export default function DriverRequests() {
   const { user } = useAuth();
   const [type, setType] = useState<string>("Uniform");
@@ -19,8 +30,25 @@ export default function DriverRequests() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchHistory = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("service_requests")
+      .select("*")
+      .eq("driver_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) setHistory(data);
+    setHistoryLoading(false);
+  };
+
+  useEffect(() => { fetchHistory(); }, [user]);
 
   const uploadFile = async (file: File) => {
     if (!user) return null;
