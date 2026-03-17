@@ -830,7 +830,14 @@ export default function Maintenance() {
             <span className="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-200 ml-2" /> OK
           </div>
 
-          <Card>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Mostrando <span className="font-semibold text-foreground">{filteredVehicles.length}</span> de <span className="font-semibold text-foreground">{baseFilteredVehicles.length}</span> veículos
+              {activeStatusFilter !== "all" && <span className="ml-1">(filtro de status ativo)</span>}
+            </p>
+          </div>
+
+          <Card ref={tableRef}>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <Table>
