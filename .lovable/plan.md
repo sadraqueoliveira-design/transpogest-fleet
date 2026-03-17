@@ -1,20 +1,43 @@
 
 
-# Filtro de categoria: mostrar só veículos com dados relevantes
+# Fix: Debounce removals to prevent TMX jitter from creating spurious events
 
-## Problema
-Quando se seleciona uma categoria (ex: "Rev. KM"), a grelha continua a mostrar veículos que têm um registo de schedule mas sem dados úteis (sem data, sem km). Resultado: muitas linhas com "—" que obrigam o utilizador a procurar os veículos que realmente importam.
+## Problem analysis
 
-## Causa
-Na linha 372-374 de `Maintenance.tsx`, o filtro verifica apenas se existe um registo de schedule para a categoria (`vehicleSchedules[cat]`), sem verificar se esse registo tem dados úteis (data, km ou horas preenchidos).
+Looking at the data for **BN-86-PD** and **42-HX-80**, both show the exact same pattern:
+- Multiple rapid `removed` events between 09:19 and 10:06 (every 5-10 minutes)
+- Then a `backfill` insertion at ~10:28/10:55
+- The driver actually inserted the card around 05:00-06:00
 
-## Correção em `src/pages/admin/Maintenance.tsx`
+The existing fixes (CARD-OVERRIDE, CARD-REMOVE-SUPPRESSED) don't help here because in these cases the **raw TMX itself** was reporting `card_present=false`. The system correctly recorded removals each sync cycle. Then when TMX finally showed the card again, it created a new backfill with the current TMX timestamp (10:28/10:55), losing the original 05:00-06:00 time forever.
 
-1. **Alterar o filtro de categoria em `baseFilteredVehicles`**: Em vez de `vehicleSchedules[cat]`, verificar se o schedule tem `daysRemaining != null` (ou seja, se tem dados reais calculáveis). Usar `getScheduleDaysRemaining()` para validar.
+The `lastRealInsertionMap` fallback at line 1309 also doesn't help because there was no prior `inserted` event recorded for today -- the card was already present when the sync started (pre-dawn), so the system never captured an insertion event.
 
-2. **Mesma lógica no filtro de status (`filteredVehicles`)**: Já usa `getScheduleDaysRemaining`, por isso está correto. Mas quando há filtro de categoria + status combinados, garantir que ambos são aplicados em conjunto.
+**Root causes**:
+1. No debounce on removals -- if TMX flickers `card_present` over 30-40 minutes, each sync creates a removal event
+2. No "first-seen" timestamp preserved -- when a card is first detected (no prior events), the first TMX timestamp should be preserved even through jitter cycles
 
-## Resultado esperado
-- Ao selecionar "Rev. KM", só aparecem veículos com data ou km definidos para essa categoria.
-- Menos linhas com "—", menos scroll, encontra-se o que se procura de imediato.
+## Solution
+
+### Change 1: Debounce removals (anti-flicker)
+In the removal logic (line 769), before creating a removal event, check if the vehicle already has multiple recent removals (last 60 minutes) in `card_events`. If there are ≥3 removals in the last hour without a corresponding insertion, this is TMX jitter -- suppress the removal and preserve `card_inserted_at`.
+
+Implementation: pre-fetch a `recentRemovalCountMap` alongside `lastRealRemovalMap` -- count removals per plate in the last 90 minutes. If count ≥ 2, suppress any new removal.
+
+### Change 2: Preserve earliest backfill timestamp
+When a backfill insertion is created and there's an existing `card_inserted_at` in the DB that is **earlier** than the current TMX timestamp, keep the earlier one. The backfill should represent "we first detected the card" -- if we already detected it earlier, that's the correct time.
+
+In the fallback chain (line 1309), add: if `result.isBackfill` and `existing.card_inserted_at` is from today and is earlier than the computed `insertionTime`, use `existing.card_inserted_at` instead.
+
+### File to change
+`supabase/functions/sync-trackit-data/index.ts`:
+
+1. **Near line 310**: Add query to count recent removals per plate (last 90 min) into `recentRemovalCountMap`
+2. **Line 769-783**: Before recording a removal, check `recentRemovalCountMap`. If ≥ 2 recent removals exist and no insertion between them, suppress this removal (treat as jitter)
+3. **Line 1309-1313**: After computing `insertionTime`, if this is a backfill and `existing.card_inserted_at` is from today and earlier, use the existing one
+
+### Expected outcome
+- Vehicles like BN-86-PD and 42-HX-80 will stop accumulating dozens of spurious removal events from TMX jitter
+- The `card_inserted_at` will stabilize at the first-detected timestamp instead of drifting forward
+- Real removals (single, clean transition) will still be recorded normally
 
