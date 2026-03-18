@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
 import InstallPrompt from "@/components/driver/InstallPrompt";
 import OfflineIndicator from "@/components/driver/OfflineIndicator";
+import UpdatePrompt from "@/components/driver/UpdatePrompt";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 
@@ -81,6 +82,9 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
       <main className="flex-1 p-4 pb-28">
         {children}
       </main>
+
+      {/* Update prompt */}
+      <UpdatePrompt />
 
       {/* Offline indicator */}
       <OfflineIndicator />

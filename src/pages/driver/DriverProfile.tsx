@@ -3,11 +3,30 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User, Hash, CheckCircle, Loader2 } from "lucide-react";
+import { LogOut, User, Hash, CheckCircle, Loader2, RefreshCw } from "lucide-react";
+import { useServiceWorker } from "@/hooks/useServiceWorker";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import SignatureUpload from "@/components/admin/SignatureUpload";
+
+function ForceRefreshButton() {
+  const { forceRefresh } = useServiceWorker();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    toast.info("A verificar atualizações...");
+    setTimeout(() => forceRefresh(), 500);
+  };
+
+  return (
+    <Button variant="outline" className="w-full" onClick={handleRefresh} disabled={refreshing}>
+      <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+      {refreshing ? "A atualizar..." : "Forçar Atualização"}
+    </Button>
+  );
+}
 
 export default function DriverProfile() {
   const { user, profile, role, signOut } = useAuth();
@@ -157,6 +176,8 @@ export default function DriverProfile() {
           onSaved={(url) => setSignatureUrl(url)}
         />
       )}
+
+      <ForceRefreshButton />
 
       <Button variant="outline" className="w-full text-destructive" onClick={signOut}>
         <LogOut className="mr-2 h-4 w-4" />Terminar Sessão
