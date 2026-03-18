@@ -1,16 +1,18 @@
 import { ReactNode, useState, useEffect } from "react";
+import { useServiceWorker } from "@/hooks/useServiceWorker";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap, History
+  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap, History, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import UpdatePrompt from "@/components/driver/UpdatePrompt";
 
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
@@ -31,6 +33,23 @@ const navItems = [
   { to: "/admin/compliance", icon: ShieldCheck, label: "Compliance" },
   { to: "/admin/auto-aprovacao", icon: Zap, label: "Auto-Aprovação" },
 ];
+
+function ForceRefreshSidebarButton() {
+  const { forceRefresh } = useServiceWorker();
+  const [refreshing, setRefreshing] = useState(false);
+  return (
+    <div className="px-3 pb-1">
+      <button
+        onClick={() => { setRefreshing(true); setTimeout(() => forceRefresh(), 500); }}
+        disabled={refreshing}
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+      >
+        <RefreshCw className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`} />
+        {refreshing ? "A atualizar..." : "Forçar Atualização"}
+      </button>
+    </div>
+  );
+}
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -108,6 +127,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
+        {/* Force refresh */}
+        {!collapsed && <ForceRefreshSidebarButton />}
+
         {/* Footer */}
         <div className="border-t border-sidebar-border p-3">
           <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
@@ -146,6 +168,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </Button>
           <span className="font-bold">TranspoGest</span>
         </header>
+        <UpdatePrompt />
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           {children}
         </main>
