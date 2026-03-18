@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import {
   LayoutDashboard, Truck, Route, Wrench, ClipboardList,
   FileText, Users, LogOut, ChevronLeft, ChevronRight, Menu,
-  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap, History
+  Building2, MapPin, CreditCard, Settings, Store, Fuel, ShieldAlert, ShieldCheck, Zap, History, RefreshCw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
