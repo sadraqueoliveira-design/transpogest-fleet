@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import UpdatePrompt from "@/components/driver/UpdatePrompt";
 
 const navItems = [
   { to: "/admin", icon: LayoutDashboard, label: "Painel" },
