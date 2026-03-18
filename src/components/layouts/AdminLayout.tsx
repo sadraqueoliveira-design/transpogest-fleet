@@ -34,6 +34,23 @@ const navItems = [
   { to: "/admin/auto-aprovacao", icon: Zap, label: "Auto-Aprovação" },
 ];
 
+function ForceRefreshSidebarButton() {
+  const { forceRefresh } = useServiceWorker();
+  const [refreshing, setRefreshing] = useState(false);
+  return (
+    <div className="px-3 pb-1">
+      <button
+        onClick={() => { setRefreshing(true); setTimeout(() => forceRefresh(), 500); }}
+        disabled={refreshing}
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-medium text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+      >
+        <RefreshCw className={`h-4 w-4 shrink-0 ${refreshing ? "animate-spin" : ""}`} />
+        {refreshing ? "A atualizar..." : "Forçar Atualização"}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
