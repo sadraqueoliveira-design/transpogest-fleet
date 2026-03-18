@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useServiceWorker } from "@/hooks/useServiceWorker";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Download } from "lucide-react";
@@ -5,8 +6,18 @@ import { hapticTap } from "@/lib/haptics";
 
 export default function UpdatePrompt() {
   const { needRefresh, updateApp } = useServiceWorker();
+  const [visible, setVisible] = useState(false);
 
-  if (!needRefresh) return null;
+  useEffect(() => {
+    if (needRefresh) {
+      setVisible(true);
+      const timer = setTimeout(() => setVisible(false), 10000);
+      return () => clearTimeout(timer);
+    }
+    setVisible(false);
+  }, [needRefresh]);
+
+  if (!visible) return null;
 
   return (
     <div className="fixed top-16 inset-x-4 z-50 animate-fade-in">
