@@ -10,6 +10,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import SignatureUpload from "@/components/admin/SignatureUpload";
 
+function ForceRefreshButton() {
+  const { forceRefresh } = useServiceWorker();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    toast.info("A verificar atualizações...");
+    setTimeout(() => forceRefresh(), 500);
+  };
+
+  return (
+    <Button variant="outline" className="w-full" onClick={handleRefresh} disabled={refreshing}>
+      <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+      {refreshing ? "A atualizar..." : "Forçar Atualização"}
+    </Button>
+  );
+}
+
 export default function DriverProfile() {
   const { user, profile, role, signOut } = useAuth();
   const [fullName, setFullName] = useState(profile?.full_name || "");
