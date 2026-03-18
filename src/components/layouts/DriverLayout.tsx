@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { hapticTap } from "@/lib/haptics";
 import InstallPrompt from "@/components/driver/InstallPrompt";
 import OfflineIndicator from "@/components/driver/OfflineIndicator";
+import UpdatePrompt from "@/components/driver/UpdatePrompt";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineQueue } from "@/hooks/useOfflineQueue";
 
