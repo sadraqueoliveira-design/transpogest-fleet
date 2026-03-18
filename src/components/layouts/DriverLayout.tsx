@@ -83,6 +83,9 @@ export default function DriverLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
 
+      {/* Update prompt */}
+      <UpdatePrompt />
+
       {/* Offline indicator */}
       <OfflineIndicator />
 
