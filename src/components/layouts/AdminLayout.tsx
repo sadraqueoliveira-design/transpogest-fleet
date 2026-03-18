@@ -109,6 +109,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
+        {/* Force refresh */}
+        {!collapsed && <ForceRefreshSidebarButton />}
+
         {/* Footer */}
         <div className="border-t border-sidebar-border p-3">
           <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
