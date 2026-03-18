@@ -7,12 +7,18 @@ import { hapticTap } from "@/lib/haptics";
 export default function UpdatePrompt() {
   const { needRefresh, updateApp } = useServiceWorker();
   const [visible, setVisible] = useState(false);
+  const [fading, setFading] = useState(false);
 
   useEffect(() => {
     if (needRefresh) {
       setVisible(true);
-      const timer = setTimeout(() => setVisible(false), 10000);
-      return () => clearTimeout(timer);
+      setFading(false);
+      const fadeTimer = setTimeout(() => setFading(true), 9000);
+      const hideTimer = setTimeout(() => setVisible(false), 10000);
+      return () => {
+        clearTimeout(fadeTimer);
+        clearTimeout(hideTimer);
+      };
     }
     setVisible(false);
   }, [needRefresh]);
@@ -20,7 +26,7 @@ export default function UpdatePrompt() {
   if (!visible) return null;
 
   return (
-    <div className="fixed top-16 inset-x-4 z-50 animate-fade-in">
+    <div className={`fixed top-16 inset-x-4 z-50 transition-opacity duration-1000 ${fading ? "opacity-0" : "opacity-100 animate-fade-in"}`}>
       <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-card p-4 shadow-lg">
         <Download className="h-6 w-6 shrink-0 text-primary animate-pulse" />
         <div className="flex-1 min-w-0">
