@@ -74,7 +74,36 @@ export default function ServiceRequests() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchRequests(); }, []);
+  useEffect(() => { fetchRequests(); fetchDrivers(); }, []);
+
+  const handleCreate = async () => {
+    if (!newReq.driver_id || !newReq.type) {
+      toast.error("Selecione o motorista e o tipo");
+      return;
+    }
+    setSubmitting(true);
+    const details: any = {};
+    if (newReq.start_date) details.start_date = newReq.start_date;
+    if (newReq.end_date) details.end_date = newReq.end_date;
+    if (newReq.reason) details.reason = newReq.reason;
+    if (newReq.notes) details.notes = newReq.notes;
+
+    const { error } = await supabase.from("service_requests").insert({
+      driver_id: newReq.driver_id,
+      type: newReq.type as any,
+      status: "approved",
+      details,
+    });
+    setSubmitting(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Registo criado com sucesso");
+      setShowCreate(false);
+      setNewReq({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+      fetchRequests();
+    }
+  };
 
   const updateStatus = async (id: string, status: "approved" | "rejected") => {
     const { error } = await supabase.from("service_requests").update({ status }).eq("id", id);
