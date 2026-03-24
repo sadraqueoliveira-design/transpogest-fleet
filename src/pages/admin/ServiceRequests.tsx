@@ -20,6 +20,7 @@ const typeMap: Record<string, string> = {
   Uniform: "Fardamento",
   Vacation: "Férias",
   Absence: "Falta",
+  DayOff: "Folga",
   SickLeave: "Baixa Médica",
   Insurance: "Seguro",
   Document: "Documento",
@@ -28,7 +29,8 @@ const typeMap: Record<string, string> = {
 
 const absenceTypes = [
   { value: "Vacation", label: "Férias" },
-  { value: "Absence", label: "Falta / Folga" },
+  { value: "Absence", label: "Falta" },
+  { value: "DayOff", label: "Folga" },
   { value: "SickLeave", label: "Baixa Médica" },
   { value: "Insurance", label: "Seguro" },
   { value: "Other", label: "Outro" },
