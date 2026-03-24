@@ -5,7 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Check, X, Paperclip, Eye } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Check, X, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 const typeMap: Record<string, string> = {
@@ -17,6 +21,14 @@ const typeMap: Record<string, string> = {
   Document: "Documento",
   Other: "Outro",
 };
+
+const absenceTypes = [
+  { value: "Vacation", label: "Férias" },
+  { value: "Absence", label: "Falta / Folga" },
+  { value: "SickLeave", label: "Baixa Médica" },
+  { value: "Insurance", label: "Seguro" },
+  { value: "Other", label: "Outro" },
+];
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
   pending: { label: "Pendente", variant: "default" },
@@ -39,6 +51,19 @@ export default function ServiceRequests() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [drivers, setDrivers] = useState<{ id: string; full_name: string }[]>([]);
+  const [newReq, setNewReq] = useState({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchDrivers = async () => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("is_active", true)
+      .order("full_name");
+    if (data) setDrivers(data.filter((d) => d.full_name));
+  };
 
   const fetchRequests = async () => {
     const { data } = await supabase
