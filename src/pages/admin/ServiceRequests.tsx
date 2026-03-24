@@ -6,11 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, X, Plus } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Check, X, Plus, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
+import { format, eachDayOfInterval, startOfMonth, endOfMonth, getDay } from "date-fns";
+import { pt } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 const typeMap: Record<string, string> = {
   Uniform: "Fardamento",
@@ -53,7 +57,9 @@ export default function ServiceRequests() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [drivers, setDrivers] = useState<{ id: string; full_name: string }[]>([]);
-  const [newReq, setNewReq] = useState({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+  const [newReq, setNewReq] = useState({ driver_id: "", type: "", reason: "", notes: "" });
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [submitting, setSubmitting] = useState(false);
 
   const fetchDrivers = async () => {
@@ -76,17 +82,43 @@ export default function ServiceRequests() {
 
   useEffect(() => { fetchRequests(); fetchDrivers(); }, []);
 
+  const selectFullMonth = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days);
+  };
+
+  const selectWeekdays = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days.filter((d) => getDay(d) !== 0 && getDay(d) !== 6));
+  };
+
+  const selectWeekends = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days.filter((d) => getDay(d) === 0 || getDay(d) === 6));
+  };
+
   const handleCreate = async () => {
     if (!newReq.driver_id || !newReq.type) {
       toast.error("Selecione o motorista e o tipo");
       return;
     }
+    if (selectedDates.length === 0) {
+      toast.error("Selecione pelo menos uma data");
+      return;
+    }
     setSubmitting(true);
+    const sortedDates = [...selectedDates].sort((a, b) => a.getTime() - b.getTime());
+    const dateStrings = sortedDates.map((d) => format(d, "yyyy-MM-dd"));
+
     const details: any = {};
-    if (newReq.start_date) details.start_date = newReq.start_date;
-    if (newReq.end_date) details.end_date = newReq.end_date;
+    details.start_date = dateStrings[0];
+    if (dateStrings.length > 1) {
+      details.end_date = dateStrings[dateStrings.length - 1];
+      details.selected_dates = dateStrings;
+    }
     if (newReq.reason) details.reason = newReq.reason;
     if (newReq.notes) details.notes = newReq.notes;
+    details.total_days = dateStrings.length;
 
     const { error } = await supabase.from("service_requests").insert({
       driver_id: newReq.driver_id,
@@ -98,9 +130,10 @@ export default function ServiceRequests() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Registo criado com sucesso");
+      toast.success(`${dateStrings.length} dia(s) registado(s) com sucesso`);
       setShowCreate(false);
-      setNewReq({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+      setNewReq({ driver_id: "", type: "", reason: "", notes: "" });
+      setSelectedDates([]);
       fetchRequests();
     }
   };
@@ -219,7 +252,7 @@ export default function ServiceRequests() {
 
       {/* Create absence dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo Registo de Ausência</DialogTitle>
           </DialogHeader>
@@ -246,16 +279,44 @@ export default function ServiceRequests() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Data Início</Label>
-                <Input type="date" value={newReq.start_date} onChange={(e) => setNewReq({ ...newReq, start_date: e.target.value })} />
+
+            {/* Calendar with batch selection */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4" /> Selecionar Dias
+              </Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                <Button type="button" size="sm" variant="outline" className="text-xs h-7" onClick={selectFullMonth}>
+                  Mês inteiro
+                </Button>
+                <Button type="button" size="sm" variant="outline" className="text-xs h-7" onClick={selectWeekdays}>
+                  Dias úteis
+                </Button>
+                <Button type="button" size="sm" variant="outline" className="text-xs h-7" onClick={selectWeekends}>
+                  Fins de semana
+                </Button>
+                <Button type="button" size="sm" variant="ghost" className="text-xs h-7 text-destructive" onClick={() => setSelectedDates([])}>
+                  Limpar
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label>Data Fim</Label>
-                <Input type="date" value={newReq.end_date} onChange={(e) => setNewReq({ ...newReq, end_date: e.target.value })} />
+              <div className="flex justify-center border rounded-lg p-1 bg-muted/30">
+                <Calendar
+                  mode="multiple"
+                  selected={selectedDates}
+                  onSelect={(dates) => setSelectedDates(dates || [])}
+                  month={calendarMonth}
+                  onMonthChange={setCalendarMonth}
+                  locale={pt}
+                  className={cn("p-3 pointer-events-auto")}
+                />
               </div>
+              {selectedDates.length > 0 && (
+                <p className="text-xs text-muted-foreground text-center">
+                  {selectedDates.length} dia(s) selecionado(s)
+                </p>
+              )}
             </div>
+
             <div className="space-y-2">
               <Label>Motivo</Label>
               <Input value={newReq.reason} onChange={(e) => setNewReq({ ...newReq, reason: e.target.value })} placeholder="Ex: Folga semanal" />
@@ -265,7 +326,7 @@ export default function ServiceRequests() {
               <Textarea value={newReq.notes} onChange={(e) => setNewReq({ ...newReq, notes: e.target.value })} placeholder="Observações adicionais..." rows={2} />
             </div>
             <Button onClick={handleCreate} disabled={submitting} className="w-full">
-              {submitting ? "A guardar..." : "Criar Registo"}
+              {submitting ? "A guardar..." : `Criar Registo (${selectedDates.length} dia${selectedDates.length !== 1 ? "s" : ""})`}
             </Button>
           </div>
         </DialogContent>
