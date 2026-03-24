@@ -6,11 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, X, Plus } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Check, X, Plus, CalendarDays } from "lucide-react";
 import { toast } from "sonner";
+import { format, eachDayOfInterval, startOfMonth, endOfMonth, getDay } from "date-fns";
+import { pt } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 const typeMap: Record<string, string> = {
   Uniform: "Fardamento",
