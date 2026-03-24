@@ -134,6 +134,7 @@ export default function DriverRequests() {
                   <SelectItem value="Uniform">Fardamento</SelectItem>
                   <SelectItem value="Vacation">Férias</SelectItem>
                   <SelectItem value="Absence">Falta</SelectItem>
+                  <SelectItem value="DayOff">Folga</SelectItem>
                   <SelectItem value="SickLeave">Baixa Médica</SelectItem>
                   <SelectItem value="Insurance">Seguro</SelectItem>
                   <SelectItem value="Document">Documento</SelectItem>
