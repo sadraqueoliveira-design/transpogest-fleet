@@ -354,17 +354,39 @@ export default function DataExport() {
         )}
 
         {active === "sql" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Estrutura SQL</CardTitle>
-              <CardDescription>Exporta a lista de tabelas do schema público.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={handleSQLExport} className="gap-2">
-                <Download className="h-4 w-4" /> Exportar Tabelas
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Estrutura SQL</CardTitle>
+                <CardDescription>Gere o schema SQL de todas as tabelas e copie ou exporte.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex gap-2">
+                  <Button onClick={handleSQLExport} disabled={sqlLoading} className="gap-2">
+                    {sqlLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Code2 className="h-4 w-4" />}
+                    Gerar Schema SQL
+                  </Button>
+                  {sqlSchema && (
+                    <>
+                      <Button variant="outline" onClick={copySQL} className="gap-2">
+                        <Copy className="h-4 w-4" /> Copiar
+                      </Button>
+                      <Button variant="outline" onClick={downloadSQL} className="gap-2">
+                        <Download className="h-4 w-4" /> Exportar .sql
+                      </Button>
+                    </>
+                  )}
+                </div>
+                {sqlSchema && (
+                  <textarea
+                    readOnly
+                    value={sqlSchema}
+                    className="w-full min-h-[400px] rounded-md border border-input bg-muted/50 px-3 py-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
     </div>
