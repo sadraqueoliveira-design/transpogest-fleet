@@ -32,6 +32,7 @@ const navItems = [
   { to: "/admin/antram", icon: Settings, label: "ANTRAM" },
   { to: "/admin/compliance", icon: ShieldCheck, label: "Compliance" },
   { to: "/admin/auto-aprovacao", icon: Zap, label: "Auto-Aprovação" },
+  { to: "/admin/exportar-dados", icon: DatabaseBackup, label: "Exportar Dados" },
 ];
 
 function ForceRefreshSidebarButton() {

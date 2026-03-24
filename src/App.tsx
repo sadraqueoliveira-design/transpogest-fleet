@@ -91,6 +91,7 @@ const App = () => (
             <Route path="/admin/compliance" element={<AdminRoute><Compliance /></AdminRoute>} />
             <Route path="/admin/auto-aprovacao" element={<AdminRoute><ApprovalRules /></AdminRoute>} />
             <Route path="/admin/historico-cartoes" element={<AdminRoute><CardHistory /></AdminRoute>} />
+            <Route path="/admin/exportar-dados" element={<AdminRoute><DataExport /></AdminRoute>} />
 
             {/* Driver routes */}
             <Route path="/motorista" element={<DriverRoute><DriverHome /></DriverRoute>} />
