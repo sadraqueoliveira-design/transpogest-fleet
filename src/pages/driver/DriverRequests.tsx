@@ -14,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const typeMap: Record<string, string> = {
-  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta",
+  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta", DayOff: "Folga",
   SickLeave: "Baixa Médica", Insurance: "Seguro", Document: "Documento", Other: "Outro",
 };
 
@@ -134,6 +134,7 @@ export default function DriverRequests() {
                   <SelectItem value="Uniform">Fardamento</SelectItem>
                   <SelectItem value="Vacation">Férias</SelectItem>
                   <SelectItem value="Absence">Falta</SelectItem>
+                  <SelectItem value="DayOff">Folga</SelectItem>
                   <SelectItem value="SickLeave">Baixa Médica</SelectItem>
                   <SelectItem value="Insurance">Seguro</SelectItem>
                   <SelectItem value="Document">Documento</SelectItem>
