@@ -121,9 +121,14 @@ export default function ServiceRequests() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="page-header">Solicitações</h1>
-        <p className="page-subtitle">Pedidos dos motoristas</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-header">Solicitações</h1>
+          <p className="page-subtitle">Pedidos dos motoristas</p>
+        </div>
+        <Button onClick={() => setShowCreate(true)} className="gap-2">
+          <Plus className="h-4 w-4" /> Novo Registo
+        </Button>
       </div>
       <Card>
         <CardContent className="p-0">
