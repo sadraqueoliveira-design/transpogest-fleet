@@ -32,6 +32,7 @@ import Declarations from "./pages/admin/Declarations";
 import Compliance from "./pages/admin/Compliance";
 import ApprovalRules from "./pages/admin/ApprovalRules";
 import CardHistory from "./pages/admin/CardHistory";
+import DataExport from "./pages/admin/DataExport";
 
 // Driver pages
 import DriverHome from "./pages/driver/DriverHome";
@@ -90,6 +91,7 @@ const App = () => (
             <Route path="/admin/compliance" element={<AdminRoute><Compliance /></AdminRoute>} />
             <Route path="/admin/auto-aprovacao" element={<AdminRoute><ApprovalRules /></AdminRoute>} />
             <Route path="/admin/historico-cartoes" element={<AdminRoute><CardHistory /></AdminRoute>} />
+            <Route path="/admin/exportar-dados" element={<AdminRoute><DataExport /></AdminRoute>} />
 
             {/* Driver routes */}
             <Route path="/motorista" element={<DriverRoute><DriverHome /></DriverRoute>} />
