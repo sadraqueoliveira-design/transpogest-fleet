@@ -1543,6 +1543,7 @@ export type Database = {
         | "Absence"
         | "SickLeave"
         | "Insurance"
+        | "DayOff"
       route_status: "planned" | "in_progress" | "completed" | "cancelled"
     }
     CompositeTypes: {
@@ -1693,6 +1694,7 @@ export const Constants = {
         "Absence",
         "SickLeave",
         "Insurance",
+        "DayOff",
       ],
       route_status: ["planned", "in_progress", "completed", "cancelled"],
     },
