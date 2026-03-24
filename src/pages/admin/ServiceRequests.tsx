@@ -57,7 +57,9 @@ export default function ServiceRequests() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [drivers, setDrivers] = useState<{ id: string; full_name: string }[]>([]);
-  const [newReq, setNewReq] = useState({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+  const [newReq, setNewReq] = useState({ driver_id: "", type: "", reason: "", notes: "" });
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [submitting, setSubmitting] = useState(false);
 
   const fetchDrivers = async () => {
@@ -80,17 +82,43 @@ export default function ServiceRequests() {
 
   useEffect(() => { fetchRequests(); fetchDrivers(); }, []);
 
+  const selectFullMonth = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days);
+  };
+
+  const selectWeekdays = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days.filter((d) => getDay(d) !== 0 && getDay(d) !== 6));
+  };
+
+  const selectWeekends = () => {
+    const days = eachDayOfInterval({ start: startOfMonth(calendarMonth), end: endOfMonth(calendarMonth) });
+    setSelectedDates(days.filter((d) => getDay(d) === 0 || getDay(d) === 6));
+  };
+
   const handleCreate = async () => {
     if (!newReq.driver_id || !newReq.type) {
       toast.error("Selecione o motorista e o tipo");
       return;
     }
+    if (selectedDates.length === 0) {
+      toast.error("Selecione pelo menos uma data");
+      return;
+    }
     setSubmitting(true);
+    const sortedDates = [...selectedDates].sort((a, b) => a.getTime() - b.getTime());
+    const dateStrings = sortedDates.map((d) => format(d, "yyyy-MM-dd"));
+
     const details: any = {};
-    if (newReq.start_date) details.start_date = newReq.start_date;
-    if (newReq.end_date) details.end_date = newReq.end_date;
+    details.start_date = dateStrings[0];
+    if (dateStrings.length > 1) {
+      details.end_date = dateStrings[dateStrings.length - 1];
+      details.selected_dates = dateStrings;
+    }
     if (newReq.reason) details.reason = newReq.reason;
     if (newReq.notes) details.notes = newReq.notes;
+    details.total_days = dateStrings.length;
 
     const { error } = await supabase.from("service_requests").insert({
       driver_id: newReq.driver_id,
@@ -102,9 +130,10 @@ export default function ServiceRequests() {
     if (error) {
       toast.error(error.message);
     } else {
-      toast.success("Registo criado com sucesso");
+      toast.success(`${dateStrings.length} dia(s) registado(s) com sucesso`);
       setShowCreate(false);
-      setNewReq({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+      setNewReq({ driver_id: "", type: "", reason: "", notes: "" });
+      setSelectedDates([]);
       fetchRequests();
     }
   };
