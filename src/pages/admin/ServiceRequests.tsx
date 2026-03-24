@@ -216,6 +216,60 @@ export default function ServiceRequests() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Create absence dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Registo de Ausência</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Motorista</Label>
+              <Select value={newReq.driver_id} onValueChange={(v) => setNewReq({ ...newReq, driver_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecionar motorista" /></SelectTrigger>
+                <SelectContent>
+                  {drivers.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={newReq.type} onValueChange={(v) => setNewReq({ ...newReq, type: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecionar tipo" /></SelectTrigger>
+                <SelectContent>
+                  {absenceTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Data Início</Label>
+                <Input type="date" value={newReq.start_date} onChange={(e) => setNewReq({ ...newReq, start_date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Data Fim</Label>
+                <Input type="date" value={newReq.end_date} onChange={(e) => setNewReq({ ...newReq, end_date: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Motivo</Label>
+              <Input value={newReq.reason} onChange={(e) => setNewReq({ ...newReq, reason: e.target.value })} placeholder="Ex: Folga semanal" />
+            </div>
+            <div className="space-y-2">
+              <Label>Notas</Label>
+              <Textarea value={newReq.notes} onChange={(e) => setNewReq({ ...newReq, notes: e.target.value })} placeholder="Observações adicionais..." rows={2} />
+            </div>
+            <Button onClick={handleCreate} disabled={submitting} className="w-full">
+              {submitting ? "A guardar..." : "Criar Registo"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
