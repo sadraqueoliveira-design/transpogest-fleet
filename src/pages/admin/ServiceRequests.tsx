@@ -5,7 +5,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Check, X, Paperclip, Eye } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Check, X, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 const typeMap: Record<string, string> = {
@@ -17,6 +21,14 @@ const typeMap: Record<string, string> = {
   Document: "Documento",
   Other: "Outro",
 };
+
+const absenceTypes = [
+  { value: "Vacation", label: "Férias" },
+  { value: "Absence", label: "Falta / Folga" },
+  { value: "SickLeave", label: "Baixa Médica" },
+  { value: "Insurance", label: "Seguro" },
+  { value: "Other", label: "Outro" },
+];
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" }> = {
   pending: { label: "Pendente", variant: "default" },
@@ -39,6 +51,19 @@ export default function ServiceRequests() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [drivers, setDrivers] = useState<{ id: string; full_name: string }[]>([]);
+  const [newReq, setNewReq] = useState({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchDrivers = async () => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("is_active", true)
+      .order("full_name");
+    if (data) setDrivers(data.filter((d) => d.full_name));
+  };
 
   const fetchRequests = async () => {
     const { data } = await supabase
@@ -49,7 +74,36 @@ export default function ServiceRequests() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchRequests(); }, []);
+  useEffect(() => { fetchRequests(); fetchDrivers(); }, []);
+
+  const handleCreate = async () => {
+    if (!newReq.driver_id || !newReq.type) {
+      toast.error("Selecione o motorista e o tipo");
+      return;
+    }
+    setSubmitting(true);
+    const details: any = {};
+    if (newReq.start_date) details.start_date = newReq.start_date;
+    if (newReq.end_date) details.end_date = newReq.end_date;
+    if (newReq.reason) details.reason = newReq.reason;
+    if (newReq.notes) details.notes = newReq.notes;
+
+    const { error } = await supabase.from("service_requests").insert({
+      driver_id: newReq.driver_id,
+      type: newReq.type as any,
+      status: "approved",
+      details,
+    });
+    setSubmitting(false);
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Registo criado com sucesso");
+      setShowCreate(false);
+      setNewReq({ driver_id: "", type: "", start_date: "", end_date: "", reason: "", notes: "" });
+      fetchRequests();
+    }
+  };
 
   const updateStatus = async (id: string, status: "approved" | "rejected") => {
     const { error } = await supabase.from("service_requests").update({ status }).eq("id", id);
@@ -67,9 +121,14 @@ export default function ServiceRequests() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="page-header">Solicitações</h1>
-        <p className="page-subtitle">Pedidos dos motoristas</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="page-header">Solicitações</h1>
+          <p className="page-subtitle">Pedidos dos motoristas</p>
+        </div>
+        <Button onClick={() => setShowCreate(true)} className="gap-2">
+          <Plus className="h-4 w-4" /> Novo Registo
+        </Button>
       </div>
       <Card>
         <CardContent className="p-0">
@@ -155,6 +214,60 @@ export default function ServiceRequests() {
           {previewUrl && (
             <img src={previewUrl} alt="Comprovativo" className="w-full rounded-md" />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Create absence dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Novo Registo de Ausência</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Motorista</Label>
+              <Select value={newReq.driver_id} onValueChange={(v) => setNewReq({ ...newReq, driver_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecionar motorista" /></SelectTrigger>
+                <SelectContent>
+                  {drivers.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={newReq.type} onValueChange={(v) => setNewReq({ ...newReq, type: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecionar tipo" /></SelectTrigger>
+                <SelectContent>
+                  {absenceTypes.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Data Início</Label>
+                <Input type="date" value={newReq.start_date} onChange={(e) => setNewReq({ ...newReq, start_date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label>Data Fim</Label>
+                <Input type="date" value={newReq.end_date} onChange={(e) => setNewReq({ ...newReq, end_date: e.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Motivo</Label>
+              <Input value={newReq.reason} onChange={(e) => setNewReq({ ...newReq, reason: e.target.value })} placeholder="Ex: Folga semanal" />
+            </div>
+            <div className="space-y-2">
+              <Label>Notas</Label>
+              <Textarea value={newReq.notes} onChange={(e) => setNewReq({ ...newReq, notes: e.target.value })} placeholder="Observações adicionais..." rows={2} />
+            </div>
+            <Button onClick={handleCreate} disabled={submitting} className="w-full">
+              {submitting ? "A guardar..." : "Criar Registo"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
