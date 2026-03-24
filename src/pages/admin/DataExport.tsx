@@ -180,11 +180,68 @@ export default function DataExport() {
     toast.info("Por segurança, os valores dos segredos não podem ser exportados. Consulte as configurações do projeto.");
   };
 
-  const handleSQLExport = () => {
-    const tables = sections.find(s => s.key === "database")!.tables!;
-    const rows = tables.map(t => ({ table_name: t, schema: "public" }));
-    downloadCSV(arrayToCSV(rows), "sql_tables_list.csv");
-    toast.success("Lista de tabelas exportada.");
+  const [sqlSchema, setSqlSchema] = useState<string>("");
+  const [sqlLoading, setSqlLoading] = useState(false);
+
+  const handleSQLExport = async () => {
+    setSqlLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("get_user_role" as any, { _user_id: "" }).throwOnError();
+    } catch {}
+
+    // Build SQL from known schema
+    const allTables = [
+      ...sections.find(s => s.key === "database")!.tables!,
+      ...sections.find(s => s.key === "users")!.tables!,
+      ...sections.find(s => s.key === "logs")!.tables!,
+      ...sections.find(s => s.key === "usage")!.tables!,
+    ];
+
+    let sql = "-- Schema export generated at " + new Date().toISOString() + "\n\n";
+
+    for (const table of allTables) {
+      try {
+        const { data, error } = await supabase.from(table as any).select("*").limit(1);
+        if (data && data.length > 0) {
+          const cols = Object.keys(data[0]);
+          sql += `-- Table: ${table}\n`;
+          sql += `CREATE TABLE IF NOT EXISTS public.${table} (\n`;
+          sql += cols.map(c => {
+            const val = (data[0] as any)[c];
+            let type = "text";
+            if (typeof val === "number") type = Number.isInteger(val) ? "integer" : "double precision";
+            else if (typeof val === "boolean") type = "boolean";
+            else if (val && typeof val === "object") type = "jsonb";
+            else if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) type = "timestamp with time zone";
+            return `  ${c} ${type}`;
+          }).join(",\n");
+          sql += "\n);\n\n";
+        } else {
+          sql += `-- Table: ${table} (empty or no access)\n\n`;
+        }
+      } catch {
+        sql += `-- Table: ${table} (error reading)\n\n`;
+      }
+    }
+
+    setSqlSchema(sql);
+    setSqlLoading(false);
+    toast.success("Schema SQL gerado com sucesso.");
+  };
+
+  const copySQL = () => {
+    navigator.clipboard.writeText(sqlSchema);
+    toast.success("SQL copiado para a área de transferência.");
+  };
+
+  const downloadSQL = () => {
+    const blob = new Blob([sqlSchema], { type: "text/sql;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "schema_export.sql";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
