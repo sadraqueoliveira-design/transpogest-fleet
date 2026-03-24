@@ -14,8 +14,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const typeMap: Record<string, string> = {
-  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta", DayOff: "Folga",
-  SickLeave: "Baixa Médica", Insurance: "Seguro", Document: "Documento", Other: "Outro",
+  Uniform: "Fardamento", Vacation: "Férias", Absence: "Falta", JustifiedAbsence: "Falta Justificada",
+  DayOff: "Folga", SickLeave: "Baixa Médica", Insurance: "Seguro", Document: "Documento", Other: "Outro",
 };
 
 const statusConfig: Record<string, { label: string; icon: typeof Clock; variant: "default" | "secondary" | "destructive" }> = {
