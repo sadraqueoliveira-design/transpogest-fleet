@@ -118,7 +118,7 @@ export default function DataExport() {
   const exportTable = async (table: string) => {
     setLoading(table);
     try {
-      const { data, error } = await supabase.from(table as any).select("*").limit(10000);
+      const { data, error } = await supabase.from(table as any).select("*");
       if (error) throw error;
       if (!data || data.length === 0) {
         toast.info(`Tabela "${table}" está vazia.`);
