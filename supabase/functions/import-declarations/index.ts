@@ -68,23 +68,29 @@ serve(async (req) => {
       }
     }
 
-    // 2. Process and migrate storage files
-    const migratedDeclarations = await Promise.all(declarations.map(async (dec) => {
-      const updatedDec = { ...dec }
-      
-      if (dec.signed_pdf_url) {
-        updatedDec.signed_pdf_url = await migrateFile(dec.signed_pdf_url, 'signed-declarations')
+    // Allowed columns (must match destination schema)
+    const ALLOWED = [
+      'id','driver_id','status','gap_start_date','gap_end_date','reason_code','reason_text',
+      'company_name','manager_name','manager_id','document_url','created_at','updated_at',
+      'driver_signature_url','manager_signature_url','signed_ip','signed_at','signed_pdf_url'
+    ]
+
+    // 2. Process and migrate storage files + filter columns
+    const migratedDeclarations = await Promise.all(declarations.map(async (dec: any) => {
+      const filtered: any = {}
+      for (const k of ALLOWED) if (k in dec) filtered[k] = dec[k]
+
+      if (filtered.signed_pdf_url) {
+        filtered.signed_pdf_url = await migrateFile(filtered.signed_pdf_url, 'signed-declarations')
       }
-      
-      if (dec.driver_signature_url) {
-        updatedDec.driver_signature_url = await migrateFile(dec.driver_signature_url, 'signatures')
+      if (filtered.driver_signature_url) {
+        filtered.driver_signature_url = await migrateFile(filtered.driver_signature_url, 'signatures')
       }
-      
-      if (dec.manager_signature_url) {
-        updatedDec.manager_signature_url = await migrateFile(dec.manager_signature_url, 'signatures')
+      if (filtered.manager_signature_url) {
+        filtered.manager_signature_url = await migrateFile(filtered.manager_signature_url, 'signatures')
       }
 
-      return updatedDec
+      return filtered
     }))
 
     // 3. Insert into destination
