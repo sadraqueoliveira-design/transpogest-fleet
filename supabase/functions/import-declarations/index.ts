@@ -39,15 +39,63 @@ serve(async (req) => {
       })
     }
 
-    // 2. Insert into destination
+    // Helper function to download and upload to storage
+    const migrateFile = async (url: string, bucket: string) => {
+      if (!url || !url.includes('supabase.co/storage/v1/object/public/')) return url
+      
+      try {
+        const response = await fetch(url)
+        if (!response.ok) return url
+        
+        const blob = await response.blob()
+        const path = url.split('/').pop()
+        if (!path) return url
+
+        const { data, error } = await supabaseClient.storage.from(bucket).upload(path, blob, {
+          upsert: true
+        })
+
+        if (error) {
+          console.error(`Error uploading ${path} to ${bucket}:`, error)
+          return url
+        }
+
+        const { data: publicUrlData } = supabaseClient.storage.from(bucket).getPublicUrl(path)
+        return publicUrlData.publicUrl
+      } catch (e) {
+        console.error(`Failed to migrate file ${url}:`, e)
+        return url
+      }
+    }
+
+    // 2. Process and migrate storage files
+    const migratedDeclarations = await Promise.all(declarations.map(async (dec) => {
+      const updatedDec = { ...dec }
+      
+      if (dec.signed_pdf_url) {
+        updatedDec.signed_pdf_url = await migrateFile(dec.signed_pdf_url, 'signed-declarations')
+      }
+      
+      if (dec.driver_signature_url) {
+        updatedDec.driver_signature_url = await migrateFile(dec.driver_signature_url, 'signatures')
+      }
+      
+      if (dec.manager_signature_url) {
+        updatedDec.manager_signature_url = await migrateFile(dec.manager_signature_url, 'signatures')
+      }
+
+      return updatedDec
+    }))
+
+    // 3. Insert into destination
     const { error: insertError } = await supabaseClient
       .from('activity_declarations')
-      .upsert(declarations, { onConflict: 'id' })
+      .upsert(migratedDeclarations, { onConflict: 'id' })
 
     if (insertError) throw insertError
 
     return new Response(JSON.stringify({ 
-      message: `Successfully imported ${declarations.length} declarations`,
+      message: `Successfully migrated ${declarations.length} declarations and their assets`,
       count: declarations.length 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
